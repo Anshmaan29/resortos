@@ -246,3 +246,83 @@ export const rateQuoteQuerySchema = z
 export const availabilityQuerySchema = z
   .object({ arrival: zIsoDate, departure: zIsoDate, roomTypeId: zId.optional() })
   .refine((v) => nightsBetween(v.arrival, v.departure) >= 1, { message: 'Departure must be after arrival', path: ['departure'] });
+
+// ---------- check-in (spec §17–§20) ----------
+export const ID_TYPES = ['aadhaar', 'passport', 'driving_licence', 'voter_id', 'pan', 'other', 'none'] as const;
+export type IdType = (typeof ID_TYPES)[number];
+/** ID types whose back side carries required details. */
+export const ID_TYPES_WITH_BACK: readonly IdType[] = ['aadhaar', 'driving_licence', 'voter_id'];
+
+export const DOCUMENT_TYPES = ['guest_photo', 'id_front', 'id_back', 'id_extra', 'signature', 'grc', 'other'] as const;
+export type DocumentType = (typeof DOCUMENT_TYPES)[number];
+export const DOCUMENT_CONTENT_TYPES = ['image/jpeg', 'image/webp', 'image/png', 'application/pdf'] as const;
+export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+
+export const occupantSchema = z.object({
+  key: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/),
+  /** May be blank while the check-in is in progress; required at confirmation. */
+  fullName: z.string().trim().max(120).default(''),
+  isPrimary: z.boolean().default(false),
+  isChild: z.boolean().default(false),
+  age: z.number().int().min(0).max(120).optional(),
+  relation: optionalText(40),
+  nationality: z.string().trim().length(2).toUpperCase().default('IN'),
+  idType: z.enum(ID_TYPES).default('none'),
+  /** Last 4 characters only — a full ID number is never accepted (spec §58.3). */
+  idLast4: z.string().trim().regex(/^[A-Za-z0-9]{4}$/, 'Enter only the last 4 characters of the ID').optional().or(z.literal('').transform(() => undefined)),
+}).refine((o) => !o.isChild || o.age !== undefined, { message: 'Enter the child’s age', path: ['age'] });
+export type OccupantInput = z.infer<typeof occupantSchema>;
+
+export const vehicleSchema = z.object({
+  registration: z.string().trim().min(4).max(20),
+  vehicleType: z.enum(['car', 'bike', 'bus', 'other']).default('car'),
+  parkingSlot: optionalText(20),
+  nonStandard: z.boolean().default(false),
+}).refine((v) => v.nonStandard || isValidIndianVehicleNumber(v.registration), { message: 'Vehicle number looks wrong (e.g. RJ14CX1234)', path: ['registration'] });
+
+export const checkInDraftDataSchema = z.object({
+  rooms: z.array(z.object({
+    reservationRoomId: zId,
+    roomId: zId.optional(),
+    occupants: z.array(occupantSchema).max(30).default([]),
+    vehicles: z.array(vehicleSchema).max(10).default([]),
+  })).default([]),
+  consents: z.object({ stayAndCompliance: z.boolean().default(false), marketing: z.boolean().default(false) }).default({ stayAndCompliance: false, marketing: false }),
+});
+export type CheckInDraftData = z.infer<typeof checkInDraftDataSchema>;
+
+export const createCheckInDraftSchema = z.object({
+  reservationId: zId,
+  reservationRoomIds: z.array(zId).min(1).max(100).optional(),
+});
+
+export const updateCheckInDraftSchema = z.object({
+  version: z.number().int().min(1),
+  step: z.number().int().min(1).max(7),
+  data: checkInDraftDataSchema,
+});
+
+export const documentUploadRequestSchema = z.object({
+  docType: z.enum(DOCUMENT_TYPES),
+  idType: z.enum(ID_TYPES).exclude(['none']).optional(),
+  occupantKey: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/).optional(),
+  maskedOnDevice: z.boolean().default(false),
+  contentType: z.enum(DOCUMENT_CONTENT_TYPES),
+  sizeBytes: z.number().int().min(1).max(MAX_DOCUMENT_BYTES),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/, 'Checksum must be a SHA-256 hex digest'),
+}).refine((d) => d.idType !== 'aadhaar' || !['id_front', 'id_back', 'id_extra'].includes(d.docType) || d.maskedOnDevice,
+  { message: 'Aadhaar images must be masked on the device before upload', path: ['maskedOnDevice'] });
+export type DocumentUploadRequest = z.infer<typeof documentUploadRequestSchema>;
+
+export const roomShiftSchema = z.object({
+  toRoomId: zId,
+  reason: z.string().trim().min(3, 'Enter a reason').max(300),
+  rateDecision: z.enum(['keep_rate', 'new_room_type_rate']).default('keep_rate'),
+  ownerAuthorisationId: zId.optional(),
+});
+export type RoomShiftInput = z.infer<typeof roomShiftSchema>;
+
+export const checkoutSchema = z.object({
+  /** Reserved for Phase 2 steps (settlement, invoice). */
+  steps: z.record(z.string(), z.unknown()).default({}),
+});

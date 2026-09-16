@@ -19,3 +19,6 @@ REVOKE INSERT ON schema_migrations FROM resortos_app;
 
 -- Override history is append-only.
 REVOKE UPDATE ON owner_overrides FROM resortos_app;
+
+-- Stay history is append-only.
+REVOKE UPDATE ON room_shifts, document_access_log FROM resortos_app;

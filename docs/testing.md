@@ -21,9 +21,13 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | Audit chain does not fork under 60 parallel actions | `apps/api/test/audit-concurrency.test.ts` |
 | Edit / rebook use the same validation, limits and audit | `apps/api/test/booking-changes.test.ts` |
 | No SQL interpolation; demo data blocked from production | `apps/api/test/guards.test.ts` |
+| Phone scanner: single-use QR, 10-minute expiry, upload-only, no guest data to phone, device secret | `apps/api/test/check-in.test.ts` |
+| Document counts only after server re-hash (SHA-256 + size); tampered/expired/overwrite links refused; Aadhaar masked flag | `apps/api/test/check-in.test.ts` |
+| Check-in blocked while documents are uploading/failed/missing; draft survives refresh; double confirm → one stay | `apps/api/test/check-in.test.ts` |
+| Room shift uses the exclusion constraint; checkout pipeline order; checked-out stay immutable | `apps/api/test/check-in.test.ts` |
 | WCAG AA contrast of every text/surface token pair, both themes | `apps/web/test/contrast.test.ts` |
 | DD/MM/YYYY picker, Owner PIN by keyboard, override shown, edit, rebook | `tests/e2e/front-desk.spec.ts` |
 
 ## Not automated (needs real devices)
 
-Camera capture and the phone scanner (milestone 1.8) must be tested manually on a real iPhone (Safari) and a real budget Android phone (Chrome), including an upload that drops and resumes on a weak network. The procedure is added with milestone 1.8.
+Camera capture and the phone scanner (milestone 1.8) must be tested manually on a real iPhone (Safari) and a real budget Android phone (Chrome), including an upload that drops and resumes on a weak network. Procedure and result table: `docs/phone-testing.md`.
