@@ -1,0 +1,32 @@
+node_modules/
+dist/
+.next/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+.turbo/
+next-env.d.ts
+*.tsbuildinfo
+
+# Secrets, keys, certificates
+*.pem
+*.key
+*.crt
+*.p12
+certs/
+.cloudflared/
+.ngrok/
+
+# Uploaded or captured files (guest photos, IDs, test captures) — never committed
+uploads/
+storage/
+**/test-uploads/
+*.heic
+
+# Test output
+test-results/
+playwright-report/
+blob-report/

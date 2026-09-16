@@ -1,0 +1,25 @@
+{
+  "name": "resortos",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.17.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "db:up": "docker compose up -d --wait postgres",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @resortos/api migrate",
+    "db:seed": "pnpm --filter @resortos/api seed",
+    "build": "pnpm -r build",
+    "dev:api": "pnpm --filter @resortos/api dev",
+    "dev:web": "pnpm --filter @resortos/web dev",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "verify": "pnpm build && pnpm typecheck && pnpm test",
+    "e2e": "pnpm --filter @resortos/shared build && pnpm --filter @resortos/api build && pnpm --filter @resortos/web build && playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

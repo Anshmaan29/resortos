@@ -1,0 +1,22 @@
+# Local development only. Production uses managed PostgreSQL (RDS Mumbai) — spec §53, §77.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: resortos-postgres
+    environment:
+      POSTGRES_DB: resortos
+      POSTGRES_USER: resortos_migrator
+      POSTGRES_PASSWORD: migrator_dev_password
+      TZ: Asia/Kolkata
+    ports:
+      - "5433:5432"
+    volumes:
+      - resortos_pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U resortos_migrator -d resortos"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  resortos_pgdata:
