@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import { Client } from 'pg';
 import request from 'supertest';
@@ -15,7 +13,11 @@ export async function bootApp(): Promise<INestApplication> {
     DATABASE_URL: APP_URL,
     SESSION_COOKIE_SECURE: 'false',
     WEB_ORIGIN: 'http://localhost:3000',
-    STORAGE_DIR: join(tmpdir(), `resortos-test-storage-${process.pid}`),
+    S3_ENDPOINT: 'http://localhost:9000',
+    S3_BUCKET: 'resortos-documents-test',
+    S3_ACCESS_KEY_ID: 'resortos',
+    S3_SECRET_ACCESS_KEY: 'resortos-dev-minio-secret',
+    S3_FORCE_PATH_STYLE: 'true',
   });
   const { createApp } = await import('../src/bootstrap');
   const app = await createApp();

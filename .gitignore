@@ -16,7 +16,9 @@ next-env.d.ts
 *.key
 *.crt
 *.p12
-certs/
+ops/dev-https/certs/**
+!ops/dev-https/certs/minio/
+!ops/dev-https/certs/minio/.gitkeep
 .cloudflared/
 .ngrok/
 

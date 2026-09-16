@@ -187,7 +187,7 @@ export class CaptureService {
       [propertyId, draftId, req.occupantKey ?? null, req.docType, req.idType ?? null, req.maskedOnDevice, key, req.contentType, req.sizeBytes,
         Buffer.from(req.sha256, 'hex'), by.source, by.sessionId, by.uploadedBy, by.device?.slice(0, 120) ?? null],
     );
-    return { documentId: rows[0]!.id, upload: this.storage.uploadGrant(key, req.contentType, req.sizeBytes) };
+    return { documentId: rows[0]!.id, upload: await this.storage.uploadGrant(key, req.contentType, req.sizeBytes, req.sha256) };
   }
 
   /**

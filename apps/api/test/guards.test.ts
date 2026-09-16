@@ -52,3 +52,14 @@ describe('demo data can never reach production', () => {
     expect(MIGRATOR_URL).toContain('_test');
   });
 });
+
+describe('graceful failure under load', () => {
+  it('pool exhaustion, statement timeouts, deadlocks and lock timeouts become SERVICE_BUSY, never internal errors', async () => {
+    const { fromPgError } = await import('../src/common/errors');
+    for (const err of [new Error('timeout exceeded when trying to connect'), { code: '57014' }, { code: '40P01' }, { code: '55P03' }]) {
+      const mapped = fromPgError(err);
+      expect(mapped?.code).toBe('SERVICE_BUSY');
+      expect(mapped?.status).toBe(503);
+    }
+  });
+});

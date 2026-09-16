@@ -24,7 +24,11 @@ export default defineConfig({
       command: 'node apps/api/dist/main.js',
       url: 'http://localhost:4000/api/v1/health',
       reuseExistingServer: false,
-      env: { NODE_ENV: 'test', DATABASE_URL: TEST_DB_APP, API_PORT: '4000', WEB_ORIGIN: 'http://localhost:3000', SESSION_COOKIE_SECURE: 'false' },
+      env: {
+        NODE_ENV: 'test', DATABASE_URL: TEST_DB_APP, API_PORT: '4000', WEB_ORIGIN: 'http://localhost:3000', SESSION_COOKIE_SECURE: 'false',
+        S3_ENDPOINT: 'http://localhost:9000', S3_BUCKET: 'resortos-documents-test', S3_ACCESS_KEY_ID: 'resortos',
+        S3_SECRET_ACCESS_KEY: 'resortos-dev-minio-secret', S3_FORCE_PATH_STYLE: 'true',
+      },
     },
     { command: 'pnpm --filter @resortos/web start', url: 'http://localhost:3000/login', reuseExistingServer: false },
   ],

@@ -18,5 +18,38 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+  # S3-compatible object storage — the same S3 code path as production (spec §52).
+  # For phone testing on the LAN, ops/dev-https/setup-lan.sh places mkcert certificates in
+  # ops/dev-https/certs/minio so MinIO serves HTTPS.
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: resortos-minio
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: resortos
+      MINIO_ROOT_PASSWORD: resortos-dev-minio-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - resortos_minio:/data
+      - ./ops/dev-https/certs/minio:/root/.minio/certs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -skf https://localhost:9000/minio/health/ready || curl -sf http://localhost:9000/minio/health/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # One-shot: private, versioned buckets for development and tests.
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./ops/storage/create-buckets.sh:/create-buckets.sh:ro
+    entrypoint: ["sh", "/create-buckets.sh", "minio:9000"]
+
 volumes:
   resortos_pgdata:
+  resortos_minio:

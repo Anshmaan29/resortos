@@ -67,9 +67,8 @@ jobs:
       - name: Create database roles and test database
         run: PGPASSWORD=migrator_dev_password psql -h localhost -p 5433 -U resortos_migrator -d resortos -v ON_ERROR_STOP=1 -f db/init/01-roles.sql
 
-      - name: Start MinIO (S3-compatible storage)
-        if: hashFiles('db/init/minio-setup.sh') != ''
-        run: bash db/init/minio-setup.sh ci
+      - name: Start MinIO (S3-compatible storage, same code path as production)
+        run: bash ops/ci/minio.sh
 
       - run: pnpm install --frozen-lockfile
 
