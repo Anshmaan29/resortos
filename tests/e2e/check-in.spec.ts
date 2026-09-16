@@ -139,11 +139,14 @@ test('desk check-in with desk uploads, phone scanner (offline and back), signatu
   await phoneCtx.setOffline(false);
   await phone.reload(); // refresh after the network returns: the queued photo is still on the phone
   const guest2Again = phone.locator('section').filter({ has: phone.getByRole('heading', { name: 'Guest 2' }) });
-  await expect(guest2Again.getByRole('status').filter({ hasText: 'Received' }).first()).toBeVisible({ timeout: 30_000 });
+  const slot = (title: RegExp) => guest2Again.locator('div.rounded-lg').filter({ has: phone.getByText(title) }).first();
+  await expect(guest2Again.getByLabel('ID type')).toHaveValue('aadhaar'); // remembered across the refresh
+  await expect(slot(/^ID — front/).getByRole('status')).toHaveText(/Received/, { timeout: 30_000 });
 
   await guest2Again.getByTestId('file-input-id_back').setInputFiles({ name: 'aadhaar-back.jpg', mimeType: 'image/jpeg', buffer: await syntheticCard(phone, 'AADHAAR BACK') });
   await useEditor(phone, { aadhaar: true });
-  await expect(guest2Again.getByRole('status').filter({ hasText: 'Received' })).toHaveCount(2, { timeout: 30_000 });
+  await expect(slot(/^ID — back/).getByRole('status')).toHaveText(/Received/, { timeout: 30_000 });
+  await expect(slot(/^ID — front/).getByRole('status')).toHaveText(/Received/);
   if (process.env.E2E_SCREENSHOTS) {
     await phone.screenshot({ path: `${process.env.E2E_SCREENSHOTS}/phone-page.png`, fullPage: true });
     await page.screenshot({ path: `${process.env.E2E_SCREENSHOTS}/desk-phone-arrived.png` });

@@ -12,7 +12,7 @@ import { sha256Hex } from '@/lib/capture/image';
 import { UploadQueue, type QueueItem, type UploadTransport } from '@/lib/capture/upload-queue';
 
 interface Occupant { key: string; label: string; isChild: boolean; isPrimary: boolean; idType: Exclude<IdType, 'none'> | null }
-interface ServerDoc { id: string; docType: DocumentType; occupantKey: string | null; status: 'pending' | 'verified' | 'failed' | 'orphaned'; failureReason: string | null }
+interface ServerDoc { id: string; docType: DocumentType; idType: Exclude<IdType, 'none'> | null; occupantKey: string | null; status: 'pending' | 'verified' | 'failed' | 'orphaned'; failureReason: string | null }
 
 const ID_LABELS: Record<Exclude<IdType, 'none'>, string> = {
   aadhaar: 'Aadhaar', passport: 'Passport', driving_licence: 'Driving licence', voter_id: 'Voter ID', pan: 'PAN card', other: 'Other ID',
@@ -31,7 +31,12 @@ export default function PhoneCapturePage() {
   const [now, setNow] = useState(Date.now());
   const [online, setOnline] = useState(true);
   const [items, setItems] = useState<QueueItem[]>([]);
-  const [idChoice, setIdChoice] = useState<Record<string, Exclude<IdType, 'none'>>>({});
+  // Remembered on the phone so a refresh never hides the ID slots.
+  const [idChoice, setIdChoice] = useState<Record<string, Exclude<IdType, 'none'>>>(() => {
+    if (typeof window === 'undefined') return {};
+    try { return JSON.parse(localStorage.getItem(`rsos-capture-ids:${token}`) ?? '{}'); } catch { return {}; }
+  });
+  useEffect(() => { localStorage.setItem(`rsos-capture-ids:${token}`, JSON.stringify(idChoice)); }, [idChoice, token]);
   const queueRef = useRef<UploadQueue | null>(null);
 
   const headers = useMemo(() => (secret ? { 'x-capture-device': secret } : undefined), [secret]);
@@ -158,7 +163,9 @@ export default function PhoneCapturePage() {
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />This page can only send photos to the desk. It cannot show guest details.
           </p>
           {adults.map((o) => {
-            const idType = idChoice[o.key] ?? o.idType;
+            const idType = idChoice[o.key] ?? o.idType
+              ?? [...docs].reverse().find((d) => d.occupantKey === o.key && d.idType)?.idType
+              ?? [...items].reverse().find((i) => i.occupantKey === o.key && i.idType)?.idType ?? null;
             const slots: { docType: DocumentType; label: string; hint?: string; show: boolean }[] = [
               { docType: 'guest_photo', label: 'Guest photo', hint: 'Face clearly visible, no hat or sunglasses', show: o.isPrimary },
               { docType: 'id_front', label: 'ID — front', hint: 'Fill the frame with the card', show: !!idType },

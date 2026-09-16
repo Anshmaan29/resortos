@@ -169,7 +169,7 @@ export class CaptureService {
     return {
       expiresAt: s.expires_at,
       occupants: await this.occupantSlots(this.db, s.draft_id),
-      documents: rows.map((d) => ({ id: d.id, docType: d.doc_type, occupantKey: d.occupant_key, status: d.status, failureReason: d.failure_reason })),
+      documents: rows.map((d) => ({ id: d.id, docType: d.doc_type, idType: d.id_type, occupantKey: d.occupant_key, status: d.status, failureReason: d.failure_reason })),
     };
   }
 
