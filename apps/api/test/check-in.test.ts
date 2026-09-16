@@ -292,7 +292,7 @@ describe('resuming uploads', () => {
       .send({ docType: 'guest_photo', occupantKey: 'r0a0', contentType: 'image/jpeg', sizeBytes: bytes.length, sha256: sha(bytes) }).expect(201);
 
     const status = await phone().post(`/api/v1/capture/${session.body.token}/status`).set('x-resortos', '1').set('x-capture-device', dev).expect(200);
-    expect(status.body.documents).toEqual([{ id: req.body.documentId, docType: 'guest_photo', occupantKey: 'r0a0', status: 'pending', failureReason: null }]);
+    expect(status.body.documents).toEqual([{ id: req.body.documentId, docType: 'guest_photo', idType: null, occupantKey: 'r0a0', status: 'pending', failureReason: null }]);
     expect(JSON.stringify(status.body)).not.toContain('Resume');
 
     const fresh = await phone().post(`/api/v1/capture/${session.body.token}/uploads/${req.body.documentId}/grant`).set('x-resortos', '1').set('x-capture-device', dev).expect(200);
