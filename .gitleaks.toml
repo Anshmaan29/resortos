@@ -1,0 +1,16 @@
+# Extends the default gitleaks rules. Allowlisted values are fake local-development credentials
+# that only work against the Docker containers in docker-compose.yml and CI service containers.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Local development and test credentials (not secrets)"
+regexes = [
+  '''migrator_dev_password''',
+  '''app_dev_password''',
+  '''development-only-storage-signing-secret-change-me''',
+  '''resortos-dev-minio-secret''',
+]
+paths = [
+  '''pnpm-lock\.yaml''',
+]
