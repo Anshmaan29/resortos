@@ -26,6 +26,9 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | Check-in blocked while documents are uploading/failed/missing; draft survives refresh; double confirm → one stay | `apps/api/test/check-in.test.ts` |
 | Room shift uses the exclusion constraint; checkout pipeline order; checked-out stay immutable | `apps/api/test/check-in.test.ts` |
 | WCAG AA contrast of every text/surface token pair, both themes | `apps/web/test/contrast.test.ts` |
+| Desk check-in end to end: draft survives refresh, desk uploads through editor, phone scanner (no guest data), Aadhaar masking verified in the stored pixels, offline capture → reload → resume, live arrival on desk, signature, confirm | `tests/e2e/check-in.spec.ts` |
+| Storage enforces type, size, SHA-256 and write-once on pre-signed uploads (MinIO in CI) | `apps/api/test/check-in.test.ts` |
+| Retried document creation returns the same document | `apps/api/test/check-in.test.ts` |
 | DD/MM/YYYY picker, Owner PIN by keyboard, override shown, edit, rebook | `tests/e2e/front-desk.spec.ts` |
 
 ## Not automated (needs real devices)

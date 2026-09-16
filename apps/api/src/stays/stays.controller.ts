@@ -76,6 +76,12 @@ export class StaysController {
     return this.capture.verifyDocument(actor.user.propertyId, parse(zId, id), { draftId: parse(zId, draftId) });
   }
 
+  @Post('check-in-drafts/:draftId/documents/:id/grant')
+  @HttpCode(200)
+  deskGrant(@CurrentActor() actor: Actor, @Param('draftId') draftId: string, @Param('id') id: string) {
+    return this.capture.deskRefreshGrant(actor, parse(zId, draftId), parse(zId, id));
+  }
+
   @Get('documents/:id/view-url')
   viewUrl(@CurrentActor() actor: Actor, @Param('id') id: string) {
     return this.capture.viewUrl(actor, parse(zId, id));
@@ -112,6 +118,20 @@ export class StaysController {
   @Post('capture/:token/uploads')
   phoneUpload(@Param('token') token: string, @Headers('x-capture-device') device: string | undefined, @Body() body: unknown, @Req() req: AppRequest) {
     return this.capture.phoneUploadRequest(parse(zToken, token), device, parse(documentUploadRequestSchema, body), req.header('user-agent') ?? null);
+  }
+
+  @Public()
+  @Post('capture/:token/status')
+  @HttpCode(200)
+  phoneStatus(@Param('token') token: string, @Headers('x-capture-device') device: string | undefined) {
+    return this.capture.phoneStatus(parse(zToken, token), device);
+  }
+
+  @Public()
+  @Post('capture/:token/uploads/:id/grant')
+  @HttpCode(200)
+  phoneGrant(@Param('token') token: string, @Param('id') id: string, @Headers('x-capture-device') device: string | undefined) {
+    return this.capture.phoneRefreshGrant(parse(zToken, token), device, parse(zId, id));
   }
 
   @Public()

@@ -96,9 +96,16 @@ operations and stays compliant; the system is hardened for a pilot.
 | 1.5 | Property & rates | ✅ Done (API) — rooms, derived occupancy, status history, out-of-order, meal plans, rate calendar, occupancy pricing, dated tax rules + GST estimate. Pending: owner settings screens. |
 | 1.6 | Guests & reservations | ✅ Done — create / edit / cancel / rebook through one validation + authorisation path, groups, per-night agreed rates, availability, exclusion constraint + type-inventory lock, owner override history. Pending: guest merge; no-show runs in night audit (Phase 2). |
 | 1.7 | Web app & design system | ✅ Done — tokens meet WCAG AA in light and dark (automated test), own DD/MM/YYYY date picker, Owner PIN pad with keyboard support, booking form (create / edit / rebook) with GST estimate, booking detail with override record and check-in readiness, calendar, room board. Pending: calendar drag-to-move, Ctrl+K search, settings screens, Storybook. |
-| 1.8 | Check-in / room shift / checkout | 🟡 In progress — **API done and tested**: check-in drafts (resume after refresh), phone-scanner sessions (single-use QR, 10 min, upload-only, device-bound), pre-signed S3 uploads (MinIO in development/CI) bound to type, size and SHA-256, write-once, then re-hashed by the server, confirm check-in (occupants, vehicles, required verified documents, consent, room assignment in-flow), room shift, checkout as status change with `CHECKOUT_STEPS` extension points. **Pending:** check-in wizard UI, phone capture page (camera, edge detection, Aadhaar masking, IndexedDB upload queue), signature pad, GRC PDF, real-device test matrix (`docs/phone-testing.md`). |
+| 1.8 | Check-in / room shift / checkout | 🟡 In progress on branch `milestone-1.8-check-in`. ✅ API (drafts, phone scanner, S3 verified uploads, confirm, room shift, checkout pipeline). ✅ Step 1 desk check-in screens (guests, room assignment in-flow, documents, registration & signature, confirm; autosave). ✅ Step 2 phone camera page (native camera first, live preview, edge detection + manual corners, blur/brightness, Aadhaar masking on device, ≤2000 px JPEG without EXIF, IndexedDB queue with resume) — **awaiting real-device tests** (`docs/phone-testing.md`). ⏳ Step 3 GRC PDF with SHA-256. ⏳ Step 4 room shift and checkout screens. |
 
 Test suite (all against real PostgreSQL, no database mocks): see `docs/testing.md`.
+
+### Before the pilot (after 1.8, before Phase 2 is finished) — in this order
+
+1. Owner settings screens: rooms, room types, rate plans, meal plans, minimum rates, receptionist limits
+2. Quick PIN switching between staff on shared desk computers
+3. Authenticator-app 2FA for owner accounts
+4. Calendar drag-to-move (lowest priority)
 
 ### Phase 2 — not started
 ### Phase 3 — not started

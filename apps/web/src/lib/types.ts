@@ -31,7 +31,8 @@ export interface ReservationDetail {
   overrides: { action: string; description: string; at: string; performedBy: string; authorisedBy: string; authorisedByRole: string }[];
   rebookedFrom: { id: string; number: string } | null;
   rebookedAs: { id: string; number: string; status: ReservationStatus }[];
-  checkIn: { ready: boolean; blockers: string[] };
+  checkIn: { ready: boolean; blockers: string[]; notes: string[] };
+  stays: { id: string; roomNumber: string; status: 'in_house' | 'checked_out' }[];
   canEdit: boolean; canRebook: boolean; businessDate: string;
   cancelledAt: string | null; cancelReason: string | null; cancelNote: string | null; createdAt: string; createdBy: string | null; version: number;
 }

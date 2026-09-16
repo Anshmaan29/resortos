@@ -34,3 +34,9 @@ apps/api/uploads/
 test-results/
 playwright-report/
 blob-report/
+
+# Generated vendor assets
+apps/web/public/vendor/
+
+# Generated LAN HTTPS overrides
+.env.lan

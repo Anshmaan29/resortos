@@ -139,14 +139,7 @@ export class CaptureService {
         userId: s.created_by, action: 'capture_session.claimed', entityType: 'check_in_draft', entityId: s.draft_id,
         after: { sessionId: s.id, device: userAgent?.slice(0, 120) ?? null },
       });
-      const draft = await q.query<Pick<CheckInDraftRow, 'data'>>(`SELECT data FROM check_in_drafts WHERE id = $1`, [s.draft_id]);
-      // Only neutral slot labels go to the phone — never names, mobile numbers, room or booking details.
-      const data = (draft.rows[0]?.data ?? {}) as { rooms?: { occupants?: { key: string; isChild?: boolean }[] }[] };
-      let adult = 0;
-      let child = 0;
-      const occupants = (data.rooms ?? []).flatMap((r) => r.occupants ?? []).map((o) => ({
-        key: o.key, label: o.isChild ? `Child ${++child}` : `Guest ${++adult}`,
-      }));
+      const occupants = await this.occupantSlots(q, s.draft_id);
       return { deviceSecret: secret, expiresAt: s.expires_at, occupants };
     });
   }
@@ -169,6 +162,48 @@ export class CaptureService {
     });
   }
 
+  /** Lets the phone page resume after a refresh: session state and this session's documents only. */
+  async phoneStatus(token: string, deviceSecret: string | undefined) {
+    const s = await this.phoneSession(this.db, token, deviceSecret);
+    const { rows } = await this.db.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE capture_session_id = $1 ORDER BY created_at`, [s.id]);
+    return {
+      expiresAt: s.expires_at,
+      occupants: await this.occupantSlots(this.db, s.draft_id),
+      documents: rows.map((d) => ({ id: d.id, docType: d.doc_type, occupantKey: d.occupant_key, status: d.status, failureReason: d.failure_reason })),
+    };
+  }
+
+  /** A fresh pre-signed URL for the same pending document (the previous one expired or the network dropped). */
+  async phoneRefreshGrant(token: string, deviceSecret: string | undefined, documentId: string) {
+    const s = await this.phoneSession(this.db, token, deviceSecret);
+    return this.refreshGrant(s.property_id, documentId, { captureSessionId: s.id });
+  }
+
+  async deskRefreshGrant(actor: Actor, draftId: string, documentId: string) {
+    await this.activeDraft(this.db, actor.user.propertyId, draftId);
+    return this.refreshGrant(actor.user.propertyId, documentId, { draftId });
+  }
+
+  private async refreshGrant(propertyId: string, documentId: string, scope: { captureSessionId?: string; draftId?: string }) {
+    const { rows } = await this.db.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE id = $1 AND property_id = $2`, [documentId, propertyId]);
+    const d = rows[0];
+    if (!d || (scope.captureSessionId && d.capture_session_id !== scope.captureSessionId) || (scope.draftId && d.draft_id !== scope.draftId)) throw notFound('Document');
+    if (d.status !== 'pending') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This document is already processed.', { status: d.status });
+    return { documentId: d.id, upload: await this.storage.uploadGrant(d.storage_key, d.content_type, d.size_bytes, d.sha256.toString('hex')) };
+  }
+
+  private async occupantSlots(q: Queryable, draftId: string) {
+    const draft = await q.query<Pick<CheckInDraftRow, 'data'>>(`SELECT data FROM check_in_drafts WHERE id = $1`, [draftId]);
+    // Only neutral slot labels go to the phone — never names, mobile numbers, room or booking details.
+    const data = (draft.rows[0]?.data ?? {}) as { rooms?: { occupants?: { key: string; isChild?: boolean; isPrimary?: boolean; idType?: string }[] }[] };
+    let adult = 0;
+    let child = 0;
+    return (data.rooms ?? []).flatMap((r) => r.occupants ?? []).map((o) => ({
+      key: o.key, label: o.isChild ? `Child ${++child}` : `Guest ${++adult}`, isChild: !!o.isChild, isPrimary: !!o.isPrimary,
+      idType: o.idType && o.idType !== 'none' ? o.idType : null,
+    }));
+  }
+
   async phoneConfirm(token: string, deviceSecret: string | undefined, documentId: string) {
     const s = await this.phoneSession(this.db, token, deviceSecret);
     const doc = await this.verifyDocument(s.property_id, documentId, { captureSessionId: s.id });
@@ -182,12 +217,25 @@ export class CaptureService {
     const key = this.storage.newKey(propertyId);
     const { rows } = await q.query<IdRow>(
       `INSERT INTO guest_documents (property_id, draft_id, occupant_key, doc_type, id_type, masked_on_device, storage_key, content_type, size_bytes, sha256,
-                                    source, capture_session_id, uploaded_by, device)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+                                    source, capture_session_id, uploaded_by, device, client_upload_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       ON CONFLICT (draft_id, client_upload_id) WHERE client_upload_id IS NOT NULL DO NOTHING
+       RETURNING id`,
       [propertyId, draftId, req.occupantKey ?? null, req.docType, req.idType ?? null, req.maskedOnDevice, key, req.contentType, req.sizeBytes,
-        Buffer.from(req.sha256, 'hex'), by.source, by.sessionId, by.uploadedBy, by.device?.slice(0, 120) ?? null],
+        Buffer.from(req.sha256, 'hex'), by.source, by.sessionId, by.uploadedBy, by.device?.slice(0, 120) ?? null, req.clientUploadId ?? null],
     );
-    return { documentId: rows[0]!.id, upload: await this.storage.uploadGrant(key, req.contentType, req.sizeBytes, req.sha256) };
+    if (rows[0]) return { documentId: rows[0].id, upload: await this.storage.uploadGrant(key, req.contentType, req.sizeBytes, req.sha256) };
+
+    // Retry of an upload the server already knows: same document, same declared bytes.
+    const { rows: existing } = await q.query<GuestDocumentRow>(
+      `SELECT * FROM guest_documents WHERE draft_id = $1 AND client_upload_id = $2`, [draftId, req.clientUploadId],
+    );
+    const d = existing[0]!;
+    if (d.sha256.toString('hex') !== req.sha256 || d.size_bytes !== req.sizeBytes || d.doc_type !== req.docType || (by.sessionId && d.capture_session_id !== by.sessionId)) {
+      throw new AppError(ERROR_CODES.IDEMPOTENCY_MISMATCH, 'This upload id was already used for a different photo.');
+    }
+    if (d.status !== 'pending') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This document is already processed.', { status: d.status, documentId: d.id });
+    return { documentId: d.id, upload: await this.storage.uploadGrant(d.storage_key, d.content_type, d.size_bytes, req.sha256) };
   }
 
   /**
