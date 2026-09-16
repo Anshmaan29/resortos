@@ -31,7 +31,8 @@ export class DbService implements OnModuleDestroy {
       connectionString: config.DATABASE_URL,
       max: 20,
       idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 5_000,
+      // Waiting for a free connection during a burst; beyond this the request fails as SERVICE_BUSY (503).
+      connectionTimeoutMillis: 10_000,
       statement_timeout: 15_000,
       application_name: 'resortos-api',
     });

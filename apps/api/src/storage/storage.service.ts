@@ -1,16 +1,14 @@
-import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, rename, rm, stat } from 'node:fs/promises';
-import { dirname, isAbsolute, resolve, sep } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
-import { Inject, Injectable } from '@nestjs/common';
-import { ERROR_CODES } from '@resortos/shared';
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client, S3ServiceException } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { Inject, Injectable, type OnModuleDestroy } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config';
-import { AppError } from '../common/errors';
 
 export interface UploadGrant {
   method: 'PUT';
   url: string;
+  /** Must be sent exactly; they are part of the signature. */
   headers: Record<string, string>;
   expiresAt: Date;
 }
@@ -20,19 +18,39 @@ export interface VerifyResult {
   reason?: 'not_received' | 'size_mismatch' | 'checksum_mismatch';
 }
 
+const UPLOAD_SECONDS = 600;
+const VIEW_SECONDS = 60;
+
 /**
- * Object storage behind one interface (spec §7, §52). Development uses local disk with HMAC-signed,
- * short-lived URLs. Production uses a private, versioned, replicated S3 bucket (adapter pending).
+ * Object storage through the S3 API only (spec §7, §52) — MinIO in development and CI,
+ * a private, versioned, replicated S3 bucket in production. One code path everywhere.
  *
- * Nothing is trusted from the client: after upload the server re-reads the stored bytes and
- * checks size and SHA-256 before a document can count as received (spec §19.5).
+ * Uploads: pre-signed PUT that binds content type, length and SHA-256 checksum, and refuses to
+ * overwrite (If-None-Match: *). The storage service itself rejects bytes whose checksum differs.
+ * Verification: before a document counts as received, this server downloads the stored object and
+ * re-hashes it (spec §19.5) — it does not trust the client or a metadata field.
  */
 @Injectable()
-export class StorageService {
-  private readonly root: string;
+export class StorageService implements OnModuleDestroy {
+  private readonly internal: S3Client;
+  private readonly presigner: S3Client;
+  private readonly bucket: string;
 
-  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {
-    this.root = isAbsolute(config.STORAGE_DIR) ? config.STORAGE_DIR : resolve(process.cwd(), config.STORAGE_DIR);
+  constructor(@Inject(APP_CONFIG) config: AppConfig) {
+    const base = {
+      region: config.S3_REGION,
+      forcePathStyle: config.S3_FORCE_PATH_STYLE,
+      credentials: config.S3_ACCESS_KEY_ID && config.S3_SECRET_ACCESS_KEY
+        ? { accessKeyId: config.S3_ACCESS_KEY_ID, secretAccessKey: config.S3_SECRET_ACCESS_KEY }
+        : undefined,
+      // Checksums are declared explicitly per upload; do not add SDK-default CRC32 parameters to URLs.
+      requestChecksumCalculation: 'WHEN_REQUIRED' as const,
+      responseChecksumValidation: 'WHEN_REQUIRED' as const,
+    };
+    this.internal = new S3Client({ ...base, endpoint: config.S3_ENDPOINT });
+    // Browsers and phones must reach the signed host directly (e.g. https://<lan-ip>:9000 in development).
+    this.presigner = new S3Client({ ...base, endpoint: config.S3_PUBLIC_ENDPOINT ?? config.S3_ENDPOINT });
+    this.bucket = config.S3_BUCKET;
   }
 
   newKey(propertyId: string): string {
@@ -40,101 +58,58 @@ export class StorageService {
     return `${propertyId}/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${randomUUID()}`;
   }
 
-  private path(key: string): string {
-    if (!/^[0-9a-f-]{36}\/\d{4}\/\d{2}\/[0-9a-f-]{36}$/.test(key)) throw new AppError(ERROR_CODES.VALIDATION, 'Invalid storage key.');
-    const full = resolve(this.root, key);
-    if (!full.startsWith(this.root + sep)) throw new AppError(ERROR_CODES.FORBIDDEN, 'Invalid storage key.');
-    return full;
+  async uploadGrant(key: string, contentType: string, sizeBytes: number, sha256Hex: string): Promise<UploadGrant> {
+    const checksum = Buffer.from(sha256Hex, 'hex').toString('base64');
+    const command = new PutObjectCommand({
+      Bucket: this.bucket, Key: key, ContentType: contentType, ContentLength: sizeBytes, ChecksumSHA256: checksum, IfNoneMatch: '*',
+    });
+    const url = await getSignedUrl(this.presigner, command, {
+      expiresIn: UPLOAD_SECONDS,
+      signableHeaders: new Set(['content-type', 'content-length', 'x-amz-checksum-sha256', 'if-none-match']),
+      unhoistableHeaders: new Set(['x-amz-checksum-sha256', 'if-none-match']),
+    });
+    return {
+      method: 'PUT',
+      url,
+      headers: { 'content-type': contentType, 'x-amz-checksum-sha256': checksum, 'if-none-match': '*' },
+      expiresAt: new Date(Date.now() + UPLOAD_SECONDS * 1000),
+    };
   }
 
-  private sign(parts: (string | number)[]): string {
-    return createHmac('sha256', this.config.STORAGE_SIGNING_SECRET).update(parts.join('|')).digest('base64url');
+  async verify(key: string, sizeBytes: number, sha256: Buffer): Promise<VerifyResult> {
+    try {
+      const head = await this.internal.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      if (head.ContentLength !== sizeBytes) return { ok: false, reason: 'size_mismatch' };
+      const object = await this.internal.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      const hash = createHash('sha256');
+      for await (const chunk of object.Body as Readable) hash.update(chunk as Buffer);
+      return hash.digest().equals(sha256) ? { ok: true } : { ok: false, reason: 'checksum_mismatch' };
+    } catch (err) {
+      if (err instanceof S3ServiceException && (err.name === 'NotFound' || err.name === 'NoSuchKey' || err.$metadata.httpStatusCode === 404)) {
+        return { ok: false, reason: 'not_received' };
+      }
+      throw err;
+    }
   }
 
-  private checkSignature(expected: string, given: unknown) {
-    if (typeof given !== 'string') return false;
-    const a = Buffer.from(expected);
-    const b = Buffer.from(given);
-    return a.length === b.length && timingSafeEqual(a, b);
+  /** Short-lived signed view URL (spec §19.7). */
+  async viewUrl(key: string, contentType: string): Promise<{ url: string; expiresAt: Date }> {
+    const url = await getSignedUrl(this.presigner, new GetObjectCommand({
+      Bucket: this.bucket, Key: key, ResponseContentType: contentType, ResponseCacheControl: 'private, no-store', ResponseContentDisposition: 'inline',
+    }), { expiresIn: VIEW_SECONDS });
+    return { url, expiresAt: new Date(Date.now() + VIEW_SECONDS * 1000) };
   }
 
-  uploadGrant(key: string, contentType: string, sizeBytes: number, expiresInSeconds = 600): UploadGrant {
-    const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
-    const sig = this.sign(['PUT', key, exp, sizeBytes, contentType]);
-    const qs = new URLSearchParams({ key, exp: String(exp), size: String(sizeBytes), type: contentType, sig });
-    return { method: 'PUT', url: `/api/v1/storage/upload?${qs}`, headers: { 'content-type': contentType }, expiresAt: new Date(exp * 1000) };
-  }
-
-  /** Streams an upload to disk. Write-once: an existing object is never overwritten. */
-  async receiveUpload(query: Record<string, unknown>, contentType: string | undefined, body: Readable): Promise<{ sizeBytes: number }> {
-    const key = String(query.key ?? '');
-    const exp = Number(query.exp);
-    const size = Number(query.size);
-    const type = String(query.type ?? '');
-    const forbidden = new AppError(ERROR_CODES.FORBIDDEN, 'This upload link is not valid. Please capture the document again.');
-    if (!this.checkSignature(this.sign(['PUT', key, exp, size, type]), query.sig)) throw forbidden;
-    if (!Number.isFinite(exp) || exp * 1000 < Date.now()) throw new AppError(ERROR_CODES.FORBIDDEN, 'This upload link has expired. Please try again.');
-    if (contentType?.split(';')[0]?.trim() !== type) throw new AppError(ERROR_CODES.VALIDATION, 'The file type does not match the upload request.');
-
-    const target = this.path(key);
-    if (await stat(target).then(() => true, () => false)) throw new AppError(ERROR_CODES.CONFLICT, 'This document was already uploaded.');
-    await mkdir(dirname(target), { recursive: true });
-    const temp = `${target}.${randomUUID()}.part`;
-    let received = 0;
-    await new Promise<void>((ok, fail) => {
-      const out = createWriteStream(temp, { flags: 'wx' });
-      body.on('data', (chunk: Buffer) => {
-        received += chunk.length;
-        if (received > size) {
-          body.destroy();
-          out.destroy();
-          fail(new AppError(ERROR_CODES.VALIDATION, 'The file is larger than declared.'));
-        }
-      });
-      body.on('error', fail);
-      out.on('error', fail);
-      out.on('finish', ok);
-      body.pipe(out);
-    }).catch(async (err) => {
-      await rm(temp, { force: true });
+  /** Readiness check for /health/storage. */
+  async ping(): Promise<void> {
+    await this.internal.send(new HeadObjectCommand({ Bucket: this.bucket, Key: '__health__' })).catch((err: unknown) => {
+      if (err instanceof S3ServiceException && err.$metadata.httpStatusCode === 404) return;
       throw err;
     });
-    await rename(temp, target);
-    return { sizeBytes: received };
   }
 
-  /** Server-side verification: re-hash what is actually stored. */
-  async verify(key: string, sizeBytes: number, sha256: Buffer): Promise<VerifyResult> {
-    const target = this.path(key);
-    const info = await stat(target).catch(() => null);
-    if (!info) return { ok: false, reason: 'not_received' };
-    if (info.size !== sizeBytes) return { ok: false, reason: 'size_mismatch' };
-    const digest = await new Promise<Buffer>((ok, fail) => {
-      const hash = createHash('sha256');
-      createReadStream(target).on('data', (c) => hash.update(c)).on('end', () => ok(hash.digest())).on('error', fail);
-    });
-    return digest.equals(sha256) ? { ok: true } : { ok: false, reason: 'checksum_mismatch' };
-  }
-
-  /** Short-lived signed view URL (spec §19.7: e.g. 60 seconds). */
-  viewUrl(key: string, contentType: string, expiresInSeconds = 60): { url: string; expiresAt: Date } {
-    const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
-    const sig = this.sign(['GET', key, exp, contentType]);
-    return { url: `/api/v1/storage/object?${new URLSearchParams({ key, exp: String(exp), type: contentType, sig })}`, expiresAt: new Date(exp * 1000) };
-  }
-
-  openForView(query: Record<string, unknown>): { stream: Readable; contentType: string } {
-    const key = String(query.key ?? '');
-    const exp = Number(query.exp);
-    const type = String(query.type ?? '');
-    if (!this.checkSignature(this.sign(['GET', key, exp, type]), query.sig) || !Number.isFinite(exp) || exp * 1000 < Date.now()) {
-      throw new AppError(ERROR_CODES.FORBIDDEN, 'This link has expired.');
-    }
-    return { stream: createReadStream(this.path(key)), contentType: type };
-  }
-
-  get rootDir() {
-    return this.root;
+  onModuleDestroy() {
+    this.internal.destroy();
+    this.presigner.destroy();
   }
 }
-

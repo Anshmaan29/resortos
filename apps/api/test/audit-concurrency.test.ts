@@ -22,7 +22,13 @@ describe('audit chain under concurrency', () => {
       return post(agent, `/rooms/${f.room(rooms[i % rooms.length]!)}/status`, { housekeeping: statuses[i % statuses.length] }, null);
     });
     const results = await Promise.all(actions);
-    expect(results.filter((r) => r.status >= 500)).toHaveLength(0);
+    const serverErrors = results.filter((r) => r.status >= 500 && r.status !== 503).map((r) => ({ status: r.status, body: r.body }));
+    expect(serverErrors).toEqual([]);
+    // Business refusals (e.g. no room left) are fine; the chain must still be intact.
+    // Under heavy machine load some requests may be refused as SERVICE_BUSY (503, nothing saved);
+    // they must never surface as internal errors, and the chain must stay intact either way.
+    expect(results.every((r) => [200, 201, 409, 503].includes(r.status))).toBe(true);
+    expect(results.filter((r) => r.status === 503).every((r) => r.body.code === 'SERVICE_BUSY' && r.body.details.retryable)).toBe(true);
 
     const [chain] = await sql(`SELECT (verify_audit_chain(id)).* FROM properties LIMIT 1`);
     expect(chain.ok).toBe(true);

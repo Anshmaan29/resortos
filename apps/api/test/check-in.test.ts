@@ -24,15 +24,17 @@ const jpeg = (n = 2048) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 const phone = () => request(app.getHttpServer());
 
-function putFile(grant: { url: string; headers: Record<string, string> }, bytes: Buffer) {
-  return phone().put(grant.url).set('x-resortos', '1').set(grant.headers).send(bytes);
+/** Uploads straight to S3 (MinIO) with the pre-signed URL, exactly as a browser or phone does. */
+async function putFile(grant: { url: string; headers: Record<string, string> }, bytes: Buffer, headers: Record<string, string> = {}) {
+  const res = await fetch(grant.url, { method: 'PUT', headers: { ...grant.headers, ...headers }, body: bytes });
+  return { status: res.status, code: (await res.text()).match(/<Code>(\w+)<\/Code>/)?.[1] };
 }
 
 async function deskDocument(draftId: string, docType: string, extra: Record<string, unknown> = {}, bytes = jpeg()) {
   const res = await post(desk, `/check-in-drafts/${draftId}/documents`, {
     source: docType === 'signature' ? 'signature_pad' : 'desk_camera', docType, contentType: 'image/jpeg', sizeBytes: bytes.length, sha256: sha(bytes), ...extra,
   }, null).expect(201);
-  await putFile(res.body.upload, bytes).expect(201);
+  expect((await putFile(res.body.upload, bytes)).status).toBe(200);
   const confirmed = await post(desk, `/check-in-drafts/${draftId}/documents/${res.body.documentId}/confirm`, {}, null).expect(200);
   return confirmed.body;
 }
@@ -112,11 +114,13 @@ describe('phone as scanner (spec §19.2)', () => {
     const pending = await desk.get(`/api/v1/check-in-drafts/${draft.id}`).expect(200);
     expect(pending.body.problems.map((p: any) => p.message)).toContain("Meera Joshi's ID (front) is still uploading");
 
-    const tampered = req.body.upload.url.replace(/size=\d+/, 'size=999999');
-    expect((await phone().put(tampered).set('x-resortos', '1').set('content-type', 'image/jpeg').send(bytes)).status).toBe(403);
+    // The signature binds type, size and checksum; storage enforces them.
+    expect(await putFile(req.body.upload, bytes, { 'content-type': 'image/png' })).toMatchObject({ status: 403, code: 'SignatureDoesNotMatch' });
+    expect(await putFile(req.body.upload, Buffer.concat([bytes, Buffer.from('extra')]))).toMatchObject({ status: 403 });
+    expect((await putFile({ ...req.body.upload, url: req.body.upload.url.replace(/X-Amz-Signature=\w+/, 'X-Amz-Signature=' + '0'.repeat(64)) }, bytes)).status).toBe(403);
 
-    await putFile(req.body.upload, bytes).expect(201);
-    expect((await putFile(req.body.upload, jpeg())).status).toBe(409); // write-once
+    expect((await putFile(req.body.upload, bytes)).status).toBe(200);
+    expect(await putFile(req.body.upload, bytes)).toMatchObject({ status: 412, code: 'PreconditionFailed' }); // write-once
 
     const ok = await phone().post(`/api/v1/capture/${token}/uploads/${req.body.documentId}/confirm`).set('x-resortos', '1').set('x-capture-device', deviceSecret).expect(200);
     expect(ok.body.status).toBe('verified');
@@ -124,15 +128,17 @@ describe('phone as scanner (spec §19.2)', () => {
     expect(session.files_received).toBe(1);
   });
 
-  it('bytes that do not match the declared checksum are marked failed', async () => {
+  it('bytes that do not match the declared checksum are refused by storage and never count as received', async () => {
     const declared = jpeg(1000);
     const actual = Buffer.from(declared);
     actual[500] = actual[500]! ^ 0xff; // one flipped byte, same size
     const req = await phone().post(`/api/v1/capture/${token}/uploads`).set('x-resortos', '1').set('x-capture-device', deviceSecret)
       .send({ docType: 'id_back', idType: 'driving_licence', occupantKey: 'r0a0', contentType: 'image/jpeg', sizeBytes: declared.length, sha256: sha(declared) }).expect(201);
-    await putFile(req.body.upload, actual).expect(201);
-    const res = await phone().post(`/api/v1/capture/${token}/uploads/${req.body.documentId}/confirm`).set('x-resortos', '1').set('x-capture-device', deviceSecret).expect(200);
-    expect(res.body).toMatchObject({ status: 'failed', failureReason: 'checksum_mismatch' });
+    expect(await putFile(req.body.upload, actual)).toMatchObject({ status: 400, code: 'XAmzContentChecksumMismatch' });
+    const res = await phone().post(`/api/v1/capture/${token}/uploads/${req.body.documentId}/confirm`).set('x-resortos', '1').set('x-capture-device', deviceSecret);
+    expect(res.status).toBe(409);
+    const [doc] = await sql(`SELECT status FROM guest_documents WHERE id = $1`, [req.body.documentId]);
+    expect(doc.status).toBe('pending');
   });
 
   it('Aadhaar images must be masked on the device (API and database)', async () => {
@@ -172,7 +178,7 @@ describe('confirm check-in (spec §18.3, §19.6)', () => {
     expect(res.status).toBe(400);
     const messages = res.body.details.problems.map((p: any) => p.message);
     expect(messages).toEqual(expect.arrayContaining([
-      "Meera Joshi's ID (back) failed to upload — capture it again",
+      "Meera Joshi's ID (back) is still uploading",
       "Arjun Joshi's ID (front) is missing",
       'guest photo of Meera Joshi is missing',
       'Guest signature is missing',
@@ -217,9 +223,11 @@ describe('confirm check-in (spec §18.3, §19.6)', () => {
     const doc = stay.body.documents.find((d: any) => d.docType === 'guest_photo');
     const link = await desk.get(`/api/v1/documents/${doc.id}/view-url`).expect(200);
     expect(new Date(link.body.expiresAt).getTime() - Date.now()).toBeLessThanOrEqual(61_000);
-    const file = await phone().get(link.body.url).expect(200);
-    expect(file.headers['cache-control']).toBe('private, no-store');
-    expect((await phone().get(link.body.url.replace(/sig=[^&]+/, 'sig=forged'))).status).toBe(403);
+    const file = await fetch(link.body.url);
+    expect(file.status).toBe(200);
+    expect(file.headers.get('cache-control')).toBe('private, no-store');
+    expect((await fetch(link.body.url.replace(/X-Amz-Signature=\w+/, 'X-Amz-Signature=' + 'f'.repeat(64)))).status).toBe(403);
+    expect((await fetch(link.body.url.replace(/X-Amz-Expires=\d+/, 'X-Amz-Expires=86400'))).status).toBe(403);
     const [log] = await sql(`SELECT count(*)::int AS n FROM document_access_log WHERE document_id = $1`, [doc.id]);
     expect(log.n).toBe(1);
   });

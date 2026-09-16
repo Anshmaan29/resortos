@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "db:up": "docker compose up -d --wait postgres",
+    "db:up": "docker compose up -d --wait postgres minio && docker compose run --rm minio-init",
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @resortos/api migrate",
     "db:seed": "pnpm --filter @resortos/api seed",

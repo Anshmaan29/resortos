@@ -16,6 +16,7 @@ const STATUS: Record<ErrorCode, number> = {
   IDEMPOTENCY_MISMATCH: 422,
   INVALID_TRANSITION: 409,
   RATE_LIMITED: 429,
+  SERVICE_BUSY: 503,
   INTERNAL_ERROR: 500,
 };
 
@@ -39,6 +40,11 @@ interface PgError { code?: string; constraint?: string; message?: string }
 /** Translates database guard failures into messages staff can act on. */
 export function fromPgError(err: unknown): AppError | null {
   const e = err as PgError;
+  // Pool exhausted or query cancelled by statement_timeout: nothing was committed, and every
+  // mutation carries an idempotency key, so retrying is safe.
+  if (e && (e.message === 'timeout exceeded when trying to connect' || e.code === '57014' || e.code === '40P01' || e.code === '55P03')) {
+    return new AppError(ERROR_CODES.SERVICE_BUSY, 'The system is busy right now. Nothing was saved — please try again.', { retryable: true });
+  }
   if (!e || typeof e.code !== 'string') return null;
   switch (e.code) {
     case '23P01': // exclusion_violation

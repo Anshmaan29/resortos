@@ -10,9 +10,15 @@ const envSchema = z.object({
   SESSION_HOURS_DEFAULT: z.coerce.number().int().min(1).max(24).default(8),
   /** Public URL of the web app, used in phone-scanner QR codes (a LAN HTTPS address or tunnel in development). */
   PUBLIC_WEB_URL: z.string().url().optional(),
-  STORAGE_DRIVER: z.enum(['local']).default('local'),
-  STORAGE_DIR: z.string().min(1).default('storage'),
-  STORAGE_SIGNING_SECRET: z.string().min(32).default('development-only-storage-signing-secret-change-me'),
+  /** S3 API endpoint used by the server (omit for AWS). Development: http://localhost:9000 (MinIO). */
+  S3_ENDPOINT: z.string().url().optional(),
+  /** Endpoint written into pre-signed URLs; must be reachable by browsers and phones. Defaults to S3_ENDPOINT. */
+  S3_PUBLIC_ENDPOINT: z.string().url().optional(),
+  S3_REGION: z.string().default('ap-south-1'),
+  S3_BUCKET: z.string().min(3),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
@@ -27,11 +33,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (parsed.data.NODE_ENV === 'production' && !parsed.data.SESSION_COOKIE_SECURE) {
     throw new Error('SESSION_COOKIE_SECURE must be true in production');
   }
-  if (parsed.data.NODE_ENV === 'production' && parsed.data.STORAGE_SIGNING_SECRET.startsWith('development-only')) {
-    throw new Error('STORAGE_SIGNING_SECRET must be set in production');
-  }
-  if (parsed.data.NODE_ENV === 'production' && parsed.data.STORAGE_DRIVER === 'local') {
-    throw new Error('Local disk storage is for development only; production requires private, versioned, replicated object storage (spec §52)');
+  if (parsed.data.NODE_ENV === 'production' && (parsed.data.S3_BUCKET.includes('-dev') || parsed.data.S3_BUCKET.includes('-test'))) {
+    throw new Error('Production must use the production document bucket');
   }
   return parsed.data;
 }
