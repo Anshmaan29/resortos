@@ -21,6 +21,7 @@ interface RequestOptions {
   idempotencyKey?: string;
   query?: Record<string, string | number | undefined | null>;
   signal?: AbortSignal;
+  headers?: Record<string, string>;
 }
 
 /**
@@ -31,7 +32,7 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
   const qs = opts.query
     ? '?' + new URLSearchParams(Object.entries(opts.query).filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => [k, String(v)])).toString()
     : '';
-  const headers: Record<string, string> = { 'x-resortos': '1' };
+  const headers: Record<string, string> = { 'x-resortos': '1', ...opts.headers };
   if (opts.body !== undefined) headers['content-type'] = 'application/json';
   if (opts.idempotencyKey) headers['idempotency-key'] = opts.idempotencyKey;
 

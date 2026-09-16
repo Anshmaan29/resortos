@@ -552,6 +552,9 @@ export class ReservationsService {
       this.property.businessDate(q, propertyId),
     ]);
 
+    const stayRows = await q.query<{ id: string; room_number: string; status: string }>(
+      `SELECT s.id, rm.number AS room_number, s.status FROM stays s JOIN rooms rm ON rm.id = s.room_id WHERE s.reservation_id = $1 ORDER BY s.checked_in_at`, [id],
+    );
     const nightsByRoom = await q.query<NightRow>(
       `SELECT * FROM reservation_room_nights WHERE reservation_room_id = ANY($1::uuid[])`, [roomRows.rows.map((x) => x.id)],
     );
@@ -568,12 +571,15 @@ export class ReservationsService {
 
     // Why check-in is (not yet) possible, in words for the front desk.
     const checkInBlockers: string[] = [];
+    const checkInNotes: string[] = [];
+    const waiting = rooms.filter((x) => x.status === 'reserved');
     if (r.status === 'tentative') checkInBlockers.push('Confirm the booking first');
-    if (['tentative', 'confirmed'].includes(r.status)) {
+    if (['tentative', 'confirmed', 'checked_in'].includes(r.status) && waiting.length) {
       if (r.arrival > bd) checkInBlockers.push(`Check-in opens on the arrival day, ${formatDate(r.arrival)}`);
       if (r.departure <= bd) checkInBlockers.push('The stay dates have already passed');
-      const unassigned = rooms.filter((x) => x.status === 'reserved' && !x.roomId).length;
-      if (unassigned) checkInBlockers.push(unassigned === 1 && rooms.length === 1 ? 'Assign a room first' : `Assign rooms first (${unassigned} not assigned)`);
+      const unassigned = waiting.filter((x) => !x.roomId).length;
+      // Rooms can be assigned inside the check-in screens, so this does not block.
+      if (unassigned) checkInNotes.push(unassigned === 1 && rooms.length === 1 ? 'Assign a room first — you can do this during check-in' : `${unassigned} room(s) not assigned yet — you can assign them during check-in`);
     }
 
     const rebookedFrom = related.rows.find((x) => x.relation === 'from');
@@ -591,7 +597,12 @@ export class ReservationsService {
       })),
       rebookedFrom: rebookedFrom ? { id: rebookedFrom.id, number: rebookedFrom.number } : null,
       rebookedAs: related.rows.filter((x) => x.relation === 'as').map((x) => ({ id: x.id, number: x.number, status: x.status })),
-      checkIn: { ready: r.status === 'confirmed' && checkInBlockers.length === 0, blockers: checkInBlockers },
+      checkIn: {
+        ready: ['confirmed', 'checked_in'].includes(r.status) && waiting.length > 0 && checkInBlockers.length === 0,
+        blockers: checkInBlockers,
+        notes: checkInNotes,
+      },
+      stays: stayRows.rows.map((x) => ({ id: x.id, roomNumber: x.room_number, status: x.status })),
       canEdit: ['tentative', 'confirmed'].includes(r.status),
       canRebook: ['cancelled', 'no_show'].includes(r.status),
       businessDate: bd,

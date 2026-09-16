@@ -1,8 +1,8 @@
 'use client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, BedDouble, CalendarCheck, CheckCircle2, CircleAlert, Crown, Pencil, Phone, RotateCcw, ShieldCheck, XCircle } from 'lucide-react';
+import { ArrowLeft, BedDouble, CalendarCheck, CheckCircle2, CircleAlert, Crown, LogIn, Pencil, Phone, RotateCcw, ShieldCheck, XCircle } from 'lucide-react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { CANCELLATION_REASONS, formatDate, formatDateTime, formatINR, formatMobile, money, type CancellationReason } from '@resortos/shared';
 import { EstimateBreakdown } from '@/components/booking/booking-form';
@@ -26,6 +26,12 @@ export default function ReservationPage() {
   const toast = useToast();
   const res = useQuery({ queryKey: ['reservation', id], queryFn: () => api<ReservationDetail>(`/reservations/${id}`) });
   const [cancelOpen, setCancelOpen] = useState(false);
+  const router = useRouter();
+  const startCheckIn = useMutation({
+    mutationFn: () => api<{ id: string }>('/check-in-drafts', { method: 'POST', body: { reservationId: id } }),
+    onSuccess: (draft) => router.push(`/check-in/${draft.id}`),
+    onError: (e) => toast('error', (e as Error).message),
+  });
 
   const refreshAll = () => Promise.all(['reservation', 'reservations', 'front-desk', 'rooms', 'availability', 'calendar'].map((k) => qc.invalidateQueries({ queryKey: [k] })));
 
@@ -59,6 +65,11 @@ export default function ReservationPage() {
             {r.status === 'tentative' && <Button variant="outline" loading={confirm.isPending} onClick={() => confirm.mutate()}><CalendarCheck className="h-4 w-4" />Confirm booking</Button>}
             {open && <Button variant="outline" onClick={() => setCancelOpen(true)}><XCircle className="h-4 w-4" />Cancel booking</Button>}
             {r.canRebook && <Link href={`/reservations/new?rebookFrom=${r.id}`}><Button><RotateCcw className="h-4 w-4" />Rebook</Button></Link>}
+            {(r.checkIn.ready || r.checkIn.blockers.length > 0) && (
+              <Button disabled={!r.checkIn.ready} loading={startCheckIn.isPending} onClick={() => startCheckIn.mutate()} title={r.checkIn.blockers[0]}>
+                <LogIn className="h-4 w-4" />Check in
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -87,15 +98,24 @@ export default function ReservationPage() {
         </Card>
       )}
 
-      {open && (
+      {(r.checkIn.ready || r.checkIn.blockers.length > 0) && (
         <div className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-sm ${r.checkIn.ready ? 'border-success/30 bg-success-soft text-success' : 'border-border bg-surface text-text-2'}`}>
           {r.checkIn.ready ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />}
-          {r.checkIn.ready ? <p className="font-medium">Ready for check-in.</p> : (
-            <div>
-              <p className="font-medium text-text">Before check-in</p>
-              <ul className="mt-1 list-disc pl-5">{r.checkIn.blockers.map((b) => <li key={b}>{b}</li>)}</ul>
-            </div>
-          )}
+          <div>
+            <p className="font-medium text-text">{r.checkIn.ready ? 'Ready for check-in' : 'Before check-in'}</p>
+            {[...r.checkIn.blockers, ...r.checkIn.notes].length > 0 && (
+              <ul className="mt-1 list-disc pl-5 text-text-2">{[...r.checkIn.blockers, ...r.checkIn.notes].map((b) => <li key={b}>{b}</li>)}</ul>
+            )}
+          </div>
+        </div>
+      )}
+      {r.stays.length > 0 && (
+        <div className="flex flex-wrap gap-2 text-sm">
+          {r.stays.map((s) => (
+            <Link key={s.id} href={`/stays/${s.id}`} className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 hover:bg-surface-2">
+              <BedDouble className="h-4 w-4 text-text-2" />Room {s.roomNumber} · {s.status === 'in_house' ? 'In house' : 'Checked out'}
+            </Link>
+          ))}
         </div>
       )}
 

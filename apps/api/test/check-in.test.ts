@@ -198,6 +198,7 @@ describe('confirm check-in (spec §18.3, §19.6)', () => {
     const k = key();
     const [a, b] = await Promise.all([post(desk, `/check-in-drafts/${draft.id}/confirm`, {}, k), post(desk, `/check-in-drafts/${draft.id}/confirm`, {}, k)]);
     const ok = [a, b].filter((r) => r.status === 200);
+    if (ok.length === 0) console.log('CONFIRM FAILED', JSON.stringify([a.body, b.body]));
     expect(ok.length).toBeGreaterThanOrEqual(1);
     const [count] = await sql(`SELECT count(*)::int AS n FROM stays WHERE reservation_id = $1`, [reservationId]);
     expect(count.n).toBe(1);
@@ -275,5 +276,47 @@ describe('checkout (status change with extension points, spec §22)', () => {
 
     expect((await post(desk, `/stays/${draft.stayId}/checkout`, {})).body.code).toBe('INVALID_TRANSITION');
     await expect(sql(`UPDATE stays SET status = 'in_house', checked_out_at = NULL WHERE id = $1`, [draft.stayId])).rejects.toThrow(/cannot change/);
+  });
+});
+
+describe('resuming uploads', () => {
+  it('phone status shows only its own documents; a fresh upload link for the same pending document can be issued', async () => {
+    const created = await post(owner, '/reservations', { ...booking({ roomTypeId: f.type('PCOT'), roomId: f.room('C3'), arrival: '2026-09-16', departure: '2026-09-17' }), guest: { firstName: 'Resume', lastName: 'Test', mobile: '9829066601' } }).expect(201);
+    const d = await post(desk, '/check-in-drafts', { reservationId: created.body.id }, null).expect(200);
+    expect(d.body.reservation).toMatchObject({ number: created.body.number, guestName: 'Resume Test', rooms: [{ roomNumber: 'C3', adults: 2 }] });
+    const session = await post(desk, `/check-in-drafts/${d.body.id}/capture-sessions`, {}, null).expect(201);
+    const claim = await phone().post(`/api/v1/capture/${session.body.token}/claim`).set('x-resortos', '1').expect(200);
+    const dev = claim.body.deviceSecret;
+    const bytes = jpeg(500);
+    const req = await phone().post(`/api/v1/capture/${session.body.token}/uploads`).set('x-resortos', '1').set('x-capture-device', dev)
+      .send({ docType: 'guest_photo', occupantKey: 'r0a0', contentType: 'image/jpeg', sizeBytes: bytes.length, sha256: sha(bytes) }).expect(201);
+
+    const status = await phone().post(`/api/v1/capture/${session.body.token}/status`).set('x-resortos', '1').set('x-capture-device', dev).expect(200);
+    expect(status.body.documents).toEqual([{ id: req.body.documentId, docType: 'guest_photo', occupantKey: 'r0a0', status: 'pending', failureReason: null }]);
+    expect(JSON.stringify(status.body)).not.toContain('Resume');
+
+    const fresh = await phone().post(`/api/v1/capture/${session.body.token}/uploads/${req.body.documentId}/grant`).set('x-resortos', '1').set('x-capture-device', dev).expect(200);
+    expect(fresh.body.documentId).toBe(req.body.documentId);
+    expect((await putFile(fresh.body.upload, bytes)).status).toBe(200);
+    await phone().post(`/api/v1/capture/${session.body.token}/uploads/${req.body.documentId}/confirm`).set('x-resortos', '1').set('x-capture-device', dev).expect(200);
+    const done = await phone().post(`/api/v1/capture/${session.body.token}/uploads/${req.body.documentId}/grant`).set('x-resortos', '1').set('x-capture-device', dev);
+    expect(done.body.code).toBe('INVALID_TRANSITION');
+  });
+});
+
+describe('idempotent document creation', () => {
+  it('retrying with the same client upload id returns the same document; a different photo under that id is refused', async () => {
+    const created = await post(owner, '/reservations', { ...booking({ roomTypeId: f.type('PCOT'), roomId: f.room('C2'), arrival: '2026-09-16', departure: '2026-09-17' }), guest: { firstName: 'Retry', lastName: 'Test', mobile: '9829066602' } }).expect(201);
+    const d = await post(desk, '/check-in-drafts', { reservationId: created.body.id }, null).expect(200);
+    const bytes = jpeg(300);
+    const body = { source: 'desk_camera', clientUploadId: '0b8f2a7c-7c1e-4a5b-9d51-6c0e1f2a3b4c', docType: 'guest_photo', occupantKey: 'r0a0', contentType: 'image/jpeg', sizeBytes: bytes.length, sha256: sha(bytes) };
+    const first = await post(desk, `/check-in-drafts/${d.body.id}/documents`, body, null).expect(201);
+    const retry = await post(desk, `/check-in-drafts/${d.body.id}/documents`, body, null).expect(201);
+    expect(retry.body.documentId).toBe(first.body.documentId);
+    const [n] = await sql(`SELECT count(*)::int AS n FROM guest_documents WHERE draft_id = $1`, [d.body.id]);
+    expect(n.n).toBe(1);
+    const other = jpeg(300);
+    const clash = await post(desk, `/check-in-drafts/${d.body.id}/documents`, { ...body, sizeBytes: other.length, sha256: sha(other) }, null);
+    expect(clash.body.code).toBe('IDEMPOTENCY_MISMATCH');
   });
 });

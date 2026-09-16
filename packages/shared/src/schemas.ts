@@ -303,6 +303,8 @@ export const updateCheckInDraftSchema = z.object({
 });
 
 export const documentUploadRequestSchema = z.object({
+  /** Generated on the device per captured photo; makes retries return the same document. */
+  clientUploadId: zId.optional(),
   docType: z.enum(DOCUMENT_TYPES),
   idType: z.enum(ID_TYPES).exclude(['none']).optional(),
   occupantKey: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/).optional(),

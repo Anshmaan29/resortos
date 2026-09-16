@@ -39,7 +39,25 @@ export class CheckInService {
   private async view(q: Queryable, draft: CheckInDraftRow) {
     const { rows: docs } = await q.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE draft_id = $1 ORDER BY created_at`, [draft.id]);
     const readiness = await this.problems(q, draft, checkInDraftDataSchema.parse(draft.data));
+    const { rows: summary } = await q.query<{ number: string; arrival: string; departure: string; guest_name: string; mobile: string; is_vip: boolean; special_requests: string | null }>(
+      `SELECT r.number, r.arrival, r.departure, trim(g.first_name || ' ' || g.last_name) AS guest_name, g.mobile, g.is_vip, r.special_requests
+         FROM reservations r JOIN guests g ON g.id = r.primary_guest_id WHERE r.id = $1`, [draft.reservation_id],
+    );
+    const { rows: roomRows } = await q.query<ReservationRoomRow & { room_type_name: string; room_number: string | null }>(
+      `SELECT rr.*, rt.name AS room_type_name, rm.number AS room_number FROM reservation_rooms rr
+         JOIN room_types rt ON rt.id = rr.room_type_id LEFT JOIN rooms rm ON rm.id = rr.room_id
+        WHERE rr.id = ANY($1::uuid[])`, [draft.reservation_room_ids],
+    );
+    const res = summary[0]!;
     return {
+      reservation: {
+        number: res.number, arrival: res.arrival, departure: res.departure, guestName: res.guest_name, mobile: res.mobile, isVip: res.is_vip,
+        specialRequests: res.special_requests,
+        rooms: draft.reservation_room_ids.map((id) => roomRows.find((r) => r.id === id)!).map((r) => ({
+          reservationRoomId: r.id, roomTypeId: r.room_type_id, roomTypeName: r.room_type_name, roomId: r.room_id, roomNumber: r.room_number,
+          adults: r.adults, childAges: r.child_ages.map(Number), mealPlan: r.meal_plan, status: r.status,
+        })),
+      },
       id: draft.id, reservationId: draft.reservation_id, reservationRoomIds: draft.reservation_room_ids, step: draft.step,
       data: draft.data, status: draft.status, version: draft.version, updatedAt: draft.updated_at,
       documents: docs.map(documentView),

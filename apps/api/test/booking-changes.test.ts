@@ -135,8 +135,8 @@ describe('rebook (never un-cancel)', () => {
 describe('booking detail', () => {
   it('explains why check-in is not possible yet', async () => {
     const future = await post(desk, '/reservations', booking({ roomTypeId: f.type('STD'), arrival: '2026-10-28', departure: '2026-10-29' })).expect(201);
-    expect(future.body.checkIn).toEqual({ ready: false, blockers: ['Check-in opens on the arrival day, 28 Oct 2026', 'Assign a room first'] });
+    expect(future.body.checkIn).toEqual({ ready: false, blockers: ['Check-in opens on the arrival day, 28 Oct 2026'], notes: ['Assign a room first — you can do this during check-in'] });
     const today = await post(owner, '/reservations', booking({ roomTypeId: f.type('STD'), roomId: f.room('103'), arrival: '2026-09-16', departure: '2026-09-17' })).expect(201);
-    expect(today.body.checkIn).toEqual({ ready: true, blockers: [] });
+    expect(today.body.checkIn).toEqual({ ready: true, blockers: [], notes: [] });
   });
 });

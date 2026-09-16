@@ -18,8 +18,9 @@
     "test": "pnpm -r test",
     "verify": "pnpm build && pnpm typecheck && pnpm test",
     "e2e": "pnpm --filter @resortos/shared build && pnpm --filter @resortos/api build && pnpm --filter @resortos/web build && playwright test",
-    "dev:web:lan-https": "pnpm --filter @resortos/web dev:lan-https",
-    "tunnel": "cloudflared tunnel --url http://localhost:3000"
+    "https:setup": "bash ops/dev-https/setup-lan.sh",
+    "dev:api:lan": "bash ops/dev-https/api-lan.sh",
+    "dev:web:lan": "bash ops/dev-https/web-lan.sh"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"
