@@ -7,6 +7,8 @@ import { HealthController } from './health/health.controller';
 import { PropertyModule } from './property/property.module';
 import { RatesModule } from './rates/rates.module';
 import { ReservationsModule } from './reservations/reservations.module';
+import { StaysModule } from './stays/stays.module';
+import { StorageModule } from './storage/storage.module';
 import { Global } from '@nestjs/common';
 
 @Global()
@@ -14,7 +16,7 @@ import { Global } from '@nestjs/common';
 class ConfigModule {}
 
 @Module({
-  imports: [ConfigModule, DbModule, AuthModule, PropertyModule, RatesModule, GuestsModule, ReservationsModule],
+  imports: [ConfigModule, DbModule, StorageModule, AuthModule, PropertyModule, RatesModule, GuestsModule, ReservationsModule, StaysModule],
   controllers: [HealthController],
 })
 export class AppModule {}

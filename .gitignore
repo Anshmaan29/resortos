@@ -21,8 +21,10 @@ certs/
 .ngrok/
 
 # Uploaded or captured files (guest photos, IDs, test captures) — never committed
-uploads/
-storage/
+/storage/
+/uploads/
+apps/api/storage/
+apps/api/uploads/
 **/test-uploads/
 *.heic
 

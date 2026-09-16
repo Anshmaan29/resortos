@@ -83,3 +83,25 @@ export interface OwnerAuthorisationRow {
   id: string; property_id: string; requested_by: string; operation: string; scope_hash: Buffer; reasons: unknown; description: string;
   created_at: Date; request_expires_at: Date; approved_by: string | null; approved_at: Date | null; expires_at: Date | null; used_at: Date | null;
 }
+
+export interface CheckInDraftRow {
+  id: string; property_id: string; reservation_id: string; reservation_room_ids: string[]; step: number; data: unknown;
+  status: 'active' | 'confirmed' | 'abandoned'; created_at: Date; created_by: string; updated_at: Date; confirmed_at: Date | null; version: number;
+}
+
+export interface CaptureSessionRow {
+  id: string; property_id: string; draft_id: string; token_hash: Buffer; device_secret_hash: Buffer | null; claimed_at: Date | null;
+  created_by: string; created_at: Date; expires_at: Date; closed_at: Date | null; closed_reason: string | null; files_received: number;
+}
+
+export interface GuestDocumentRow {
+  id: string; property_id: string; draft_id: string | null; stay_id: string | null; occupant_key: string | null; doc_type: string; id_type: string | null;
+  masked_on_device: boolean; status: 'pending' | 'verified' | 'failed' | 'orphaned'; storage_key: string; content_type: string; size_bytes: number;
+  sha256: Buffer; source: string; capture_session_id: string | null; uploaded_by: string | null; created_at: Date; verified_at: Date | null; failure_reason: string | null;
+}
+
+export interface StayRow {
+  id: string; property_id: string; reservation_id: string; reservation_room_id: string; room_id: string; primary_guest_id: string; check_in_draft_id: string;
+  status: 'in_house' | 'checked_out'; checked_in_at: Date; checked_in_by: string; business_date_in: string; expected_departure: string;
+  checked_out_at: Date | null; checked_out_by: string | null; business_date_out: string | null; early_departure: boolean; version: number;
+}
