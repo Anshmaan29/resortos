@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '04:00'
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+    # Versions are pinned exactly; Dependabot proposes exact bumps, and CI must pass before merge.
+    versioning-strategy: increase
+    groups:
+      nestjs:
+        patterns: ['@nestjs/*']
+      next-react:
+        patterns: ['next', 'react', 'react-dom', '@types/react', '@types/react-dom']
+      test-tooling:
+        patterns: ['vitest', '@playwright/test', 'supertest', '@types/supertest', 'unplugin-swc', '@swc/*']
+    ignore:
+      # Major upgrades are planned deliberately (see README decisions), not auto-proposed.
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: monthly
