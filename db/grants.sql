@@ -22,3 +22,6 @@ REVOKE UPDATE ON owner_overrides FROM resortos_app;
 
 -- Stay history is append-only.
 REVOKE UPDATE ON room_shifts, document_access_log FROM resortos_app;
+
+-- A registration card is replaced by a new version, never edited (spec §20).
+REVOKE UPDATE ON grc_documents FROM resortos_app;

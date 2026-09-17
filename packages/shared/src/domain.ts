@@ -45,6 +45,10 @@ export function roomDisplayState(
 export const MEAL_PLAN_CODES = ['EP', 'CP', 'MAP', 'AP'] as const;
 export type MealPlanCode = (typeof MEAL_PLAN_CODES)[number];
 
+export const MEAL_PLAN_LABELS: Record<MealPlanCode, string> = {
+  EP: 'EP · Room only', CP: 'CP · Breakfast', MAP: 'MAP · Breakfast + 1 meal', AP: 'AP · All meals',
+};
+
 export const BOOKING_SOURCES = [
   'walk_in', 'phone', 'whatsapp', 'direct', 'website', 'makemytrip', 'goibibo',
   'booking_com', 'agoda', 'airbnb', 'corporate', 'travel_agent', 'other',

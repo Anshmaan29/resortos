@@ -253,6 +253,12 @@ export type IdType = (typeof ID_TYPES)[number];
 /** ID types whose back side carries required details. */
 export const ID_TYPES_WITH_BACK: readonly IdType[] = ['aadhaar', 'driving_licence', 'voter_id'];
 
+/** Staff-facing ID names, shared by the check-in screens, the phone page and the registration card. */
+export const ID_TYPE_LABELS: Record<IdType, string> = {
+  aadhaar: 'Aadhaar', passport: 'Passport', driving_licence: 'Driving licence', voter_id: 'Voter ID',
+  pan: 'PAN card', other: 'Other ID', none: 'Not recorded',
+};
+
 export const DOCUMENT_TYPES = ['guest_photo', 'id_front', 'id_back', 'id_extra', 'signature', 'grc', 'other'] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 export const DOCUMENT_CONTENT_TYPES = ['image/jpeg', 'image/webp', 'image/png', 'application/pdf'] as const;
@@ -323,6 +329,12 @@ export const roomShiftSchema = z.object({
   ownerAuthorisationId: zId.optional(),
 });
 export type RoomShiftInput = z.infer<typeof roomShiftSchema>;
+
+/** A new version of the registration card; the old one and its file are kept (spec §20). */
+export const regenerateGrcSchema = z.object({
+  reason: z.string().trim().min(3, 'Say why a new registration card is needed').max(300),
+});
+export type RegenerateGrcInput = z.infer<typeof regenerateGrcSchema>;
 
 export const checkoutSchema = z.object({
   /** Reserved for Phase 2 steps (settlement, invoice). */

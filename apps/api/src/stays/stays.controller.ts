@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, HttpCode, Param, Patch, Post, Req } from '@nestjs/common';
 import {
-  checkoutSchema, createCheckInDraftSchema, documentUploadRequestSchema, roomShiftSchema, updateCheckInDraftSchema, zId,
+  checkoutSchema, createCheckInDraftSchema, documentUploadRequestSchema, regenerateGrcSchema, roomShiftSchema,
+  updateCheckInDraftSchema, zId,
 } from '@resortos/shared';
 import { z } from 'zod';
 import { CurrentActor, IdempotencyKey, Public } from '../common/decorators';
@@ -10,6 +11,7 @@ import { parse } from '../common/zod';
 import { DbService, type Queryable } from '../db/db.service';
 import { CaptureService } from './capture.service';
 import { CheckInService } from './check-in.service';
+import { GrcService } from './grc.service';
 import { StaysService } from './stays.service';
 
 const zToken = z.string().regex(/^[A-Za-z0-9_-]{40,60}$/);
@@ -19,6 +21,7 @@ export class StaysController {
   constructor(
     private readonly checkIn: CheckInService,
     private readonly capture: CaptureService,
+    private readonly grc: GrcService,
     private readonly stays: StaysService,
     private readonly db: DbService,
     private readonly idempotency: IdempotencyService,
@@ -154,6 +157,34 @@ export class StaysController {
     const stayId = parse(zId, id);
     const input = parse(roomShiftSchema, body);
     return this.mutate(actor, req, key, body, (q) => this.stays.shiftRoom(q, actor, stayId, input));
+  }
+
+  // ---------------- registration card (spec §20) ----------------
+
+  @Get('stays/:id/grc')
+  grcVersions(@CurrentActor() actor: Actor, @Param('id') id: string) {
+    return this.grc.list(actor, parse(zId, id));
+  }
+
+  /** Prints or reprints: returns the stored card, generating version 1 the first time. */
+  @Post('stays/:id/grc')
+  @HttpCode(200)
+  generateGrc(@CurrentActor() actor: Actor, @Req() req: AppRequest, @IdempotencyKey() key: string | undefined, @Param('id') id: string) {
+    const stayId = parse(zId, id);
+    return this.mutate(actor, req, key, {}, (q) => this.grc.ensure(q, actor, stayId));
+  }
+
+  @Post('stays/:id/grc/regenerate')
+  @HttpCode(200)
+  regenerateGrc(@CurrentActor() actor: Actor, @Req() req: AppRequest, @IdempotencyKey() key: string | undefined, @Param('id') id: string, @Body() body: unknown) {
+    const stayId = parse(zId, id);
+    const input = parse(regenerateGrcSchema, body);
+    return this.mutate(actor, req, key, body, (q) => this.grc.regenerate(q, actor, stayId, input.reason));
+  }
+
+  @Get('grc-documents/:id/view-url')
+  grcViewUrl(@CurrentActor() actor: Actor, @Param('id') id: string) {
+    return this.grc.viewUrl(actor, parse(zId, id));
   }
 
   @Get('stays/:id/checkout-preview')
