@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, HttpCode, Param, Patch, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, Patch, Post, Req, Sse } from '@nestjs/common';
 import {
   checkoutSchema, createCheckInDraftSchema, documentUploadRequestSchema, regenerateGrcSchema, roomShiftSchema,
   updateCheckInDraftSchema, zId,
@@ -100,6 +100,12 @@ export class StaysController {
   @Get('capture-sessions/:id')
   captureStatus(@CurrentActor() actor: Actor, @Param('id') id: string) {
     return this.capture.sessionStatus(actor, parse(zId, id));
+  }
+
+  /** Live updates for the desk while the QR session is open; the browser falls back to polling. */
+  @Sse('capture-sessions/:id/events')
+  captureEvents(@CurrentActor() actor: Actor, @Param('id') id: string) {
+    return this.capture.sessionEvents(actor, parse(zId, id));
   }
 
   @Post('capture-sessions/:id/close')

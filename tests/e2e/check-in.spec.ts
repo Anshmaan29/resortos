@@ -104,8 +104,22 @@ test('the whole stay: desk check-in with phone scanner, registration card, room 
   await riya.getByLabel('Last 4 characters of the ID').fill('4455');
   const sessionResponse = page.waitForResponse((r) => r.url().includes('/capture-sessions') && r.request().method() === 'POST');
   await page.getByRole('button', { name: 'Show QR code' }).click();
-  const { captureUrl } = await (await sessionResponse).json();
+  const { captureUrl, sessionId } = await (await sessionResponse).json();
   await expect(page.getByAltText('QR code for the phone scanner')).toBeVisible();
+
+  // The desk is updated over SSE, not by polling (spec §19.2). This goes through the same Next
+  // rewrite the app uses, which is the part most likely to buffer a stream and break it silently.
+  const streamed = await page.evaluate((id) => new Promise<{ ok: boolean; open?: boolean }>((resolve) => {
+    const source = new EventSource(`/api/v1/capture-sessions/${id}/events`);
+    const timer = setTimeout(() => { source.close(); resolve({ ok: false }); }, 10_000);
+    source.onmessage = (event) => {
+      clearTimeout(timer);
+      source.close();
+      resolve({ ok: true, open: JSON.parse(event.data).open });
+    };
+    source.onerror = () => { clearTimeout(timer); source.close(); resolve({ ok: false }); };
+  }), sessionId);
+  expect(streamed).toEqual({ ok: true, open: true });
   if (process.env.E2E_SCREENSHOTS) await page.screenshot({ path: `${process.env.E2E_SCREENSHOTS}/desk-documents.png`, fullPage: true });
 
   const phoneCtx = await browser.newContext({ ...devices['Pixel 7'], locale: 'en-IN' });

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { Observable } from 'rxjs';
 import { ERROR_CODES, type DocumentUploadRequest } from '@resortos/shared';
 import { APP_CONFIG, type AppConfig } from '../config';
 import { AuditService } from '../common/audit.service';
@@ -10,6 +11,8 @@ import { newToken, tokenHash } from '../auth/tokens';
 import { StorageService } from '../storage/storage.service';
 
 const SESSION_MINUTES = 10;
+/** How often the event stream re-checks for a change worth telling the desk about. */
+const SESSION_EVENT_INTERVAL_MS = 800;
 
 const DOC_LABELS: Record<string, string> = {
   guest_photo: 'Guest photo', id_front: 'ID front', id_back: 'ID back', id_extra: 'Extra page', signature: 'Signature', grc: 'Registration card', other: 'Document',
@@ -93,6 +96,47 @@ export class CaptureService {
       open: !s.closed_at && s.expires_at > new Date(), closedReason: s.closed_reason, filesReceived: s.files_received,
       documents: await this.draftDocuments(actor.user.propertyId, s.draft_id),
     };
+  }
+
+  /**
+   * Live desk updates (spec §19.2). One long-lived connection replaces the desk polling every
+   * 1.5 seconds; the browser keeps its polling as the fallback the spec asks for, used when
+   * EventSource is unavailable or the stream drops.
+   *
+   * Change detection lives here: a message is sent only when the session or its documents actually
+   * differ from what this desk was last sent, so a connected desk sits quiet until a phone does
+   * something. The stream ends by itself when the session closes or expires.
+   *
+   * This still reads the database on a timer — it moves the polling off the network, not off the
+   * database. PostgreSQL LISTEN/NOTIFY is the real fix and belongs with the outbox worker, which
+   * needs the same listener connection.
+   */
+  sessionEvents(actor: Actor, sessionId: string): Observable<{ data: unknown }> {
+    return new Observable<{ data: unknown }>((subscriber) => {
+      let stopped = false;
+      let timer: NodeJS.Timeout | undefined;
+      let lastSent = '';
+
+      const tick = async () => {
+        if (stopped) return;
+        try {
+          const status = await this.sessionStatus(actor, sessionId);
+          const json = JSON.stringify(status);
+          if (json !== lastSent) {
+            lastSent = json;
+            subscriber.next({ data: status });
+          }
+          if (!status.open) { subscriber.complete(); return; }
+        } catch (err) {
+          subscriber.error(err);
+          return;
+        }
+        timer = setTimeout(() => void tick(), SESSION_EVENT_INTERVAL_MS);
+      };
+
+      void tick();
+      return () => { stopped = true; if (timer) clearTimeout(timer); };
+    });
   }
 
   async draftDocuments(propertyId: string, draftId: string) {

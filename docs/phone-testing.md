@@ -3,6 +3,8 @@
 Browsers only allow the camera on **HTTPS**, and phones cannot reach `localhost`. ResortOS uses a development
 certificate for your Mac's Wi-Fi IP address. Nothing is exposed to the internet. **Demo data only.**
 
+Checks 1–15 cover capture; 16–17 cover the stay screen added in step 4.
+
 The Mac and the phones must be on the **same Wi-Fi**. (Guest/"isolated" Wi-Fi networks that block
 device-to-device traffic will not work.)
 
@@ -73,6 +75,8 @@ Start a check-in at the desk: open a booking arriving today → **Check in** →
 | 13 | iPhone only: **Choose file** → pick a photo from the gallery (HEIC) → it uploads normally. | |
 | 14 | Leave the QR open for **10 minutes** → the phone says the code expired; the desk offers **Show a new code**. | |
 | 15 | Back on the desk: finish check-in (signature + confirm). Open the stay → open the Aadhaar image → the first 8 digits are black. | |
+| 16 | On the **phone**, open the same stay (Bookings → the booking → the room) → **Print** the registration card → the PDF opens and the Hindi text is readable, not boxes. | |
+| 17 | On the phone, **Change room** and **Check out** are reachable and usable one-handed (buttons big enough, dialogs scroll). Do not complete them if the desk still needs this stay. | |
 
 Please send for each phone: **phone model, iOS/Android version, browser version**, the table above, and
 screenshots of anything that looked wrong (include the request ID if an error shows one).
