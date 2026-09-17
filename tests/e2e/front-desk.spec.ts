@@ -65,7 +65,9 @@ test('below-minimum rate: Owner PIN typed on the physical keyboard, override sho
   await page.keyboard.press('Enter');
 
   await page.waitForURL(/\/reservations\/[0-9a-f-]{36}$/);
-  await expect(page.getByText(/Rate ₹2,000 is below the minimum ₹2,600\. Authorised by Vikram Rathore \(Owner\), 16 Sep, \d{1,2}:\d{2} [AP]M, requested by Priya Sharma\./)).toBeVisible();
+  // The override records the real time it happened, not the seeded business date, so the day is
+  // whatever today is — matching a fixed date here would fail on every other day of the year.
+  await expect(page.getByText(/Rate ₹2,000 is below the minimum ₹2,600\. Authorised by Vikram Rathore \(Owner\), \d{1,2} \w{3}, \d{1,2}:\d{2} [AP]M, requested by Priya Sharma\./)).toBeVisible();
   await expect(page.getByText('+91 98490 12345')).toBeVisible();
   await expect(page.getByText(/Room ₹2,000 · breakfast ₹800 · ₹2,800 before GST/)).toBeVisible();
   await expect(page.getByText('Estimated total incl. GST')).toBeVisible();

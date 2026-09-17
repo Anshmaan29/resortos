@@ -25,11 +25,26 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | Document counts only after server re-hash (SHA-256 + size); tampered/expired/overwrite links refused; Aadhaar masked flag | `apps/api/test/check-in.test.ts` |
 | Check-in blocked while documents are uploading/failed/missing; draft survives refresh; double confirm → one stay | `apps/api/test/check-in.test.ts` |
 | Room shift uses the exclusion constraint; checkout pipeline order; checked-out stay immutable | `apps/api/test/check-in.test.ts` |
+| Registration card PDF is byte-for-byte reproducible, so the stored SHA-256 is a real check | `apps/api/test/grc.test.ts` |
+| Registration card font is pinned by checksum (changing it would change every stored hash) | `apps/api/test/grc.test.ts` |
+| A card is recorded only after the stored file is re-read and re-hashed; a mismatch leaves no row and no number gap | `apps/api/test/grc.test.ts` |
+| All three signature routes (desk touchscreen, phone session, scanned paper) are recorded correctly | `apps/api/test/grc.test.ts` |
+| A reprint returns the stored card; regenerating creates a linked new version and overwrites nothing | `apps/api/test/grc.test.ts` |
+| A registration card is never edited or deleted in the database | `apps/api/test/grc.test.ts` |
 | WCAG AA contrast of every text/surface token pair, both themes | `apps/web/test/contrast.test.ts` |
 | Desk check-in end to end: draft survives refresh, desk uploads through editor, phone scanner (no guest data), Aadhaar masking verified in the stored pixels, offline capture → reload → resume, live arrival on desk, signature, confirm | `tests/e2e/check-in.spec.ts` |
 | Storage enforces type, size, SHA-256 and write-once on pre-signed uploads (MinIO in CI) | `apps/api/test/check-in.test.ts` |
 | Retried document creation returns the same document | `apps/api/test/check-in.test.ts` |
 | DD/MM/YYYY picker, Owner PIN by keyboard, override shown, edit, rebook | `tests/e2e/front-desk.spec.ts` |
+
+## Where concurrency tests live
+
+`tests/concurrency/` from spec §87 is **not** a separate suite. Concurrency guarantees are proven
+inside the API integration tests, because they need the same fixtures, the same app instance and the
+same real database: two overlapping bookings and double-click idempotency in
+`reservations.test.ts`, the audit chain under 60 parallel actions in `audit-concurrency.test.ts`,
+double confirm in `check-in.test.ts`, and double card generation in `grc.test.ts`. Parallel invoice
+finalisation and two simultaneous night audits join them in Phase 2.
 
 ## Not automated (needs real devices)
 

@@ -76,6 +76,25 @@ export class StorageService implements OnModuleDestroy {
     };
   }
 
+  /**
+   * Stores bytes this server produced (registration cards, later invoice PDFs). Same discipline as a
+   * pre-signed upload: the checksum travels with the request so storage itself rejects altered bytes,
+   * and `If-None-Match: *` makes an overwrite impossible — a new version always gets a new key.
+   */
+  async putObject(key: string, body: Buffer, contentType: string, sha256: Buffer): Promise<void> {
+    await this.internal.send(new PutObjectCommand({
+      Bucket: this.bucket, Key: key, Body: body, ContentType: contentType, ContentLength: body.length,
+      ChecksumSHA256: sha256.toString('base64'), IfNoneMatch: '*',
+    }));
+  }
+
+  async getObject(key: string): Promise<Buffer> {
+    const object = await this.internal.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    const chunks: Buffer[] = [];
+    for await (const chunk of object.Body as Readable) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks);
+  }
+
   async verify(key: string, sizeBytes: number, sha256: Buffer): Promise<VerifyResult> {
     try {
       const head = await this.internal.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));

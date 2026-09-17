@@ -100,6 +100,13 @@ export interface GuestDocumentRow {
   sha256: Buffer; source: string; capture_session_id: string | null; uploaded_by: string | null; created_at: Date; verified_at: Date | null; failure_reason: string | null;
 }
 
+export interface GrcDocumentRow {
+  id: string; property_id: string; stay_id: string; number: string; version: number; supersedes_id: string | null;
+  storage_key: string; content_type: string; size_bytes: number; sha256: Buffer;
+  signature_method: 'touchscreen' | 'phone' | 'paper_scan'; signature_document_id: string; signed_at: Date;
+  notice_version: string; generated_at: Date; generated_by: string; reason: string | null; created_at: Date;
+}
+
 export interface StayRow {
   id: string; property_id: string; reservation_id: string; reservation_room_id: string; room_id: string; primary_guest_id: string; check_in_draft_id: string;
   status: 'in_house' | 'checked_out'; checked_in_at: Date; checked_in_by: string; business_date_in: string; expected_departure: string;
