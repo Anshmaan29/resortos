@@ -31,15 +31,22 @@ export class StaysService {
   }
 
   async detail(q: Queryable, propertyId: string, stayId: string) {
-    const { rows } = await q.query<StayRow & { room_number: string; room_type_name: string; reservation_number: string; guest_first: string; guest_last: string }>(
-      `SELECT s.*, rm.number AS room_number, rt.name AS room_type_name, r.number AS reservation_number, g.first_name AS guest_first, g.last_name AS guest_last
+    const { rows } = await q.query<StayRow & {
+      room_number: string; room_type_id: string; room_type_name: string; reservation_number: string; guest_first: string; guest_last: string;
+      guest_mobile: string; is_vip: boolean; adults: number; child_ages: (number | string)[]; meal_plan: string; nightly_rate: string;
+    }>(
+      `SELECT s.*, rm.number AS room_number, rm.room_type_id, rt.name AS room_type_name, r.number AS reservation_number,
+              g.first_name AS guest_first, g.last_name AS guest_last, g.mobile AS guest_mobile, g.is_vip,
+              rr.adults, rr.child_ages, rr.meal_plan, rr.nightly_rate
          FROM stays s JOIN rooms rm ON rm.id = s.room_id JOIN room_types rt ON rt.id = rm.room_type_id
          JOIN reservations r ON r.id = s.reservation_id JOIN guests g ON g.id = s.primary_guest_id
+         JOIN reservation_rooms rr ON rr.id = s.reservation_room_id
         WHERE s.id = $1 AND s.property_id = $2`,
       [stayId, propertyId],
     );
     const s = rows[0];
     if (!s) throw notFound('Stay');
+    const businessDate = await this.property.businessDate(q, propertyId);
     const [occupants, vehicles, documents, shifts] = await Promise.all([
       q.query<{ occupant_key: string; full_name: string; is_primary: boolean; is_child: boolean; age: number | null; nationality: string; id_type: string; id_last4: string | null }>(
         `SELECT occupant_key, full_name, is_primary, is_child, age, nationality, id_type, id_last4 FROM stay_occupants WHERE stay_id = $1 ORDER BY is_primary DESC, is_child, created_at`, [stayId]),
@@ -52,9 +59,12 @@ export class StaysService {
     ]);
     return {
       id: s.id, status: s.status, reservationId: s.reservation_id, reservationNumber: s.reservation_number,
-      guestName: `${s.guest_first} ${s.guest_last}`.trim(), roomId: s.room_id, roomNumber: s.room_number, roomTypeName: s.room_type_name,
+      guestName: `${s.guest_first} ${s.guest_last}`.trim(), mobile: s.guest_mobile, isVip: s.is_vip,
+      roomId: s.room_id, roomNumber: s.room_number, roomTypeId: s.room_type_id, roomTypeName: s.room_type_name,
+      adults: s.adults, childAges: s.child_ages.map(Number), mealPlan: s.meal_plan, nightlyRate: s.nightly_rate,
       checkedInAt: s.checked_in_at, businessDateIn: s.business_date_in, expectedDeparture: s.expected_departure,
-      checkedOutAt: s.checked_out_at, businessDateOut: s.business_date_out, earlyDeparture: s.early_departure, version: s.version,
+      checkedOutAt: s.checked_out_at, businessDateOut: s.business_date_out, earlyDeparture: s.early_departure,
+      businessDate, canShiftRoom: s.status === 'in_house' && businessDate < s.expected_departure, version: s.version,
       occupants: occupants.rows.map((o) => ({ key: o.occupant_key, fullName: o.full_name, isPrimary: o.is_primary, isChild: o.is_child, age: o.age, nationality: o.nationality, idType: o.id_type, idLast4: o.id_last4 })),
       vehicles: vehicles.rows.map((v) => ({ registration: v.registration, vehicleType: v.vehicle_type, parkingSlot: v.parking_slot })),
       documents: documents.rows.map(documentView),
