@@ -45,7 +45,7 @@ async function useEditor(page: Page, { aadhaar = false, crop = true } = {}) {
   await expect(dialog).toBeHidden();
 }
 
-test('desk check-in with desk uploads, phone scanner (offline and back), signature and confirmation', async ({ page, browser }) => {
+test('the whole stay: desk check-in with phone scanner, registration card, room change and checkout', async ({ page, browser }) => {
   test.setTimeout(180_000);
   await login(page);
 
@@ -196,4 +196,57 @@ test('desk check-in with desk uploads, phone scanner (offline and back), signatu
     return sum / (d.length / 4);
   }, url);
   expect(darkness).toBeLessThan(12);
+
+  // ---------------------------------------------------------------------------
+  // The rest of the stay: registration card, room change, checkout (spec §20–§22)
+  // ---------------------------------------------------------------------------
+  await page.getByText('Room 205 · In house').click();
+  await page.waitForURL(/\/stays\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole('heading', { name: /Room\s*205/ })).toBeVisible();
+  await expect(page.getByText('In house').first()).toBeVisible();
+
+  // The registration card is created from the signature the guest gave on the desk.
+  await expect(page.getByText('Not created yet')).toBeVisible();
+  await page.getByRole('button', { name: 'Create and print' }).click();
+  await expect(page.getByText(/Registration card GRC-\d{6} created/)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/GRC-\d{6} · version 1/)).toBeVisible();
+  await expect(page.getByText('Signed on the reception touchscreen')).toBeVisible();
+
+  // What was stored really is a PDF, and its hash is the one shown on screen.
+  const grc = await (await page.request.get(`/api/v1/stays/${stayLink!.split('/').pop()}/grc`)).json();
+  const cardLink = await (await page.request.get(`/api/v1/grc-documents/${grc.current.id}/view-url`)).json();
+  const pdf = await page.request.get(cardLink.url);
+  expect(pdf.status()).toBe(200);
+  expect((await pdf.body()).subarray(0, 5).toString('ascii')).toBe('%PDF-');
+  await expect(page.getByText(grc.current.sha256)).toBeVisible();
+
+  // Room change: the desk picks from what is actually free, and the reason is kept on the stay.
+  await page.getByRole('button', { name: 'Change room' }).click();
+  const shift = page.getByRole('dialog', { name: /Move .* out of room 205/ });
+  await shift.getByLabel('New room').selectOption(rooms.find((r: any) => r.number === '203').id);
+  await shift.getByLabel('Reason').selectOption('Air conditioning not working');
+  await shift.getByRole('button', { name: 'Move to room 203' }).click();
+  await expect(page.getByText('Guest moved to room 203')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('heading', { name: /Room\s*203/ })).toBeVisible();
+  const shiftRow = page.getByRole('listitem').filter({ hasText: 'Air conditioning not working' });
+  await expect(shiftRow).toHaveCount(1);
+  await expect(shiftRow).toContainText('Priya Sharma');
+  await expect(shiftRow).toContainText('205');
+  await expect(shiftRow).toContainText('203');
+
+  // Checkout is a status change in Phase 1; the screen is built around the server's blocker list.
+  await page.getByRole('button', { name: 'Check out' }).click();
+  const checkout = page.getByRole('dialog', { name: 'Check out room 203?' });
+  await expect(checkout.getByText('Nothing is blocking this checkout.')).toBeVisible();
+  await checkout.getByRole('button', { name: 'Check out' }).click();
+  await expect(page.getByText('Room 203 checked out')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('Checked out').first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Check out' })).toHaveCount(0);
+
+  // The room the guest left is waiting for housekeeping, and the booking is closed.
+  await page.goto('/rooms');
+  await expect(page.getByText('203').first()).toBeVisible();
+  const rooms203 = await (await page.request.get('/api/v1/rooms')).json();
+  expect(rooms203.find((r: any) => r.number === '203').housekeeping).toBe('dirty');
+  expect(rooms203.find((r: any) => r.number === '203').occupancy).toBe('vacant');
 });

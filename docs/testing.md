@@ -33,6 +33,7 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | A registration card is never edited or deleted in the database | `apps/api/test/grc.test.ts` |
 | WCAG AA contrast of every text/surface token pair, both themes | `apps/web/test/contrast.test.ts` |
 | Desk check-in end to end: draft survives refresh, desk uploads through editor, phone scanner (no guest data), Aadhaar masking verified in the stored pixels, offline capture → reload → resume, live arrival on desk, signature, confirm | `tests/e2e/check-in.spec.ts` |
+| The whole stay end to end: check-in → registration card created from the signature and served as a real PDF whose hash matches the screen → room change with reason kept on the stay → checkout → room left dirty and vacant | `tests/e2e/check-in.spec.ts` |
 | Storage enforces type, size, SHA-256 and write-once on pre-signed uploads (MinIO in CI) | `apps/api/test/check-in.test.ts` |
 | Retried document creation returns the same document | `apps/api/test/check-in.test.ts` |
 | DD/MM/YYYY picker, Owner PIN by keyboard, override shown, edit, rebook | `tests/e2e/front-desk.spec.ts` |
