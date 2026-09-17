@@ -31,7 +31,18 @@ export interface QueueItem {
   idType?: Exclude<IdType, 'none'>;
   maskedOnDevice: boolean;
   source: 'desk_camera' | 'file_upload' | 'signature_pad' | 'phone_scanner';
-  blob: Blob | null; // cleared once verified to free space on the phone
+  /**
+   * The photo itself, as bytes — never as a Blob or File.
+   *
+   * iOS Safari regularly refuses to store a Blob in IndexedDB with
+   * "UnknownError: Error preparing Blob/File data to be stored in object store", which killed the
+   * whole capture: the write threw, nothing was queued, and the photo never reached the desk.
+   * ArrayBuffers go through plain structured cloning and store reliably everywhere.
+   * Cleared once verified, to free space on the phone.
+   */
+  bytes: ArrayBuffer | null;
+  /** Written by an earlier version that stored Blobs; still uploaded if one is found. */
+  blob?: Blob | null;
   contentType: 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf';
   size: number;
   sha256: string;
@@ -87,6 +98,24 @@ export class UploadQueue {
   private timer: ReturnType<typeof setInterval> | null = null;
   private listeners = new Set<(items: QueueItem[]) => void>();
   private progress = new Map<string, number>();
+  /** Mirror of this session's items, so a device that cannot persist can still upload. */
+  private memory = new Map<string, QueueItem>();
+  private persistenceBroken = false;
+
+  /** True when this device refused to store the queue; the UI warns that a refresh would lose it. */
+  get isMemoryOnly() {
+    return this.persistenceBroken;
+  }
+
+  private async persist(item: QueueItem): Promise<void> {
+    try {
+      await (await db()).put('uploads', item);
+    } catch (err) {
+      // Keep going: the photo is in memory and the upload is what matters.
+      this.persistenceBroken = true;
+      console.warn('ResortOS: this device cannot store the upload queue; uploading from memory only', err);
+    }
+  }
 
   constructor(private readonly scope: string, private readonly transport: UploadTransport) {}
 
@@ -113,12 +142,18 @@ export class UploadQueue {
     return this.progress.get(id) ?? 0;
   }
 
-  async add(input: Omit<QueueItem, 'id' | 'scope' | 'status' | 'attempts' | 'nextAttemptAt' | 'createdAt' | 'updatedAt' | 'size'> & { blob: Blob }) {
+  async add(input: Omit<QueueItem, 'id' | 'scope' | 'status' | 'attempts' | 'nextAttemptAt' | 'createdAt' | 'updatedAt' | 'size' | 'bytes' | 'blob'> & { blob: Blob }) {
     const now = Date.now();
+    const { blob, ...rest } = input;
     const item: QueueItem = {
-      ...input, id: crypto.randomUUID(), scope: this.scope, size: input.blob.size, status: 'queued', attempts: 0, nextAttemptAt: now, createdAt: now, updatedAt: now,
+      ...rest, bytes: await blob.arrayBuffer(), id: crypto.randomUUID(), scope: this.scope, size: blob.size,
+      status: 'queued', attempts: 0, nextAttemptAt: now, createdAt: now, updatedAt: now,
     };
-    await (await db()).put('uploads', item);
+    // Persistence is best effort. If this device cannot write to IndexedDB at all (private
+    // browsing, storage full, an old WebKit bug), the upload still runs from memory for this
+    // session rather than the capture failing in the guest's face.
+    this.memory.set(item.id, item);
+    await this.persist(item);
     await this.emit();
     void this.process();
     return item;
@@ -126,18 +161,30 @@ export class UploadQueue {
 
   /** Discards a failed item so the slot can be captured again. */
   async remove(id: string) {
-    await (await db()).delete('uploads', id);
+    this.memory.delete(id);
+    try {
+      await (await db()).delete('uploads', id);
+    } catch { /* nothing stored to remove */ }
     await this.emit();
   }
 
   async items(): Promise<QueueItem[]> {
-    const all = await (await db()).getAllFromIndex('uploads', 'scope', this.scope);
-    return all.sort((a, b) => a.createdAt - b.createdAt);
+    const byId = new Map<string, QueueItem>();
+    try {
+      for (const item of await (await db()).getAllFromIndex('uploads', 'scope', this.scope)) byId.set(item.id, item);
+    } catch (err) {
+      this.persistenceBroken = true;
+      console.warn('ResortOS: cannot read the stored upload queue', err);
+    }
+    // This session's copies win: they carry the live status even when the write failed.
+    for (const item of this.memory.values()) if (item.scope === this.scope) byId.set(item.id, item);
+    return [...byId.values()].sort((a, b) => a.createdAt - b.createdAt);
   }
 
   private async save(item: QueueItem, patch: Partial<QueueItem>) {
     Object.assign(item, patch, { updatedAt: Date.now() });
-    await (await db()).put('uploads', item);
+    this.memory.set(item.id, item);
+    await this.persist(item);
     await this.emit();
   }
 
@@ -147,9 +194,14 @@ export class UploadQueue {
   }
 
   private async purgeOld() {
-    const database = await db();
-    for (const item of await database.getAll('uploads')) {
-      if (item.status === 'done' && Date.now() - item.updatedAt > DONE_RETENTION_MS) await database.delete('uploads', item.id);
+    try {
+      const database = await db();
+      for (const item of await database.getAll('uploads')) {
+        if (item.status === 'done' && Date.now() - item.updatedAt > DONE_RETENTION_MS) await database.delete('uploads', item.id);
+      }
+    } catch (err) {
+      this.persistenceBroken = true;
+      console.warn('ResortOS: cannot tidy the stored upload queue', err);
     }
   }
 
@@ -189,9 +241,10 @@ export class UploadQueue {
 
       // 2. Upload straight to storage.
       if (item.status !== 'verifying') {
-        if (!item.blob) return this.fail(item, 'The photo is no longer on this device. Capture it again.');
+        const body = item.bytes ? new Blob([item.bytes], { type: item.contentType }) : item.blob ?? null;
+        if (!body) return this.fail(item, 'The photo is no longer on this device. Capture it again.');
         await this.save(item, { status: 'uploading', error: undefined });
-        const put = await putWithProgress(item.grant!, item.blob, (f) => { this.progress.set(item.id, f); void this.emit(); });
+        const put = await putWithProgress(item.grant!, body, (f) => { this.progress.set(item.id, f); void this.emit(); });
         this.progress.delete(item.id);
         if (put.status === 0) return this.retryLater(item, 'Network lost — will resume automatically', 'waiting_network');
         if (put.status === 403) { await this.save(item, { grant: undefined }); return this.retryLater(item, 'Upload link expired — renewing'); }
@@ -202,14 +255,14 @@ export class UploadQueue {
 
       // 3. The server re-hashes the stored object; only then is it received.
       const result = await this.transport.confirm(item.documentId!);
-      if (result.status === 'verified') return this.save(item, { status: 'done', blob: null, error: undefined });
+      if (result.status === 'verified') return this.save(item, { status: 'done', bytes: null, blob: null, error: undefined });
       if (result.status === 'failed' || result.status === 'orphaned') return this.fail(item, 'The server could not verify this photo. Capture it again.');
       return this.retryLater(item, 'Waiting for the server to receive the photo');
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.details?.scannerClosed) return this.fail(item, err.message);
         if (err.code === 'CONFLICT' && err.details?.retryable) { await this.save(item, { status: 'queued' }); return this.retryLater(item, 'Upload did not arrive — sending again'); }
-        if (err.code === 'INVALID_TRANSITION' && err.details?.status === 'verified') return this.save(item, { status: 'done', blob: null, documentId: err.details.documentId ?? item.documentId });
+        if (err.code === 'INVALID_TRANSITION' && err.details?.status === 'verified') return this.save(item, { status: 'done', bytes: null, blob: null, documentId: err.details.documentId ?? item.documentId });
         if (err.status >= 400 && err.status < 500 && err.code !== 'RATE_LIMITED' && err.code !== 'SERVICE_BUSY') return this.fail(item, err.message);
         return this.retryLater(item, err.message);
       }

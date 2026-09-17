@@ -81,6 +81,18 @@ Start a check-in at the desk: open a booking arriving today → **Check in** →
 Please send for each phone: **phone model, iOS/Android version, browser version**, the table above, and
 screenshots of anything that looked wrong (include the request ID if an error shows one).
 
+## When you are finished testing
+
+```bash
+pnpm https:off
+```
+
+`https:setup` gives MinIO a certificate, so MinIO serves **HTTPS** on port 9000 while the LAN setup
+is active. The test suites talk to `http://localhost:9000`, so until you run `https:off` both
+`pnpm test` and `pnpm e2e` fail — the browser reports it as a CORS error on the upload, which looks
+like an application bug and is not one. The mkcert certificate authority stays installed on the Mac
+and on the phones, so setting up again later is quick.
+
 ## Notes for testers
 
 - Blur/brightness thresholds are first estimates (`apps/web/src/lib/capture/image.ts → QUALITY_LIMITS`);

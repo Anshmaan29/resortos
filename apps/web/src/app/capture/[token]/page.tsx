@@ -30,6 +30,7 @@ export default function PhoneCapturePage() {
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const [online, setOnline] = useState(true);
+  const [memoryOnly, setMemoryOnly] = useState(false);
   const [items, setItems] = useState<QueueItem[]>([]);
   // Remembered on the phone so a refresh never hides the ID slots.
   const [idChoice, setIdChoice] = useState<Record<string, Exclude<IdType, 'none'>>>(() => {
@@ -93,7 +94,7 @@ export default function PhoneCapturePage() {
     const queue = new UploadQueue(token, transport);
     queueRef.current = queue;
     const stop = queue.start();
-    const unsubscribe = queue.subscribe((list) => { setItems(list); void refreshStatus(); });
+    const unsubscribe = queue.subscribe((list) => { setItems(list); setMemoryOnly(queue.isMemoryOnly); void refreshStatus(); });
     return () => { stop(); unsubscribe(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [headers, token]);
@@ -142,7 +143,16 @@ export default function PhoneCapturePage() {
         {!online && (
           <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} role="status"
             className="flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-3 text-sm text-warning">
-            <CloudOff className="mt-0.5 h-4 w-4 shrink-0" />No network. Photos are saved on this phone and will upload automatically when the network is back.
+            <CloudOff className="mt-0.5 h-4 w-4 shrink-0" />
+            {memoryOnly
+              ? 'No network. Keep this page open — this phone cannot save photos, so they would be lost if you close it.'
+              : 'No network. Photos are saved on this phone and will upload automatically when the network is back.'}
+          </motion.div>
+        )}
+        {online && memoryOnly && pendingOnDevice > 0 && (
+          <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} role="status"
+            className="flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-3 text-sm text-warning">
+            <CloudOff className="mt-0.5 h-4 w-4 shrink-0" />Keep this page open until the photos reach the desk — this phone will not remember them.
           </motion.div>
         )}
       </AnimatePresence>
