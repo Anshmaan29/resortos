@@ -29,12 +29,34 @@ export function PhoneScannerPanel({ draftId, onDocumentsChanged }: { draftId: st
     onSuccess: () => { setSession(null); setQr(null); onDocumentsChanged(); },
   });
 
-  const status = useQuery({
+  // Live updates over SSE (spec §19.2); polling is the fallback, and stays the only path when the
+  // browser has no EventSource or the stream drops. `live` wins while the stream is healthy.
+  const [live, setLive] = useState<SessionStatus | null>(null);
+  const [streaming, setStreaming] = useState(true);
+
+  useEffect(() => {
+    setLive(null);
+    if (!session) return;
+    if (typeof EventSource === 'undefined') { setStreaming(false); return; }
+    setStreaming(true);
+    const source = new EventSource(`/api/v1/capture-sessions/${session.sessionId}/events`);
+    let closed = false;
+    source.onmessage = (event) => setLive(JSON.parse(event.data) as SessionStatus);
+    source.onerror = () => {
+      // The server ends the stream when the session closes; that is not a failure.
+      source.close();
+      if (!closed) setStreaming(false);
+    };
+    return () => { closed = true; source.close(); };
+  }, [session]);
+
+  const query = useQuery({
     queryKey: ['capture-session', session?.sessionId],
     enabled: !!session,
-    refetchInterval: 1500,
+    refetchInterval: streaming ? false : 1500,
     queryFn: () => api<SessionStatus>(`/capture-sessions/${session!.sessionId}`),
   });
+  const status = { data: live ?? query.data };
 
   const verifiedCount = status.data?.documents.filter((d) => d.status === 'verified').length ?? 0;
   useEffect(() => { if (session) onDocumentsChanged(); }, [verifiedCount, session, onDocumentsChanged]);
