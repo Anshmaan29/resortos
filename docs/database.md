@@ -61,6 +61,11 @@ Every business table needs all five, or it is not finished (CLAUDE.md, spec §48
 ### Registration cards — `0007`
 `grc_documents`.
 
+### On-device Aadhaar masking removed — `0008`
+Drops the CHECK that required `masked_on_device` for Aadhaar images (product owner's decision; see
+CLAUDE.md rule 11). The column is kept as a historical record of files captured while masking
+existed, and nothing writes it now.
+
 Not created yet (Phase 2 onward): folios, folio lines, payments, invoices, `document_counters`,
 company accounts, OTA bookings, cashier shifts, night audits, business dates, housekeeping tasks,
 maintenance, expenses, messages, Form C, metrics. **Do not add them ahead of their milestone** —
@@ -78,7 +83,6 @@ next caller:
 | Room-type inventory | `FOR UPDATE` on `room_types` while counting sellable rooms |
 | One active check-in draft per booking | `check_in_drafts_one_active` partial unique index |
 | One primary occupant per stay | `stay_occupants_one_primary` partial unique index |
-| Aadhaar images are masked before upload | CHECK on `guest_documents` (`id_type <> 'aadhaar' OR masked_on_device`) |
 | Document facts never change; status only moves forward | `guard_guest_document` trigger |
 | A checked-out stay cannot change; check-in facts are immutable | `guard_stay_update` trigger |
 | Registration cards are replaced, never edited | `grc_documents` `BEFORE UPDATE` and `BEFORE DELETE` triggers, plus `REVOKE UPDATE` |

@@ -56,8 +56,9 @@ every read is a 60-second signed URL logged in `document_access_log`.
 
 - Only the **last 4 characters** of an ID are ever stored; a full ID number is refused by the schema
   and by the API.
-- Aadhaar images are masked on the device before upload, enforced by a CHECK constraint as well as
-  by the form.
+- ID images are stored as captured. On-device Aadhaar masking was removed at the product owner's
+  request (migration `0008`); this differs from spec §19.4.5 and §58.3 and is recorded in CLAUDE.md.
+  The protections that remain are private storage, 60-second signed URLs and a logged access trail.
 - The phone capture page can only upload. No endpoint it can reach returns a guest name, mobile,
   room or booking number — asserted in `check-in.test.ts`.
 - Audit entries record identifiers and amounts, not guest personal details.

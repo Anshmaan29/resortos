@@ -86,7 +86,7 @@ export default function PhoneCapturePage() {
     const transport: UploadTransport = {
       create: (item) => api(`/capture/${token}/uploads`, {
         method: 'POST', headers,
-        body: { clientUploadId: item.id, docType: item.docType, idType: item.idType, occupantKey: item.occupantKey, maskedOnDevice: item.maskedOnDevice, contentType: item.contentType, sizeBytes: item.size, sha256: item.sha256 },
+        body: { clientUploadId: item.id, docType: item.docType, idType: item.idType, occupantKey: item.occupantKey, contentType: item.contentType, sizeBytes: item.size, sha256: item.sha256 },
       }),
       refresh: (documentId) => api(`/capture/${token}/uploads/${documentId}/grant`, { method: 'POST', body: {}, headers }),
       confirm: (documentId) => api(`/capture/${token}/uploads/${documentId}/confirm`, { method: 'POST', body: {}, headers }),
@@ -113,9 +113,9 @@ export default function PhoneCapturePage() {
     if (secondsLeft === 0 && phase.kind === 'ready') setPhase({ kind: 'closed', message: 'This QR code has expired (codes last 10 minutes). Ask the desk to show a new one.' });
   }, [secondsLeft, phase.kind]);
 
-  async function captured(occupant: Occupant, docType: DocumentType, idType: Exclude<IdType, 'none'> | null, blob: Blob, maskedOnDevice: boolean) {
+  async function captured(occupant: Occupant, docType: DocumentType, idType: Exclude<IdType, 'none'> | null, blob: Blob) {
     await queueRef.current?.add({
-      slotKey: `${occupant.key}:${docType}`, docType, occupantKey: occupant.key, idType: idType ?? undefined, maskedOnDevice, source: 'phone_scanner',
+      slotKey: `${occupant.key}:${docType}`, docType, occupantKey: occupant.key, idType: idType ?? undefined, source: 'phone_scanner',
       blob, contentType: 'image/jpeg', sha256: await sha256Hex(blob),
     });
   }
@@ -200,7 +200,7 @@ export default function PhoneCapturePage() {
                     <CaptureSlot key={slotKey} label={s.label} hint={s.hint} docType={s.docType} idType={s.docType === 'guest_photo' ? null : idType} state={state}
                       allowFiles={s.docType !== 'guest_photo'}
                       onDiscardFailed={() => { if (item?.status === 'failed') void queueRef.current?.remove(item.id); }}
-                      onCaptured={(r) => void captured(o, s.docType, s.docType === 'guest_photo' ? null : idType, r.blob, r.maskedOnDevice)} />
+                      onCaptured={(r) => void captured(o, s.docType, s.docType === 'guest_photo' ? null : idType, r.blob)} />
                   );
                 })}
               </section>

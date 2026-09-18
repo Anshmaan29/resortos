@@ -3,7 +3,7 @@
 Browsers only allow the camera on **HTTPS**, and phones cannot reach `localhost`. ResortOS uses a development
 certificate for your Mac's Wi-Fi IP address. Nothing is exposed to the internet. **Demo data only.**
 
-Checks 1–15 cover capture; 16–17 cover the stay screen added in step 4.
+Checks 1–15 cover capture; 16–17 cover the stay screen.
 
 The Mac and the phones must be on the **same Wi-Fi**. (Guest/"isolated" Wi-Fi networks that block
 device-to-device traffic will not work.)
@@ -66,7 +66,7 @@ Start a check-in at the desk: open a booking arriving today → **Check in** →
 | 4 | Guest 1: **Take photo** → the rear camera opens → take the photo of an ID card on a table. Corners snap to the card edges (or drag them). **Crop** → **Use photo**. | |
 | 5 | The desk's "Scan with phone" list shows the document arriving, then **Received** — within ~5 s on good Wi-Fi. | |
 | 6 | Take a deliberately **blurry** photo → "Photo looks blurry — retake?" appears. Take one in **dim light** → "too dark". | |
-| 7 | Guest 2: ID type **Aadhaar** (use a dummy/sample card) → capture → the black box must cover the first 8 digits; **Continue** stays disabled until you tick the check box. | |
+| 7 | Guest 2: ID type **Aadhaar** (use a dummy/sample card) → capture → crop → **Use photo**. No masking step appears — it was removed (migration 0008). | |
 | 8 | **Weak network:** start an upload, and while it shows *Uploading*, turn **Wi-Fi off** (Control Centre / quick settings). The slot shows **Saved — waiting for network**. | |
 | 9 | With Wi-Fi still off, capture one more document → it also waits. | |
 | 10 | **Refresh** the page (pull down) while offline if the browser allows, otherwise just turn **Wi-Fi back on** → both uploads resume on their own and the desk shows **Received**. | |
@@ -74,7 +74,7 @@ Start a check-in at the desk: open a booking arriving today → **Check in** →
 | 12 | **Live camera** link: permission prompt → allow → preview → Capture. Then deny camera permission in settings → clear instructions for that browser appear. | |
 | 13 | iPhone only: **Choose file** → pick a photo from the gallery (HEIC) → it uploads normally. | |
 | 14 | Leave the QR open for **10 minutes** → the phone says the code expired; the desk offers **Show a new code**. | |
-| 15 | Back on the desk: finish check-in (signature + confirm). Open the stay → open the Aadhaar image → the first 8 digits are black. | |
+| 15 | Back on the desk: finish check-in (signature + confirm). Open the stay → the ID image opens through a one-minute link. | |
 | 16 | On the **phone**, open the same stay (Bookings → the booking → the room) → **Print** the registration card → the PDF opens and the Hindi text is readable, not boxes. | |
 | 17 | On the phone, **Change room** and **Check out** are reachable and usable one-handed (buttons big enough, dialogs scroll). Do not complete them if the desk still needs this stay. | |
 

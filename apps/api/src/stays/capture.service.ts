@@ -21,7 +21,7 @@ const DOC_LABELS: Record<string, string> = {
 export function documentView(d: GuestDocumentRow) {
   return {
     id: d.id, docType: d.doc_type, label: DOC_LABELS[d.doc_type] ?? d.doc_type, idType: d.id_type, occupantKey: d.occupant_key,
-    status: d.status, source: d.source, sizeBytes: d.size_bytes, maskedOnDevice: d.masked_on_device,
+    status: d.status, source: d.source, sizeBytes: d.size_bytes,
     createdAt: d.created_at, verifiedAt: d.verified_at, failureReason: d.failure_reason,
   };
 }
@@ -260,12 +260,12 @@ export class CaptureService {
     by: { source: string; uploadedBy: string; sessionId: string | null; device: string | null }) {
     const key = this.storage.newKey(propertyId);
     const { rows } = await q.query<IdRow>(
-      `INSERT INTO guest_documents (property_id, draft_id, occupant_key, doc_type, id_type, masked_on_device, storage_key, content_type, size_bytes, sha256,
+      `INSERT INTO guest_documents (property_id, draft_id, occupant_key, doc_type, id_type, storage_key, content_type, size_bytes, sha256,
                                     source, capture_session_id, uploaded_by, device, client_upload_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        ON CONFLICT (draft_id, client_upload_id) WHERE client_upload_id IS NOT NULL DO NOTHING
        RETURNING id`,
-      [propertyId, draftId, req.occupantKey ?? null, req.docType, req.idType ?? null, req.maskedOnDevice, key, req.contentType, req.sizeBytes,
+      [propertyId, draftId, req.occupantKey ?? null, req.docType, req.idType ?? null, key, req.contentType, req.sizeBytes,
         Buffer.from(req.sha256, 'hex'), by.source, by.sessionId, by.uploadedBy, by.device?.slice(0, 120) ?? null, req.clientUploadId ?? null],
     );
     if (rows[0]) return { documentId: rows[0].id, upload: await this.storage.uploadGrant(key, req.contentType, req.sizeBytes, req.sha256) };

@@ -22,7 +22,7 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | Edit / rebook use the same validation, limits and audit | `apps/api/test/booking-changes.test.ts` |
 | No SQL interpolation; demo data blocked from production | `apps/api/test/guards.test.ts` |
 | Phone scanner: single-use QR, 10-minute expiry, upload-only, no guest data to phone, device secret | `apps/api/test/check-in.test.ts` |
-| Document counts only after server re-hash (SHA-256 + size); tampered/expired/overwrite links refused; Aadhaar masked flag | `apps/api/test/check-in.test.ts` |
+| Document counts only after server re-hash (SHA-256 + size); tampered/expired/overwrite links refused | `apps/api/test/check-in.test.ts` |
 | Check-in blocked while documents are uploading/failed/missing; draft survives refresh; double confirm → one stay | `apps/api/test/check-in.test.ts` |
 | Room shift uses the exclusion constraint; checkout pipeline order; checked-out stay immutable | `apps/api/test/check-in.test.ts` |
 | Registration card PDF is byte-for-byte reproducible, so the stored SHA-256 is a real check | `apps/api/test/grc.test.ts` |
@@ -32,7 +32,7 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | A reprint returns the stored card; regenerating creates a linked new version and overwrites nothing | `apps/api/test/grc.test.ts` |
 | A registration card is never edited or deleted in the database | `apps/api/test/grc.test.ts` |
 | WCAG AA contrast of every text/surface token pair, both themes | `apps/web/test/contrast.test.ts` |
-| Desk check-in end to end: draft survives refresh, desk uploads through editor, phone scanner (no guest data), Aadhaar masking verified in the stored pixels, offline capture → reload → resume, live arrival on desk, signature, confirm | `tests/e2e/check-in.spec.ts` |
+| Desk check-in end to end: draft survives refresh, desk uploads through editor, phone scanner (no guest data), offline capture → reload → resume, live arrival on desk, signature, confirm | `tests/e2e/check-in.spec.ts` |
 | The whole stay end to end: check-in → registration card created from the signature and served as a real PDF whose hash matches the screen → room change with reason kept on the stay → checkout → room left dirty and vacant | `tests/e2e/check-in.spec.ts` |
 | Storage enforces type, size, SHA-256 and write-once on pre-signed uploads (MinIO in CI) | `apps/api/test/check-in.test.ts` |
 | Retried document creation returns the same document | `apps/api/test/check-in.test.ts` |

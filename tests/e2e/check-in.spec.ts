@@ -28,18 +28,11 @@ async function syntheticCard(page: Page, label: string): Promise<Buffer> {
   return Buffer.from(dataUrl.split(',')[1]!, 'base64');
 }
 
-async function useEditor(page: Page, { aadhaar = false, crop = true } = {}) {
+async function useEditor(page: Page, { crop = true } = {}) {
   const dialog = page.getByRole('dialog').last();
   if (crop) {
     await expect(dialog.getByText(/Edges found|Drag the four corners|Finding the document edges/)).toBeVisible({ timeout: 20_000 });
     await dialog.getByRole('button', { name: 'Crop' }).click();
-  }
-  if (aadhaar) {
-    await expect(dialog.getByText(/cover the first 8 digits/i)).toBeVisible();
-    const cont = dialog.getByRole('button', { name: 'Continue' });
-    await expect(cont).toBeDisabled();
-    await dialog.getByLabel(/first 8 digits are fully covered/).check();
-    await cont.click();
   }
   await dialog.getByRole('button', { name: 'Use photo' }).click();
   await expect(dialog).toBeHidden();
@@ -141,12 +134,9 @@ test('the whole stay: desk check-in with phone scanner, registration card, room 
     await expect(dlg.getByText(/Edges found|Drag the four corners/)).toBeVisible({ timeout: 20_000 });
     await phone.screenshot({ path: `${process.env.E2E_SCREENSHOTS}/phone-corners.png` });
     await dlg.getByRole('button', { name: 'Crop' }).click();
-    await phone.screenshot({ path: `${process.env.E2E_SCREENSHOTS}/phone-mask.png` });
-    await dlg.getByLabel(/first 8 digits are fully covered/).check();
-    await dlg.getByRole('button', { name: 'Continue' }).click();
     await dlg.getByRole('button', { name: 'Use photo' }).click();
   } else {
-    await useEditor(phone, { aadhaar: true });
+    await useEditor(phone);
   }
   await expect(guest2.getByText('Saved — waiting for network')).toBeVisible({ timeout: 15_000 });
   if (process.env.E2E_SCREENSHOTS) await phone.screenshot({ path: `${process.env.E2E_SCREENSHOTS}/phone-offline.png` });
@@ -158,7 +148,7 @@ test('the whole stay: desk check-in with phone scanner, registration card, room 
   await expect(slot(/^ID — front/).getByRole('status')).toHaveText(/Received/, { timeout: 30_000 });
 
   await guest2Again.getByTestId('file-input-id_back').setInputFiles({ name: 'aadhaar-back.jpg', mimeType: 'image/jpeg', buffer: await syntheticCard(phone, 'AADHAAR BACK') });
-  await useEditor(phone, { aadhaar: true });
+  await useEditor(phone);
   await expect(slot(/^ID — back/).getByRole('status')).toHaveText(/Received/, { timeout: 30_000 });
   await expect(slot(/^ID — front/).getByRole('status')).toHaveText(/Received/);
   if (process.env.E2E_SCREENSHOTS) {
@@ -193,23 +183,15 @@ test('the whole stay: desk check-in with phone scanner, registration card, room 
   await expect(page.getByText('In house').first()).toBeVisible();
   await expect(page.getByText('Room 205 · In house')).toBeVisible();
 
-  // Privacy: the stored Aadhaar image really is black where the number was (not just a flag).
+  // An ID image is reachable only through a short-lived signed link, and only the last 4 characters
+  // of the number were ever stored (spec §58.3 — on-device masking was removed, migration 0008).
   const stayLink = await page.getByText('Room 205 · In house').getAttribute('href');
   const stay = await (await page.request.get(`/api/v1/stays/${stayLink!.split('/').pop()}`)).json();
   const aadhaar = stay.documents.find((d: any) => d.idType === 'aadhaar' && d.docType === 'id_front');
-  expect(aadhaar.maskedOnDevice).toBe(true);
+  expect(aadhaar.status).toBe('verified');
+  expect(JSON.stringify(stay.occupants)).not.toContain('123456789012');
   const { url } = await (await page.request.get(`/api/v1/documents/${aadhaar.id}/view-url`)).json();
-  const darkness = await page.evaluate(async (src) => {
-    const blob = await (await fetch(src)).blob();
-    const bitmap = await createImageBitmap(blob);
-    const c = document.createElement('canvas'); c.width = bitmap.width; c.height = bitmap.height;
-    const g = c.getContext('2d')!; g.drawImage(bitmap, 0, 0);
-    // centre of the default masking box (x 24–64 %, y 70–82 %)
-    const d = g.getImageData(Math.round(c.width * 0.3), Math.round(c.height * 0.73), Math.round(c.width * 0.28), Math.round(c.height * 0.06)).data;
-    let sum = 0; for (let i = 0; i < d.length; i += 4) sum += (d[i]! + d[i + 1]! + d[i + 2]!) / 3;
-    return sum / (d.length / 4);
-  }, url);
-  expect(darkness).toBeLessThan(12);
+  expect((await page.request.get(url)).status()).toBe(200);
 
   // ---------------------------------------------------------------------------
   // The rest of the stay: registration card, room change, checkout (spec §20–§22)

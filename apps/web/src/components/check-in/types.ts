@@ -2,7 +2,7 @@ import type { CheckInDraftData, DocumentType, IdType, MealPlanCode } from '@reso
 
 export interface DraftDocument {
   id: string; docType: DocumentType; label: string; idType: Exclude<IdType, 'none'> | null; occupantKey: string | null;
-  status: 'pending' | 'verified' | 'failed' | 'orphaned'; source: string; sizeBytes: number; maskedOnDevice: boolean;
+  status: 'pending' | 'verified' | 'failed' | 'orphaned'; source: string; sizeBytes: number;
   createdAt: string; verifiedAt: string | null; failureReason: string | null;
 }
 

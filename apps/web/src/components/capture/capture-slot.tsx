@@ -109,7 +109,7 @@ export function CaptureSlot({ label, hint, docType, idType, state, facing = 'env
       </Dialog>
       <Dialog open={!!source} onClose={() => setSource(null)} title={label} size="lg">
         {source && (
-          <DocumentEditor source={source.blob} docType={docType} idType={idType}
+          <DocumentEditor source={source.blob} docType={docType}
             onRetake={() => { setSource(null); if (source.via === 'camera') cameraInput.current?.click(); else if (source.via === 'live') setLive(true); else fileInput.current?.click(); }}
             onDone={(result) => { const via = source.via; setSource(null); onCaptured(result, via); }} />
         )}

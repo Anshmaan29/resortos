@@ -55,7 +55,7 @@ export function RegistrationStep({ draft, data, property, onChange, onRefresh, q
         <CardHeader title="Guest signature" action={<SlotStatus state={state} />} />
         <div className="p-5">
           <SignatureField disabled={state.kind === 'uploading' || state.kind === 'verifying'}
-            onSigned={(png) => void queue.add({ slotKey: 'signature', docType: 'signature', maskedOnDevice: false, source: 'signature_pad', blob: png, contentType: 'image/png' }).then(onRefresh)} />
+            onSigned={(png) => void queue.add({ slotKey: 'signature', docType: 'signature', source: 'signature_pad', blob: png, contentType: 'image/png' }).then(onRefresh)} />
         </div>
       </Card>
     </div>

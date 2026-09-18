@@ -4,9 +4,6 @@ import type { CV } from './opencv';
 export interface Point { x: number; y: number }
 /** Corners in source-image pixels, ordered top-left, top-right, bottom-right, bottom-left. */
 export type Corners = [Point, Point, Point, Point];
-/** Mask rectangles in 0..1 of the output image. */
-export interface MaskRect { x: number; y: number; w: number; h: number }
-
 export const MAX_SIDE = 2000;
 export const TARGET_BYTES = 600_000;
 
@@ -191,18 +188,6 @@ export function straighten(cv: CV | null, source: HTMLCanvasElement, c: Corners)
   } finally {
     [src, dst, from, to, m].forEach((x) => x.delete());
   }
-}
-
-/** Paints solid black boxes into the pixels. The unmasked image never leaves the device (spec §19.4). */
-export function applyMasks(source: HTMLCanvasElement, masks: MaskRect[]): HTMLCanvasElement {
-  const out = document.createElement('canvas');
-  out.width = source.width;
-  out.height = source.height;
-  const ctx = out.getContext('2d')!;
-  ctx.drawImage(source, 0, 0);
-  ctx.fillStyle = '#000';
-  for (const r of masks) ctx.fillRect(r.x * out.width, r.y * out.height, r.w * out.width, r.h * out.height);
-  return out;
 }
 
 /**

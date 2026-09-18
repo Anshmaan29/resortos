@@ -65,7 +65,7 @@ export interface CalendarData {
 
 export interface StayDocument {
   id: string; docType: string; label: string; idType: string | null; occupantKey: string | null;
-  status: 'pending' | 'verified' | 'failed' | 'orphaned'; source: string; sizeBytes: number; maskedOnDevice: boolean;
+  status: 'pending' | 'verified' | 'failed' | 'orphaned'; source: string; sizeBytes: number;
   createdAt: string; verifiedAt: string | null; failureReason: string | null;
 }
 export interface StayDetail {
