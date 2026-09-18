@@ -49,6 +49,7 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | The whole stay end to end: check-in → registration card created from the signature and served as a real PDF whose hash matches the screen → room change with reason kept on the stay → checkout → room left dirty and vacant | `tests/e2e/check-in.spec.ts` |
 | Storage enforces type, size, SHA-256 and write-once on pre-signed uploads (MinIO in CI) | `apps/api/test/check-in.test.ts` |
 | Retried document creation returns the same document | `apps/api/test/check-in.test.ts` |
+| Losing the network mid-upload cuts the request short instead of wedging the queue, and resumes without waiting out a backoff | `tests/e2e/check-in.spec.ts` |
 | DD/MM/YYYY picker, Owner PIN by keyboard, override shown, edit, rebook | `tests/e2e/front-desk.spec.ts` |
 
 ## Where concurrency tests live
