@@ -71,14 +71,27 @@ function db() {
 }
 
 const DONE_RETENTION_MS = 6 * 60 * 60 * 1000;
+/** Flat wait after a request that never reached the server. See `deferForNetwork`. */
+const NETWORK_RETRY_MS = 1500;
 
 function backoff(attempts: number) {
   const base = Math.min(30_000, 1000 * 2 ** Math.min(attempts, 5));
   return base / 2 + Math.random() * (base / 2);
 }
 
-/** PUT with progress; resolves with the storage status code (0 when the network failed). */
-function putWithProgress(grant: UploadGrant, blob: Blob, onProgress: (fraction: number) => void): Promise<{ status: number; code?: string }> {
+/**
+ * PUT with progress; resolves with the storage status code (0 when the network failed).
+ *
+ * `onStart` hands the request back so the queue can abort it. Losing the network mid-upload does
+ * not reliably fail the request — Chromium can leave it hanging — and the drain loop awaits this
+ * promise, so one hanging request would stop every other photo on the device.
+ */
+function putWithProgress(
+  grant: UploadGrant,
+  blob: Blob,
+  onProgress: (fraction: number) => void,
+  onStart: (xhr: XMLHttpRequest) => void,
+): Promise<{ status: number; code?: string }> {
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', grant.url);
@@ -87,7 +100,9 @@ function putWithProgress(grant: UploadGrant, blob: Blob, onProgress: (fraction: 
     xhr.onload = () => resolve({ status: xhr.status, code: /<Code>(\w+)<\/Code>/.exec(xhr.responseText ?? '')?.[1] });
     xhr.onerror = () => resolve({ status: 0 });
     xhr.ontimeout = () => resolve({ status: 0 });
-    xhr.timeout = 120_000;
+    xhr.onabort = () => resolve({ status: 0 });
+    xhr.timeout = 60_000;
+    onStart(xhr);
     xhr.send(blob);
   });
 }
@@ -99,6 +114,8 @@ export class UploadQueue {
   private progress = new Map<string, number>();
   /** Mirror of this session's items, so a device that cannot persist can still upload. */
   private memory = new Map<string, QueueItem>();
+  /** The upload in flight, so losing the network can cut it short instead of leaving it hanging. */
+  private active: XMLHttpRequest | null = null;
   private persistenceBroken = false;
 
   /** True when this device refused to store the queue; the UI warns that a refresh would lose it. */
@@ -120,12 +137,26 @@ export class UploadQueue {
 
   start() {
     const kick = () => void this.process();
-    window.addEventListener('online', kick);
+    const resume = async () => {
+      // Anything parked for want of a network is due the instant it returns.
+      for (const item of await this.items()) {
+        if (item.status === 'waiting_network') await this.save(item, { status: 'queued', nextAttemptAt: Date.now() });
+      }
+      kick();
+    };
+    const onOnline = () => void resume();
+    // Cut the upload in flight short: losing the network does not reliably fail the request, and a
+    // hanging request blocks the drain loop for every other photo on the device.
+    const onOffline = () => this.active?.abort();
+
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
     document.addEventListener('visibilitychange', kick);
     this.timer = setInterval(kick, 2000);
     void this.purgeOld().then(kick);
     return () => {
-      window.removeEventListener('online', kick);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
       document.removeEventListener('visibilitychange', kick);
       if (this.timer) clearInterval(this.timer);
     };
@@ -225,6 +256,25 @@ export class UploadQueue {
     await this.save(item, { status, attempts: item.attempts + 1, nextAttemptAt: Date.now() + backoff(item.attempts + 1), error: message });
   }
 
+  /**
+   * The request never reached the server, so there is nothing to back off from.
+   *
+   * Exponential backoff exists to stop hammering a service that is struggling. A missing network is
+   * not that: the moment it returns, the right thing is to send immediately. Backing off here is
+   * actively wrong — after a handful of drop-outs the delay reaches its 30-second ceiling and the
+   * guest's ID sits at "Saved — waiting for network" long after the wifi is back.
+   *
+   * Attempts still climb, so the count in job status stays honest, but the delay stays flat.
+   */
+  private async deferForNetwork(item: QueueItem, message: string) {
+    await this.save(item, {
+      status: navigator.onLine ? 'queued' : 'waiting_network',
+      attempts: item.attempts + 1,
+      nextAttemptAt: Date.now() + NETWORK_RETRY_MS,
+      error: message,
+    });
+  }
+
   private async fail(item: QueueItem, message: string) {
     await this.save(item, { status: 'failed', error: message });
   }
@@ -243,9 +293,13 @@ export class UploadQueue {
         const body = item.bytes ? new Blob([item.bytes], { type: item.contentType }) : item.blob ?? null;
         if (!body) return this.fail(item, 'The photo is no longer on this device. Capture it again.');
         await this.save(item, { status: 'uploading', error: undefined });
-        const put = await putWithProgress(item.grant!, body, (f) => { this.progress.set(item.id, f); void this.emit(); });
+        const put = await putWithProgress(
+          item.grant!, body,
+          (f) => { this.progress.set(item.id, f); void this.emit(); },
+          (xhr) => { this.active = xhr; },
+        ).finally(() => { this.active = null; });
         this.progress.delete(item.id);
-        if (put.status === 0) return this.retryLater(item, 'Network lost — will resume automatically', 'waiting_network');
+        if (put.status === 0) return this.deferForNetwork(item, 'Network lost — will resume automatically');
         if (put.status === 403) { await this.save(item, { grant: undefined }); return this.retryLater(item, 'Upload link expired — renewing'); }
         if (put.status === 400 && put.code === 'XAmzContentChecksumMismatch') return this.fail(item, 'The photo was damaged in transfer. Capture it again.');
         if (put.status !== 200 && put.status !== 412) return this.retryLater(item, `Storage returned ${put.status}`);
@@ -265,7 +319,7 @@ export class UploadQueue {
         if (err.status >= 400 && err.status < 500 && err.code !== 'RATE_LIMITED' && err.code !== 'SERVICE_BUSY') return this.fail(item, err.message);
         return this.retryLater(item, err.message);
       }
-      return this.retryLater(item, 'Network lost — will resume automatically', navigator.onLine ? 'queued' : 'waiting_network');
+      return this.deferForNetwork(item, 'Network lost — will resume automatically');
     }
   }
 }
