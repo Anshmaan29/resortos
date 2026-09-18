@@ -116,7 +116,7 @@ ResortOS combines:
 - Guest WhatsApp/email messages
 - Owner daily summary
 - Google Sheets mirror and Google Drive archive for easy owner access
-- India compliance: GST, Form C, police register, Aadhaar masking, DPDP
+- India compliance: GST, Form C, police register, DPDP
 - Data migration from the old software
 - Audit history
 - AI Revenue Intelligence (advisory)
@@ -678,7 +678,7 @@ Every stay records all occupants per room:
 - Adult / child, age for children
 - Relation to primary guest (optional)
 - Nationality (foreign → Form C, section 58)
-- ID type, last 4 digits, masked ID image (if required)
+- ID type, ID reference, ID image (if required)
 
 Setting: ID required for **all adults** or **primary guest only**.
 Occupant counts must match adults/children on the booking before
@@ -820,9 +820,14 @@ Security rules for the capture session:
 3. **Manual corner adjustment** always available if detection fails
 4. **Quality check**: blur score (Laplacian variance) and brightness;
    show "Photo looks blurry — retake?" (owner setting: warn or block)
-5. **Aadhaar masking** (when document type is Aadhaar): receptionist
-   drags a black box over the first 8 digits; the masked image is what
-   gets uploaded — the unmasked original never leaves the device
+5. *(Removed by the product owner, 18 Sep 2026.)* On-device Aadhaar
+   masking was built and then removed after real-device testing: it put an
+   extra screen, a drag-to-position box and a confirmation tick-box in front
+   of the receptionist. **Every ID is now captured and stored the same way** —
+   Aadhaar exactly like a driving licence or a passport. What protects the
+   images instead: private encrypted storage, 60-second signed URLs, and a
+   logged access trail (section 19.7). See migration `0008` and CLAUDE.md
+   rule 11.
 6. **Re-encode** to JPEG or WebP: longest side max 2000 px, quality ~0.8,
    target under 600 KB; this also removes EXIF metadata (location)
 7. Handle iPhone HEIC: prefer the browser's JPEG conversion; server
@@ -2013,11 +2018,17 @@ When any occupant's nationality is not Indian:
 - Columns configurable to match the local police station's format
 - PDF and Excel; every export audit-logged
 
-## 58.3 Aadhaar
+## 58.3 Identity documents
 
-- Never store the full Aadhaar number; store last 4 digits only
-- Images masked on the device before upload (section 19.4)
-- Prefer other IDs where the guest offers them
+**No ID type is treated specially.** Aadhaar, driving licence, passport,
+voter ID and PAN all follow one path: photograph, crop, store.
+
+- ID images are stored as captured, in private encrypted storage, and are
+  opened only through 60-second signed URLs with every view logged
+  (section 19.7)
+- An ID *reference* is recorded against the occupant alongside the image
+- On-device masking was removed by the product owner on 18 Sep 2026 after
+  real-device testing (migration `0008`)
 
 ## 58.4 DPDP Act
 
@@ -2784,7 +2795,7 @@ as credit.
 
 iPhone Safari, Android Chrome (budget and mid-range), Windows Chrome
 with USB webcam, macOS Safari — camera permission, capture, crop,
-masking, upload on weak network, resume after refresh.
+upload on weak network, resume after refresh.
 
 ## 79.6 Load
 
@@ -2974,7 +2985,6 @@ business. Before signing a resort:
 - [ ] Check-in drafts survive refresh and power cut
 - [ ] Phone scanner works on iPhone and Android
 - [ ] Documents cannot be marked complete until verified on server
-- [ ] Aadhaar masked before upload
 - [ ] Group bookings and split bills correct
 
 ## Billing
@@ -3093,7 +3103,8 @@ Put these at the repository root:
     credit/debit notes.
 10. Tax rates come from dated tax_rules; never hard-code rates.
 11. Documents: verified checksum before a check-in can be confirmed;
-    Aadhaar masked on device; signed short-lived URLs only.
+    signed short-lived URLs only; every view logged. No ID type is
+    treated specially.
 12. Never send ID data, photos, full phones, addresses, or flags to
     Google, messages, logs, or the AI provider.
 13. External services (WhatsApp, email, Google, AI) run after commit

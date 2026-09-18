@@ -14,10 +14,11 @@ Priority: **Data safety → Correctness → Security → Usability → Reliabili
 9.  Finalized invoices are immutable (DB trigger); corrections via credit/debit notes.
 10. Tax rates come from dated `tax_rules`; never hard-code rates. The GST engine lives in `packages/shared/src/gst.ts`.
 11. Documents: verified checksum before a check-in can be confirmed; signed short-lived URLs only; every view audit-logged.
-    **Deliberate difference from the spec:** on-device Aadhaar masking (spec §19.4.5, §58.3, §85) was
-    removed at the product owner's request after real-device testing — migration `0008`. ID images are
-    stored as captured. Only the last 4 characters of an ID *number* are ever stored, which is
-    unchanged. Do not re-add masking without asking the owner.
+    **No ID type is treated specially.** Aadhaar is captured, cropped and stored exactly like a
+    driving licence or passport — unmasked, one flow, no extra step. On-device masking was built and
+    removed (migration `0008`); the spec was updated to match (§19.4.5, §58.3, §85). This is settled:
+    do not re-add masking, do not add an Aadhaar-only rule, and do not raise it again.
+    What protects ID images: private encrypted storage, 60-second signed URLs, logged views.
 12. Never send ID data, photos, full phones, addresses, or flags to Google, messages, logs, or the AI provider. Audit entries store identifiers, not guest personal details.
 13. External services (WhatsApp, email, Google, AI) run after commit and can never break a transaction.
 14. Roles: Owner, Receptionist, optional task-only Cleaner. No manager role, no approval queue.
