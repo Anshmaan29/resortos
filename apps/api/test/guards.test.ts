@@ -25,6 +25,72 @@ describe('SQL safety', () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  it('no read is fanned out over a Queryable with Promise.all — use gather()', () => {
+    // A `Queryable` may be a single pooled client inside a transaction, which runs one query at a
+    // time and quietly queues the rest. Promise.all over it is fake parallelism today and an error
+    // in pg 9, so `gather()` decides based on what the caller actually handed us.
+    /** The text between `Promise.all(` and its matching `)`, so a later statement is not blamed. */
+    function argumentOf(src: string, openParen: number): string {
+      let depth = 0;
+      for (let i = openParen; i < src.length; i += 1) {
+        const c = src[i];
+        if (c === '(' || c === '[' || c === '{') depth += 1;
+        else if (c === ')' || c === ']' || c === '}') {
+          depth -= 1;
+          if (depth === 0) return src.slice(openParen + 1, i);
+        }
+      }
+      return '';
+    }
+
+    const offenders: string[] = [];
+    for (const file of files(join(__dirname, '..', 'src'))) {
+      const src = readFileSync(file, 'utf8');
+      for (const m of src.matchAll(/Promise\.all\(/g)) {
+        const arg = argumentOf(src, m.index + 'Promise.all'.length);
+        if (/\bq\.query\b/.test(arg)) offenders.push(`${file}:${src.slice(0, m.index).split('\n').length}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe('gather() adapts to what it was given', () => {
+  it('runs together on the pool and one at a time on a transaction client', async () => {
+    const { DbService, gather } = await import('../src/db/db.service');
+    const db = new DbService({ DATABASE_URL: APP_URL } as never);
+    try {
+      // On the pool: three sleeps overlap, so the wall time is one sleep, not three.
+      const started = Date.now();
+      await gather(db, [
+        () => db.query(`SELECT pg_sleep(0.3)`),
+        () => db.query(`SELECT pg_sleep(0.3)`),
+        () => db.query(`SELECT pg_sleep(0.3)`),
+      ]);
+      const parallel = Date.now() - started;
+
+      // Inside a transaction there is one connection, so the same three sleeps queue up.
+      const serial = await db.tx({}, async (q) => {
+        const at = Date.now();
+        await gather(q, [
+          () => q.query(`SELECT pg_sleep(0.3)`),
+          () => q.query(`SELECT pg_sleep(0.3)`),
+          () => q.query(`SELECT pg_sleep(0.3)`),
+        ]);
+        return Date.now() - at;
+      });
+
+      expect(parallel).toBeLessThan(750);
+      expect(serial).toBeGreaterThan(850);
+      // The point of the helper: the caller gets the same shape either way.
+      const rows = await db.tx({}, (q) => gather(q, [() => q.query<{ n: number }>(`SELECT 1::int AS n`), () => Promise.resolve('plain')]));
+      expect(rows[0].rows[0]!.n).toBe(1);
+      expect(rows[1]).toBe('plain');
+    } finally {
+      await db.onModuleDestroy();
+    }
+  });
 });
 
 describe('demo data can never reach production', () => {

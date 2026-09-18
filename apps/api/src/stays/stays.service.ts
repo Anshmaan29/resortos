@@ -5,7 +5,7 @@ import { AuditService } from '../common/audit.service';
 import { AppError, notFound } from '../common/errors';
 import { OutboxService } from '../common/outbox.service';
 import type { Actor } from '../common/request-context';
-import { DbService, type Queryable } from '../db/db.service';
+import { DbService, gather, type Queryable } from '../db/db.service';
 import type { GuestDocumentRow, ReservationRoomRow, RoomRow, StayRow } from '../db/rows';
 import { PropertyService } from '../property/property.service';
 import { RatesService } from '../rates/rates.service';
@@ -47,12 +47,12 @@ export class StaysService {
     const s = rows[0];
     if (!s) throw notFound('Stay');
     const businessDate = await this.property.businessDate(q, propertyId);
-    const [occupants, vehicles, documents, shifts] = await Promise.all([
-      q.query<{ occupant_key: string; full_name: string; is_primary: boolean; is_child: boolean; age: number | null; nationality: string; id_type: string; id_last4: string | null }>(
+    const [occupants, vehicles, documents, shifts] = await gather(q, [
+      () => q.query<{ occupant_key: string; full_name: string; is_primary: boolean; is_child: boolean; age: number | null; nationality: string; id_type: string; id_last4: string | null }>(
         `SELECT occupant_key, full_name, is_primary, is_child, age, nationality, id_type, id_last4 FROM stay_occupants WHERE stay_id = $1 ORDER BY is_primary DESC, is_child, created_at`, [stayId]),
-      q.query<{ registration: string; vehicle_type: string; parking_slot: string | null }>(`SELECT registration, vehicle_type, parking_slot FROM stay_vehicles WHERE stay_id = $1`, [stayId]),
-      q.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE stay_id = $1 ORDER BY created_at`, [stayId]),
-      q.query<{ from_number: string; to_number: string; business_date: string; reason: string; rate_decision: string; created_at: Date; by_name: string }>(
+      () => q.query<{ registration: string; vehicle_type: string; parking_slot: string | null }>(`SELECT registration, vehicle_type, parking_slot FROM stay_vehicles WHERE stay_id = $1`, [stayId]),
+      () => q.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE stay_id = $1 ORDER BY created_at`, [stayId]),
+      () => q.query<{ from_number: string; to_number: string; business_date: string; reason: string; rate_decision: string; created_at: Date; by_name: string }>(
         `SELECT f.number AS from_number, t.number AS to_number, sh.business_date, sh.reason, sh.rate_decision, sh.created_at, u.full_name AS by_name
            FROM room_shifts sh JOIN rooms f ON f.id = sh.from_room_id JOIN rooms t ON t.id = sh.to_room_id JOIN users u ON u.id = sh.created_by
           WHERE sh.stay_id = $1 ORDER BY sh.created_at`, [stayId]),

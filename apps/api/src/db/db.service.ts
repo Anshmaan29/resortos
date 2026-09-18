@@ -14,6 +14,31 @@ types.setTypeParser(20, (v) => v); // int8 (bigint)
  */
 export interface Queryable {
   query<R extends QueryResultRow = never>(text: string, values?: unknown[]): Promise<{ rows: R[]; rowCount: number | null }>;
+  /**
+   * True only for the pool, where each query takes its own connection. A pooled client — what `tx`
+   * hands to its callback — speaks one connection and runs one query at a time, silently queueing
+   * the rest: `Promise.all` over it is not parallel at all, and pg 9 removes that queue and makes
+   * it an error. Read it through `gather()` rather than branching on it by hand.
+   */
+  readonly parallelSafe?: boolean;
+}
+
+/**
+ * Runs read queries together when `q` can actually do them together, and one after another when it
+ * cannot. Same result either way, so a function like `detail()` can be called both from a
+ * controller (on the pool) and from inside a transaction without knowing which it got.
+ */
+export function gather<T extends readonly (() => Promise<unknown>)[]>(
+  q: Queryable,
+  tasks: [...T],
+): Promise<{ [K in keyof T]: Awaited<ReturnType<T[K]>> }> {
+  type Results = { [K in keyof T]: Awaited<ReturnType<T[K]>> };
+  if (q.parallelSafe) return Promise.all(tasks.map((task) => task())) as Promise<Results>;
+  return (async () => {
+    const results: unknown[] = [];
+    for (const task of tasks) results.push(await task());
+    return results as Results;
+  })();
 }
 
 export interface TxContext {
@@ -25,6 +50,8 @@ export interface TxContext {
 export class DbService implements OnModuleDestroy {
   private readonly logger = new Logger(DbService.name);
   readonly pool: Pool;
+  /** Every query here takes its own connection from the pool, so fanning out is real parallelism. */
+  readonly parallelSafe = true;
 
   constructor(@Inject(APP_CONFIG) config: AppConfig) {
     this.pool = new Pool({

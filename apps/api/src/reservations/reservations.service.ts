@@ -10,7 +10,7 @@ import { AuditService } from '../common/audit.service';
 import { AppError, notFound, staleVersion } from '../common/errors';
 import { OutboxService } from '../common/outbox.service';
 import type { Actor } from '../common/request-context';
-import { DbService, type Queryable } from '../db/db.service';
+import { DbService, gather, type Queryable } from '../db/db.service';
 import type { CountRow, IdRow, NightRow, ReservationRoomRow, ReservationRow } from '../db/rows';
 import { GuestsService } from '../guests/guests.service';
 import { PropertyService } from '../property/property.service';
@@ -524,8 +524,8 @@ export class ReservationsService {
     const r = rows[0];
     if (!r) throw notFound('Booking');
 
-    const [roomRows, overrides, related, bd] = await Promise.all([
-      q.query<ReservationRoomRow & { room_type_name: string; room_number: string | null; room_total: string; extras_total: string; meal_total: string }>(
+    const [roomRows, overrides, related, bd] = await gather(q, [
+      () => q.query<ReservationRoomRow & { room_type_name: string; room_number: string | null; room_total: string; extras_total: string; meal_total: string }>(
         `SELECT rr.*, rt.name AS room_type_name, rm.number AS room_number,
                 COALESCE(sum(n.room_rate), 0) AS room_total, COALESCE(sum(n.extra_person_amount), 0) AS extras_total, COALESCE(sum(n.meal_amount), 0) AS meal_total
            FROM reservation_rooms rr
@@ -537,19 +537,19 @@ export class ReservationsService {
           ORDER BY rr.created_at, rm.number`,
         [id],
       ),
-      q.query<{ action: string; description: string; created_at: Date; performed_by: string; authorised_by: string; authorised_by_role: string }>(
+      () => q.query<{ action: string; description: string; created_at: Date; performed_by: string; authorised_by: string; authorised_by_role: string }>(
         `SELECT o.action, o.description, o.created_at, p.full_name AS performed_by, a.full_name AS authorised_by, a.role AS authorised_by_role
            FROM owner_overrides o JOIN users p ON p.id = o.performed_by JOIN users a ON a.id = o.authorised_by
           WHERE o.entity_type = 'reservation' AND o.entity_id = $1 ORDER BY o.created_at`,
         [id],
       ),
-      q.query<{ id: string; number: string; status: ReservationStatus; relation: 'from' | 'as' }>(
+      () => q.query<{ id: string; number: string; status: ReservationStatus; relation: 'from' | 'as' }>(
         `SELECT id, number, status, 'from' AS relation FROM reservations WHERE id = $1
          UNION ALL
          SELECT id, number, status, 'as' AS relation FROM reservations WHERE rebooked_from_id = $2`,
         [r.rebooked_from_id, id],
       ),
-      this.property.businessDate(q, propertyId),
+      () => this.property.businessDate(q, propertyId),
     ]);
 
     const stayRows = await q.query<{ id: string; room_number: string; status: string }>(
@@ -558,7 +558,7 @@ export class ReservationsService {
     const nightsByRoom = await q.query<NightRow>(
       `SELECT * FROM reservation_room_nights WHERE reservation_room_id = ANY($1::uuid[])`, [roomRows.rows.map((x) => x.id)],
     );
-    const quotes = await Promise.all(roomRows.rows.map((x) => this.rates.quoteFromStoredNights(q, propertyId, x.room_type_id, x.rate_plan_id,
+    const quotes = await gather(q, roomRows.rows.map((x) => () => this.rates.quoteFromStoredNights(q, propertyId, x.room_type_id, x.rate_plan_id,
       nightsByRoom.rows.filter((n) => n.reservation_room_id === x.id))));
     const estimate = await this.rates.estimateTax(q, propertyId, quotes);
 
