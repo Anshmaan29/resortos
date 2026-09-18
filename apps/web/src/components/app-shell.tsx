@@ -1,7 +1,7 @@
 'use client';
 import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { BedDouble, CalendarDays, ChevronDown, ClipboardList, Home, LogOut, Palmtree, Plus, WifiOff } from 'lucide-react';
+import { BedDouble, CalendarDays, ChevronDown, ClipboardList, Home, LogOut, Palmtree, Plus, Search, UserRound, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -9,14 +9,20 @@ import { formatDate } from '@resortos/shared';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useMe, useProperty } from '@/lib/session';
+import { GlobalSearch } from './global-search';
 import { Button } from './ui/button';
 
 const NAV = [
-  { href: '/', label: 'Home', icon: Home },
-  { href: '/reservations', label: 'Bookings', icon: ClipboardList },
-  { href: '/calendar', label: 'Calendar', icon: CalendarDays },
-  { href: '/rooms', label: 'Rooms', icon: BedDouble },
+  { href: '/', label: 'Home', icon: Home, phone: true },
+  { href: '/reservations', label: 'Bookings', icon: ClipboardList, phone: true },
+  { href: '/guests', label: 'Guests', icon: UserRound, phone: true },
+  { href: '/in-house', label: 'In house', icon: BedDouble, phone: true },
+  { href: '/calendar', label: 'Calendar', icon: CalendarDays, phone: false },
+  { href: '/rooms', label: 'Rooms', icon: BedDouble, phone: false },
 ];
+
+/** Four fit around the new-booking button; the rest live in the sidebar on bigger screens. */
+const PHONE_NAV = NAV.filter((n) => n.phone);
 
 function useOnline() {
   const [online, setOnline] = useState(true);
@@ -105,6 +111,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-brand text-brand-contrast"><Palmtree className="h-4 w-4" /></div>
           <span className="max-w-[40vw] truncate text-sm font-semibold">{property.data?.name}</span>
         </div>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event('resortos:search'))}
+          className="ml-auto flex items-center gap-2 rounded-full border border-border px-3 py-1.5 text-sm text-text-3 hover:bg-surface-2 hover:text-text-2 sm:ml-0"
+          aria-label="Open search"
+        >
+          <Search className="h-4 w-4" aria-hidden />
+          <span className="hidden sm:inline">Search</span>
+          <kbd className="hidden rounded border border-border px-1 text-[10px] lg:inline">Ctrl K</kbd>
+        </button>
         {property.data && (
           <div className="hidden items-center gap-2 rounded-full bg-surface-2 px-3 py-1.5 text-sm sm:flex" title="Business date moves forward only at night audit">
             <span className="text-text-3">Business date</span>
@@ -144,15 +160,17 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       </AnimatePresence>
 
+      <GlobalSearch />
+
       <main className="mx-auto w-full max-w-[1400px] px-4 pb-28 pt-6 sm:px-6 lg:pb-10">{children}</main>
 
       {/* Bottom nav (phones/tablets) */}
       <nav className="no-print fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden" aria-label="Main">
-        {NAV.slice(0, 2).map((item) => <MobileNavItem key={item.href} {...item} active={isActive(item.href)} />)}
+        {PHONE_NAV.slice(0, 2).map((item) => <MobileNavItem key={item.href} {...item} active={isActive(item.href)} />)}
         <Link href="/reservations/new" className="flex flex-col items-center justify-center" aria-label="New booking">
           <span className="flex h-11 w-11 items-center justify-center rounded-full bg-brand text-brand-contrast shadow-md"><Plus className="h-5 w-5" /></span>
         </Link>
-        {NAV.slice(2).map((item) => <MobileNavItem key={item.href} {...item} active={isActive(item.href)} />)}
+        {PHONE_NAV.slice(2).map((item) => <MobileNavItem key={item.href} {...item} active={isActive(item.href)} />)}
       </nav>
     </div>
   );

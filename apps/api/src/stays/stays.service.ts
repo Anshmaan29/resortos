@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ERROR_CODES, formatDate, formatINR, type RoomShiftInput } from '@resortos/shared';
+import { ERROR_CODES, formatDate, formatINR, type RoomShiftInput, type StayListQuery } from '@resortos/shared';
 import { OwnerAuthorisationService } from '../auth/owner-authorisation.service';
 import { AuditService } from '../common/audit.service';
 import { AppError, notFound } from '../common/errors';
@@ -70,6 +70,81 @@ export class StaysService {
       documents: documents.rows.map(documentView),
       shifts: shifts.rows.map((x) => ({ from: x.from_number, to: x.to_number, businessDate: x.business_date, reason: x.reason, rateDecision: x.rate_decision, at: x.created_at, by: x.by_name })),
     };
+  }
+
+  /**
+   * The in-house list — the old software's "Check In List" (`docs/old-system-parity.md`).
+   *
+   * Defaults to who is in the resort right now, which is what a receptionist means when they open
+   * it. The date range is over *stay dates*, not the day the row was written, so "who was here last
+   * weekend" asks the question a person would ask.
+   */
+  async list(propertyId: string, query: StayListQuery) {
+    const { rows } = await this.db.query<{
+      id: string; status: 'in_house' | 'checked_out'; room_number: string; room_type_name: string;
+      guest_id: string; guest_name: string; mobile: string; is_vip: boolean; reservation_id: string; reservation_number: string;
+      business_date_in: string; expected_departure: string; business_date_out: string | null; early_departure: boolean;
+      adults: number; child_ages: (number | string)[]; occupants: string; purpose: string | null;
+    }>(
+      `SELECT s.id, s.status, rm.number AS room_number, rt.name AS room_type_name,
+              g.id AS guest_id, trim(g.first_name || ' ' || g.last_name) AS guest_name, g.mobile, g.is_vip,
+              r.id AS reservation_id, r.number AS reservation_number, r.purpose,
+              s.business_date_in, s.expected_departure, s.business_date_out, s.early_departure,
+              rr.adults, rr.child_ages,
+              (SELECT count(*) FROM stay_occupants o WHERE o.stay_id = s.id) AS occupants
+         FROM stays s
+         JOIN rooms rm ON rm.id = s.room_id
+         JOIN room_types rt ON rt.id = rm.room_type_id
+         JOIN reservations r ON r.id = s.reservation_id
+         JOIN reservation_rooms rr ON rr.id = s.reservation_room_id
+         JOIN guests g ON g.id = s.primary_guest_id
+        WHERE s.property_id = $1
+          AND ($2::text = 'all' OR s.status = $2)
+          -- Overlap, not containment: a stay that straddles the range still belongs in it.
+          AND ($3::date IS NULL OR COALESCE(s.business_date_out, s.expected_departure) >= $3)
+          AND ($4::date IS NULL OR s.business_date_in <= $4)
+          AND ($5::text IS NULL OR rm.number = $5 OR lower(g.first_name || ' ' || g.last_name) LIKE '%' || lower($5) || '%' OR upper(r.number) = upper($5))
+        ORDER BY s.status = 'in_house' DESC, rm.number
+        LIMIT 500`,
+      [propertyId, query.status, query.from ?? null, query.to ?? null, query.q ?? null],
+    );
+    return rows.map((s2) => ({
+      id: s2.id, status: s2.status, roomNumber: s2.room_number, roomTypeName: s2.room_type_name,
+      guestId: s2.guest_id, guestName: s2.guest_name, mobile: s2.mobile, isVip: s2.is_vip,
+      reservationId: s2.reservation_id, reservationNumber: s2.reservation_number, purpose: s2.purpose,
+      checkedIn: s2.business_date_in, dueOut: s2.expected_departure, checkedOut: s2.business_date_out,
+      earlyDeparture: s2.early_departure, adults: s2.adults, children: s2.child_ages.length, occupants: Number(s2.occupants),
+    }));
+  }
+
+  /** Room changes across the property — the old software's "Room Shift Log" (spec §21). */
+  async roomShiftLog(propertyId: string, query: { from?: string; to?: string }) {
+    const { rows } = await this.db.query<{
+      id: string; business_date: string; from_number: string; to_number: string; reason: string; rate_decision: string;
+      created_at: Date; by_name: string; authorised_by_name: string | null; stay_id: string; guest_name: string;
+    }>(
+      `SELECT sh.id, sh.business_date, f.number AS from_number, t.number AS to_number, sh.reason, sh.rate_decision,
+              sh.created_at, u.full_name AS by_name, a.full_name AS authorised_by_name,
+              sh.stay_id, trim(g.first_name || ' ' || g.last_name) AS guest_name
+         FROM room_shifts sh
+         JOIN rooms f ON f.id = sh.from_room_id
+         JOIN rooms t ON t.id = sh.to_room_id
+         JOIN users u ON u.id = sh.created_by
+         LEFT JOIN users a ON a.id = sh.authorised_by
+         JOIN stays s ON s.id = sh.stay_id
+         JOIN guests g ON g.id = s.primary_guest_id
+        WHERE sh.property_id = $1
+          AND ($2::date IS NULL OR sh.business_date >= $2)
+          AND ($3::date IS NULL OR sh.business_date <= $3)
+        ORDER BY sh.created_at DESC
+        LIMIT 500`,
+      [propertyId, query.from ?? null, query.to ?? null],
+    );
+    return rows.map((r) => ({
+      id: r.id, businessDate: r.business_date, from: r.from_number, to: r.to_number, reason: r.reason,
+      rateDecision: r.rate_decision, at: r.created_at, by: r.by_name, authorisedBy: r.authorised_by_name,
+      stayId: r.stay_id, guestName: r.guest_name,
+    }));
   }
 
   // ---------------------------------------------------------------------------

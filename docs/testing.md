@@ -17,6 +17,12 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | Permissions: roles, forced password change, logout | `apps/api/test/auth.test.ts` |
 | Owner PIN: single use, 2-minute expiry, bound to values, other staff, concurrency, lock + unlock | `apps/api/test/owner-authorisation.test.ts` |
 | Lockout abuse: attacker network, known device, network-wide, distributed, recovery | `apps/api/test/login-protection.test.ts` |
+| Purpose of visit lives on the booking, not the guest; the database refuses one off the list | `apps/api/test/guests-and-lists.test.ts` |
+| Guest search finds by vehicle number, however it is typed, as well as mobile, name and booking | `apps/api/test/guests-and-lists.test.ts` |
+| Guest profile carries stays, upcoming bookings, vehicles and documents, and never the image itself | `apps/api/test/guests-and-lists.test.ts` |
+| A receptionist sees documents of a current stay only; older ones are owner-only in the list *and* behind the signed URL | `apps/api/test/guests-and-lists.test.ts` |
+| In-house list defaults to now, filters by status and date range, and a straddling stay still matches | `apps/api/test/guests-and-lists.test.ts` |
+| Global search (Ctrl+K) finds guests, bookings, rooms and vehicles, and needs a session | `apps/api/test/guests-and-lists.test.ts` |
 | Outbox: a failing handler retries with backoff, succeeds later, and is delivered exactly once | `apps/api/test/outbox.test.ts` |
 | Outbox: gives up after 10 attempts, keeps the event forever, never retries it again | `apps/api/test/outbox.test.ts` |
 | Outbox: a handler that dies mid-flight leaves the event to be retried, not lost | `apps/api/test/outbox.test.ts` |

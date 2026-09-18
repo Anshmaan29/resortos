@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Headers, HttpCode, Param, Patch, Post, Req, Sse } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, Patch, Post, Query, Req, Sse } from '@nestjs/common';
 import {
   checkoutSchema, createCheckInDraftSchema, documentUploadRequestSchema, regenerateGrcSchema, roomShiftSchema,
-  updateCheckInDraftSchema, zId,
+  stayListQuerySchema, updateCheckInDraftSchema, zId, zIsoDate,
 } from '@resortos/shared';
 import { z } from 'zod';
 import { CurrentActor, IdempotencyKey, Public } from '../common/decorators';
@@ -151,6 +151,19 @@ export class StaysController {
   }
 
   // ---------------- stays ----------------
+
+  /** The in-house list ("Check In List"), with date-range and status filters. */
+  @Get('stays')
+  list(@CurrentActor() actor: Actor, @Query() query: Record<string, string>) {
+    return this.stays.list(actor.user.propertyId, parse(stayListQuerySchema, query));
+  }
+
+  /** Room changes across the property ("Room Shift Log"). */
+  @Get('room-shifts')
+  roomShifts(@CurrentActor() actor: Actor, @Query() query: Record<string, string>) {
+    const range = parse(z.object({ from: zIsoDate.optional(), to: zIsoDate.optional() }), query);
+    return this.stays.roomShiftLog(actor.user.propertyId, range);
+  }
 
   @Get('stays/:id')
   stay(@CurrentActor() actor: Actor, @Param('id') id: string) {

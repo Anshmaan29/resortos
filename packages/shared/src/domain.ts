@@ -63,6 +63,17 @@ export const BOOKING_SOURCE_LABELS: Record<BookingSource, string> = {
   airbnb: 'Airbnb', corporate: 'Corporate', travel_agent: 'Travel agent', other: 'Other',
 };
 
+/** Why the guest is visiting (parity with the old software; feeds Form C and revenue breakdowns). */
+export const VISIT_PURPOSES = [
+  'business', 'leisure', 'family_function', 'medical', 'pilgrimage', 'conference', 'other',
+] as const;
+export type VisitPurpose = (typeof VISIT_PURPOSES)[number];
+
+export const VISIT_PURPOSE_LABELS: Record<VisitPurpose, string> = {
+  business: 'Business', leisure: 'Leisure', family_function: 'Family function', medical: 'Medical',
+  pilgrimage: 'Pilgrimage', conference: 'Conference', other: 'Other',
+};
+
 export const RESERVATION_STATUSES = [
   'tentative', 'confirmed', 'checked_in', 'checked_out', 'cancelled', 'no_show',
 ] as const;

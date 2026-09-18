@@ -5,6 +5,7 @@ import { CurrentActor } from '../common/decorators';
 import type { Actor } from '../common/request-context';
 import { parse } from '../common/zod';
 import { GuestsService } from './guests.service';
+import { SearchService } from './search.service';
 
 @Controller('guests')
 export class GuestsController {
@@ -23,7 +24,7 @@ export class GuestsController {
 
   @Get(':id')
   get(@CurrentActor() actor: Actor, @Param('id') id: string) {
-    return this.guests.get(actor.user.propertyId, parse(zId, id));
+    return this.guests.get(actor.user.propertyId, parse(zId, id), actor.user.role);
   }
 
   @Post()
@@ -35,5 +36,16 @@ export class GuestsController {
   update(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() body: unknown) {
     const { version } = parse(z.object({ version: z.number().int().min(1) }), body);
     return this.guests.update(actor, parse(zId, id), parse(guestSchema, body), version);
+  }
+}
+
+/** Ctrl+K (spec §71). Root-level, because it is not only about guests. */
+@Controller()
+export class SearchController {
+  constructor(private readonly search: SearchService) {}
+
+  @Get('search')
+  find(@CurrentActor() actor: Actor, @Query('q') q = '') {
+    return this.search.search(actor.user.propertyId, String(q).slice(0, 60));
   }
 }

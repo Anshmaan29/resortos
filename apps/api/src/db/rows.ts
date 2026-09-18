@@ -2,7 +2,7 @@
  * Row shapes returned by PostgreSQL. The pg driver is configured (db.service.ts) so that
  * NUMERIC, DATE and BIGINT arrive as strings; timestamptz arrives as Date.
  */
-import type { HousekeepingStatus, MealPlanCode, ReservationStatus, Role, ServiceStatus } from '@resortos/shared';
+import type { HousekeepingStatus, MealPlanCode, ReservationStatus, Role, ServiceStatus, VisitPurpose } from '@resortos/shared';
 
 type Money = string;
 type IsoDate = string;
@@ -62,7 +62,7 @@ export interface GuestRow {
 export interface ReservationRow {
   id: string; property_id: string; number: string; primary_guest_id: string; source: string; ota_reference: string | null;
   arrival: IsoDate; departure: IsoDate; status: ReservationStatus; group_name: string | null; group_leader_guest_id: string | null;
-  billing_mode: string; special_requests: string | null; internal_notes: string | null; cancelled_at: Date | null; cancel_reason: string | null;
+  billing_mode: string; purpose: VisitPurpose | null; special_requests: string | null; internal_notes: string | null; cancelled_at: Date | null; cancel_reason: string | null;
   cancel_note: string | null; cancel_money_option: string | null; rebooked_from_id: string | null; created_at: Date; created_by: string | null; version: number;
 }
 

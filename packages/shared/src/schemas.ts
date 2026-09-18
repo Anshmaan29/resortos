@@ -7,7 +7,7 @@ import {
 } from './validators';
 import {
   BOOKING_SOURCES, CANCELLATION_MONEY_OPTIONS, CANCELLATION_REASONS, HOUSEKEEPING_STATUSES, MEAL_PLAN_CODES,
-  OTA_SOURCES, ROLES, ROOM_VIEWS, SERVICE_STATUSES, UNIT_TYPES,
+  OTA_SOURCES, ROLES, ROOM_VIEWS, SERVICE_STATUSES, UNIT_TYPES, VISIT_PURPOSES,
 } from './domain';
 
 export const zId = z.string().uuid();
@@ -185,6 +185,8 @@ const reservationFields = z.object({
   rooms: z.array(reservationRoomSchema).min(1).max(100),
   status: z.enum(['tentative', 'confirmed']).default('confirmed'),
   groupName: optionalText(120),
+  /** Why the guest is visiting. Optional: staff should not be forced to guess. */
+  purpose: z.enum(VISIT_PURPOSES).optional(),
   specialRequests: optionalText(1000),
   internalNotes: optionalText(1000),
   /** Id of an owner authorisation approved with the Owner PIN for exactly these values. */
@@ -242,6 +244,15 @@ export const rateQuoteQuerySchema = z
     mealPlan: z.enum(MEAL_PLAN_CODES).default('EP'),
   })
   .refine((v) => nightsBetween(v.arrival, v.departure) >= 1, { message: 'Departure must be after arrival', path: ['departure'] });
+
+/** Shared by the in-house list and the room-change log. */
+export const stayListQuerySchema = z.object({
+  from: zIsoDate.optional(),
+  to: zIsoDate.optional(),
+  status: z.enum(['in_house', 'checked_out', 'all']).default('in_house'),
+  q: z.string().trim().max(60).optional(),
+});
+export type StayListQuery = z.infer<typeof stayListQuerySchema>;
 
 export const availabilityQuerySchema = z
   .object({ arrival: zIsoDate, departure: zIsoDate, roomTypeId: zId.optional() })

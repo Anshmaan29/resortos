@@ -61,6 +61,11 @@ Every business table needs all five, or it is not finished (CLAUDE.md, spec §48
 ### Registration cards — `0007`
 `grc_documents`.
 
+### Purpose of visit — `0010`
+`reservations.purpose`, a controlled list. On the reservation rather than the guest: the same guest
+visits for different reasons. A list rather than free text because Form C (§58.1) and the revenue
+breakdowns (§62) both read it back, and typed-in text cannot be grouped.
+
 ### Job queue schema — `pgboss`
 Not a numbered migration. pg-boss creates and upgrades its own schema, and `pnpm db:migrate` runs
 that **as the migration role** after the numbered migrations; the API then starts pg-boss with
