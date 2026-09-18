@@ -59,9 +59,33 @@ Three rules that are easy to break and expensive to get wrong:
 ### Outbox
 
 `outbox_events` rows are written in the same transaction as the change that caused them, so an
-event cannot be lost or emitted for work that rolled back. **Nothing drains the table yet** — the
-pg-boss worker is the next piece of infrastructure (spec §7, §8.2). Until then the events accumulate
-as an accurate record of what would have been sent.
+event cannot be lost or emitted for work that rolled back.
+
+**The event row is the job.** pg-boss (spec §7) decides *when* a drain runs and makes sure something
+runs it; it does not hold the work itself, so there is one answer to "was this delivered" instead of
+two that can disagree. `OutboxDispatcher` claims due events with `FOR UPDATE SKIP LOCKED`, runs the
+handlers registered for the topic, and records the outcome:
+
+- **success** → `dispatched_at` set
+- **failure** → error recorded, retried with exponential backoff and jitter
+- **after 10 attempts** → `failed_at` set: dead-lettered, kept forever, never retried again
+
+Delivery is **at-least-once** — a claim defers the event before the handler runs, so a process that
+dies mid-handler leaves it to be retried rather than spinning on it. Handlers must therefore be
+idempotent; the `OutboxHandler` interface says so where someone will read it. Nothing deletes an
+event, and `resortos_app` has no DELETE right on the table, so the API cannot lose one by mistake.
+
+Every deadline is `now() + interval` in PostgreSQL, never this process's clock — workers run on more
+than one machine, and the throttling bug fixed in `auth.service.ts` was the same mistake.
+
+Handlers are contributed through the `OUTBOX_HANDLERS` token, the same extension-point pattern as
+checkout steps. **None are registered yet**: WhatsApp, email, the Sheets mirror and the Drive archive
+arrive in Phase 3. Until then events are recorded faithfully and dispatched with nothing to do, and
+`GET /health/jobs` (owner-only) says which topics have no handler rather than pretending all is well.
+
+pg-boss owns its own schema. `pnpm db:migrate` installs and upgrades it **as the migration role**,
+and the API starts pg-boss with `migrate: false`, so the least-privileged app role never needs DDL
+rights (`docs/database.md`).
 
 ## Storage and verified files
 

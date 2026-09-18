@@ -90,9 +90,10 @@ guest's name into this system.
 
 ## Known gaps in what is built
 
-- **Nothing drains `outbox_events`.** Events are recorded correctly and lose nothing, but no worker
-  sends anything yet. The pg-boss worker is the next infrastructure piece and needs dead-lettering
-  and visible job status so the Data Safety panel has something true to show.
+- **The outbox is drained, but no handler sends anything yet.** The worker, retries, dead-lettering
+  and job status all work (`GET /health/jobs`); what is missing is the handlers themselves —
+  WhatsApp, email, Sheets, Drive — which arrive in Phase 3. Events are recorded faithfully and
+  dispatched with nothing to do, and job status names the topics nothing handles.
 - **No error tracking or alerting.** No Sentry, no uptime checks, no operator alerts (spec §78).
 - **Orphaned uploads are not swept.** Documents uploaded but never attached to a confirmed check-in
   should be flagged for owner review after 7 days (spec §19.5); nothing does this yet. They are never
