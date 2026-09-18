@@ -7,6 +7,7 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | `pnpm test` | shared unit tests · API integration tests · web design-token contrast tests |
 | `pnpm e2e` | builds everything, starts the built API + web against `resortos_test`, runs Playwright (desktop + phone viewport) |
 | `pnpm verify` | build + typecheck + `pnpm test` |
+| `pnpm audit` | dependency advisories; high and critical fail CI unless accepted with an expiry (`docs/dependency-security.md`) |
 
 ## Critical guarantees and where they are proven
 
@@ -34,6 +35,8 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | Audit chain does not fork under 60 parallel actions | `apps/api/test/audit-concurrency.test.ts` |
 | Edit / rebook use the same validation, limits and audit | `apps/api/test/booking-changes.test.ts` |
 | No SQL interpolation; demo data blocked from production | `apps/api/test/guards.test.ts` |
+| No read fans out with `Promise.all` over a `Queryable`, and `gather()` really does serialise on a transaction client | `apps/api/test/guards.test.ts` |
+| The overridden `multer` stays patched and keeps the API and error messages Nest maps to HTTP statuses | `apps/api/test/dependency-pins.test.ts` |
 | Phone scanner: single-use QR, 10-minute expiry, upload-only, no guest data to phone, device secret | `apps/api/test/check-in.test.ts` |
 | Document counts only after server re-hash (SHA-256 + size); tampered/expired/overwrite links refused | `apps/api/test/check-in.test.ts` |
 | Check-in blocked while documents are uploading/failed/missing; draft survives refresh; double confirm → one stay | `apps/api/test/check-in.test.ts` |
@@ -60,6 +63,14 @@ same real database: two overlapping bookings and double-click idempotency in
 `reservations.test.ts`, the audit chain under 60 parallel actions in `audit-concurrency.test.ts`,
 double confirm in `check-in.test.ts`, and double card generation in `grc.test.ts`. Parallel invoice
 finalisation and two simultaneous night audits join them in Phase 2.
+
+**The harness binds a real port.** `bootApp()` calls `app.listen(0)`, not just `app.init()`. Given a
+server that is not listening, supertest binds one lazily on the first request it sends — so a burst
+fired in a single tick has every request in that burst find no address and call `listen(0)` itself,
+and the later sockets are reset. The symptom is `read ECONNRESET` on requests the app never saw,
+which looks exactly like the application dropping connections under load. Binding once up front
+makes a burst behave like real traffic, and it took the 60-action audit-chain test from ten seconds
+and intermittently failing to well under one second and stable.
 
 ## Not automated (needs real devices)
 

@@ -21,7 +21,11 @@ export async function bootApp(): Promise<INestApplication> {
   });
   const { createApp } = await import('../src/bootstrap');
   const app = await createApp();
-  await app.init();
+  // listen(0), not init(): supertest binds a never-listening server lazily, on the first request
+  // it sends. Fire a burst in one tick and every request in that tick sees no address yet and calls
+  // listen(0) itself, so the later sockets in the burst are reset — `read ECONNRESET` from a request
+  // the app never saw. Binding an ephemeral port once here makes a burst behave like real traffic.
+  await app.listen(0);
   return app;
 }
 

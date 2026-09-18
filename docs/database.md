@@ -119,6 +119,13 @@ next caller:
   row is editable.
 - Constraint names are mapped to plain-language messages in `apps/api/src/common/errors.ts`. A new
   constraint without a mapping shows staff a database error — add it.
+- **Never `Promise.all` over a `Queryable`.** A `Queryable` is either the pool or a single client
+  from `tx`, and a client speaks one connection: it runs one query at a time and silently queues the
+  rest, so fanning out on it is not parallel at all — and pg 9 removes that queue and makes it an
+  error. Use `gather(q, [...])`, which runs the reads together on the pool and one after another on
+  a client, and returns the same tuple either way. A function like `reservations.detail()` is called
+  from a controller *and* from inside a transaction, so it cannot know which it was handed. A guard
+  test in `apps/api/test/guards.test.ts` scans for the mistake.
 
 ## Registration cards (`grc_documents`)
 

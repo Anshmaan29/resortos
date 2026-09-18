@@ -38,6 +38,8 @@ Priority: **Data safety → Correctness → Security → Usability → Reliabili
 - Migrations: `db/migrations/NNNN_name.sql`, never edit an applied migration (checksum enforced). `db/grants.sql` is re-applied every run.
 - The API connects as `resortos_app` (no DELETE/TRUNCATE/DROP). Migrations run as `resortos_migrator`.
 - New protected tables need: `property_id`, `forbid_change` delete trigger, grants review, and inclusion in restore verification.
+- Reads that fan out use `gather(q, [...])`, never `Promise.all` over a `Queryable`: inside `tx` that
+  is one connection, so the queries serialise anyway and pg 9 rejects them (`docs/database.md`).
 - Validation schemas are shared (`packages/shared/src/schemas.ts`) — the web form and the API use the same Zod schema.
 - API errors are `{ code, message, details, requestId }` with plain-language messages. Map new DB constraint names in `apps/api/src/common/errors.ts`.
 - Staff-facing words: "Bill" not "folio", "Guest details" not "CRM".
@@ -51,4 +53,5 @@ pnpm dev:web                                    # http://localhost:3000
 pnpm test                                       # shared unit + API integration (uses resortos_test DB)
 pnpm verify                                     # build + typecheck + test
 pnpm e2e                                        # Playwright against built apps + resortos_test
+pnpm audit                                      # dependency advisories; high/critical fail CI (docs/dependency-security.md)
 ```

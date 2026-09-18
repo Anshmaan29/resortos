@@ -34,6 +34,26 @@ jobs:
       - name: gitleaks
         run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 git /repo --redact --verbose --config /repo/.gitleaks.toml
 
+  audit:
+    name: Dependency advisories (high and critical block)
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.17.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The lockfile is all the gate needs, so nothing is installed and no install script runs.
+      - name: Audit the lockfile
+        run: node ops/ci/audit.mjs
+
   test:
     name: Build, typecheck, unit + API (real PostgreSQL) + contrast + E2E
     runs-on: ubuntu-latest

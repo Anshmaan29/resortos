@@ -1,0 +1,11 @@
+{
+  "$comment": [
+    "Time-limited acceptances for dependency advisories that ops/ci/audit.mjs would otherwise fail on.",
+    "An entry is a decision, not a mute: it needs a real reason, a named owner, and an expiry date.",
+    "The gate fails when an entry expires, so every acceptance comes back for review on a known day.",
+    "maxAcceptanceDays caps how far out expires_on may be, so nothing can be accepted indefinitely.",
+    "Remove an entry as soon as the advisory is gone from the lockfile — the gate warns about leftovers."
+  ],
+  "maxAcceptanceDays": 90,
+  "accepted": []
+}
