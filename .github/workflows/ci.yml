@@ -45,10 +45,11 @@ jobs:
         with:
           version: 10.17.0
 
+      # No `cache: pnpm` here: this job installs nothing, so the pnpm store never exists and the
+      # cache-save step would fail the job even though the audit itself passed.
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: pnpm
 
       # The lockfile is all the gate needs, so nothing is installed and no install script runs.
       - name: Audit the lockfile
