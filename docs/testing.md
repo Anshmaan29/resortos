@@ -17,6 +17,7 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | Permissions: roles, forced password change, logout | `apps/api/test/auth.test.ts` |
 | Owner PIN: single use, 2-minute expiry, bound to values, other staff, concurrency, lock + unlock | `apps/api/test/owner-authorisation.test.ts` |
 | Lockout abuse: attacker network, known device, network-wide, distributed, recovery | `apps/api/test/login-protection.test.ts` |
+| Throttling holds when the API clock drifts from the database clock (a fast app clock must not switch it off) | `apps/api/test/login-protection.test.ts` |
 | Audit tamper detection; app role cannot rewrite history | `apps/api/test/reservations.test.ts` |
 | Audit chain does not fork under 60 parallel actions | `apps/api/test/audit-concurrency.test.ts` |
 | Edit / rebook use the same validation, limits and audit | `apps/api/test/booking-changes.test.ts` |

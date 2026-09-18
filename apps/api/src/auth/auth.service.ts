@@ -38,6 +38,16 @@ export function delayForFailures(failures: number): number {
   return Math.min(THROTTLE.maxDelaySeconds, THROTTLE.baseDelaySeconds * 2 ** (failures - THROTTLE.freeFailures));
 }
 
+/**
+ * Seconds still to wait, given a delay and how long ago the failure happened *according to the
+ * database*. `ageSeconds` arrives as a string because the pg driver returns NUMERIC as text, and is
+ * null when there is no failure to age. No value from this process's clock takes part.
+ */
+export function remaining(delaySeconds: number, ageSeconds: string | number | null): number {
+  if (delaySeconds <= 0 || ageSeconds === null) return 0;
+  return Math.max(0, delaySeconds - Number(ageSeconds));
+}
+
 export function toSessionUser(r: UserRow): SessionUser {
   return {
     id: r.id,
@@ -105,11 +115,20 @@ export class AuthService {
     return rows[0]?.id ?? null;
   }
 
-  /** Seconds until this login may be attempted again, or 0. */
+  /**
+   * Seconds until this login may be attempted again, or 0.
+   *
+   * **How old a failure is, is measured by PostgreSQL, never by this process.** Throttling is a
+   * security control, and the API and the database are different machines in production: comparing
+   * a timestamp that came from the database against this process's `Date.now()` means a clock skew
+   * between them silently changes how long a lockout lasts, and a fast app clock switches throttling
+   * off altogether with no error anywhere. So the queries return the *age* of the relevant failure,
+   * computed entirely in SQL, and this code only subtracts it from the delay it has chosen.
+   */
   private async throttleSeconds(user: UserRow, ip: string | null, deviceId: string | null): Promise<number> {
     // Scope: this known device, or this network for unknown devices. Only failures after the last
     // success in the same scope, after the owner's reset, and inside the window count.
-    const { rows } = await this.db.query<{ failures: string; last_failure: Date | null }>(
+    const { rows } = await this.db.query<{ failures: string; age_seconds: string | null }>(
       `WITH scoped AS (
          SELECT * FROM auth_attempts
           WHERE kind = 'password' AND user_id = $1
@@ -121,27 +140,25 @@ export class AuthService {
            COALESCE((SELECT max(created_at) FROM scoped WHERE succeeded), '-infinity')
          ) AS since
        )
-       SELECT count(*) AS failures, max(created_at) AS last_failure
+       SELECT count(*) AS failures,
+              EXTRACT(EPOCH FROM (now() - max(created_at))) AS age_seconds
          FROM scoped, floor
         WHERE NOT succeeded AND outcome = 'checked' AND created_at > floor.since`,
       [user.id, deviceId, ip, String(THROTTLE.ipWindowMinutes), user.login_throttle_reset_at],
     );
     const failures = Number(rows[0]!.failures);
-    const delay = delayForFailures(failures);
-    let wait = 0;
-    if (delay > 0 && rows[0]!.last_failure) {
-      wait = Math.max(wait, (rows[0]!.last_failure.getTime() + delay * 1000 - Date.now()) / 1000);
-    }
+    let wait = remaining(delayForFailures(failures), rows[0]!.age_seconds);
 
     if (!deviceId) {
-      const { rows: acct } = await this.db.query<{ failures: string; last_failure: Date | null }>(
-        `SELECT count(*) AS failures, max(created_at) AS last_failure FROM auth_attempts
+      const { rows: acct } = await this.db.query<{ failures: string; age_seconds: string | null }>(
+        `SELECT count(*) AS failures, EXTRACT(EPOCH FROM (now() - max(created_at))) AS age_seconds
+           FROM auth_attempts
           WHERE kind = 'password' AND user_id = $1 AND NOT succeeded AND outcome = 'checked'
             AND created_at > GREATEST(now() - ($2 || ' minutes')::interval, COALESCE($3::timestamptz, '-infinity'))`,
         [user.id, String(THROTTLE.accountWindowMinutes), user.login_throttle_reset_at],
       );
-      if (Number(acct[0]!.failures) >= THROTTLE.accountFailureLimit && acct[0]!.last_failure) {
-        wait = Math.max(wait, (acct[0]!.last_failure.getTime() + THROTTLE.maxDelaySeconds * 1000 - Date.now()) / 1000);
+      if (Number(acct[0]!.failures) >= THROTTLE.accountFailureLimit) {
+        wait = Math.max(wait, remaining(THROTTLE.maxDelaySeconds, acct[0]!.age_seconds));
       }
     }
     return wait;
@@ -150,13 +167,15 @@ export class AuthService {
   /** Network-wide limit. Known devices are exempt so a busy shared network cannot block the front desk. */
   private async assertNetworkAllowed(ctx: LoginContext) {
     if (ctx.ip) {
-      const { rows } = await this.db.query<{ n: string; oldest: Date | null }>(
-        `SELECT count(*) AS n, min(created_at) AS oldest FROM auth_attempts
+      const { rows } = await this.db.query<{ n: string; oldest_age_seconds: string | null }>(
+        `SELECT count(*) AS n, EXTRACT(EPOCH FROM (now() - min(created_at))) AS oldest_age_seconds
+           FROM auth_attempts
           WHERE ip = $1 AND kind = 'password' AND NOT succeeded AND outcome = 'checked' AND created_at > now() - ($2 || ' minutes')::interval`,
         [ctx.ip, String(THROTTLE.ipWindowMinutes)],
       );
       if (Number(rows[0]!.n) >= THROTTLE.ipFailureLimit) {
-        const wait = rows[0]!.oldest ? (rows[0]!.oldest.getTime() + THROTTLE.ipWindowMinutes * 60_000 - Date.now()) / 1000 : THROTTLE.ipWindowMinutes * 60;
+        // The block lasts until the oldest failure leaves the window; its age also comes from the database.
+        const wait = remaining(THROTTLE.ipWindowMinutes * 60, rows[0]!.oldest_age_seconds);
         throw this.rateLimited(`Too many failed logins from this network. Please wait ${waitMessage(wait)}.`, wait);
       }
     }
