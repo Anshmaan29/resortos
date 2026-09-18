@@ -23,7 +23,7 @@ export function useDeskQueue(draftId: string) {
     const q = new UploadQueue(draftId, {
       create: (item) => api(`/check-in-drafts/${draftId}/documents`, {
         method: 'POST',
-        body: { clientUploadId: item.id, source: item.source === 'phone_scanner' ? 'desk_camera' : item.source, docType: item.docType, idType: item.idType, occupantKey: item.occupantKey, maskedOnDevice: item.maskedOnDevice, contentType: item.contentType, sizeBytes: item.size, sha256: item.sha256 },
+        body: { clientUploadId: item.id, source: item.source === 'phone_scanner' ? 'desk_camera' : item.source, docType: item.docType, idType: item.idType, occupantKey: item.occupantKey, contentType: item.contentType, sizeBytes: item.size, sha256: item.sha256 },
       }),
       refresh: (documentId) => api(`/check-in-drafts/${draftId}/documents/${documentId}/grant`, { method: 'POST', body: {} }),
       confirm: (documentId) => api(`/check-in-drafts/${draftId}/documents/${documentId}/confirm`, { method: 'POST', body: {} }),
@@ -34,7 +34,7 @@ export function useDeskQueue(draftId: string) {
     return () => { stop(); unsub(); };
   }, [draftId]);
 
-  const add = useCallback(async (input: { slotKey: string; docType: DocumentType; occupantKey?: string; idType?: Exclude<IdType, 'none'>; maskedOnDevice: boolean; source: QueueItem['source']; blob: Blob; contentType: QueueItem['contentType'] }) => {
+  const add = useCallback(async (input: { slotKey: string; docType: DocumentType; occupantKey?: string; idType?: Exclude<IdType, 'none'>; source: QueueItem['source']; blob: Blob; contentType: QueueItem['contentType'] }) => {
     await queue.current?.add({ ...input, sha256: await sha256Hex(input.blob) });
   }, []);
   const latest = (slotKey: string) => [...items].reverse().find((i) => i.slotKey === slotKey);
@@ -106,7 +106,7 @@ export function DocumentsStep({ draft, data, onChange, onRefresh, queue }: {
                           onDiscardFailed={() => { if (item?.status === 'failed') void queue.remove(item.id); }}
                           onCaptured={(r, via) => void queue.add({
                             slotKey, docType: s.docType, occupantKey: o.key, idType: s.docType === 'guest_photo' ? undefined : idType ?? undefined,
-                            maskedOnDevice: r.maskedOnDevice, source: via === 'file' ? 'file_upload' : 'desk_camera', blob: r.blob, contentType: 'image/jpeg',
+                            source: via === 'file' ? 'file_upload' : 'desk_camera', blob: r.blob, contentType: 'image/jpeg',
                           }).then(onRefresh)} />
                       );
                     })}

@@ -141,17 +141,6 @@ describe('phone as scanner (spec §19.2)', () => {
     expect(doc.status).toBe('pending');
   });
 
-  it('Aadhaar images must be masked on the device (API and database)', async () => {
-    const res = await phone().post(`/api/v1/capture/${token}/uploads`).set('x-resortos', '1').set('x-capture-device', deviceSecret)
-      .send({ docType: 'id_front', idType: 'aadhaar', occupantKey: 'r0a1', contentType: 'image/jpeg', sizeBytes: 10, sha256: 'b'.repeat(64) });
-    expect(res.status).toBe(400);
-    await expect(sql(
-      `INSERT INTO guest_documents (property_id, draft_id, doc_type, id_type, masked_on_device, storage_key, content_type, size_bytes, sha256, source)
-       SELECT property_id, id, 'id_front', 'aadhaar', false, 'k-' || gen_random_uuid(), 'image/jpeg', 10, decode(repeat('ab', 32), 'hex'), 'phone_scanner' FROM check_in_drafts WHERE id = $1`,
-      [draft.id],
-    )).rejects.toThrow(/check constraint/);
-  });
-
   it('expired and closed sessions refuse the phone', async () => {
     const expiredToken = randomBytes(32).toString('base64url');
     await sql(

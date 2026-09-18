@@ -1,32 +1,26 @@
 'use client';
 import { AnimatePresence, motion } from 'motion/react';
-import { AlertTriangle, Check, Loader2, Plus, RotateCcw, ScanLine, Trash2 } from 'lucide-react';
+import { AlertTriangle, Check, Loader2, RotateCcw, ScanLine } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import type { DocumentType, IdType } from '@resortos/shared';
+import type { DocumentType } from '@resortos/shared';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/cn';
 import {
-  applyMasks, decodeImage, defaultCorners, detectDocument, encodeJpeg, measureQuality, scaleToFit, straighten,
-  type Corners, type MaskRect, type Point, type Quality,
+  decodeImage, defaultCorners, detectDocument, encodeJpeg, measureQuality, scaleToFit, straighten,
+  type Corners, type Point, type Quality,
 } from '@/lib/capture/image';
 import { loadOpenCv, type CV } from '@/lib/capture/opencv';
 
-export interface EditorResult { blob: Blob; maskedOnDevice: boolean }
+export interface EditorResult { blob: Blob }
 
-type Stage = 'loading' | 'corners' | 'mask' | 'review' | 'encoding';
+type Stage = 'loading' | 'corners' | 'review' | 'encoding';
 
-/** Default box over where the 12-digit number sits on an Aadhaar card. Staff move it to fit. */
-const AADHAAR_DEFAULT_MASK: MaskRect = { x: 0.24, y: 0.7, w: 0.4, h: 0.12 };
-
-export function DocumentEditor({ source, docType, idType, onDone, onRetake }: {
+export function DocumentEditor({ source, docType, onDone, onRetake }: {
   source: Blob;
   docType: DocumentType;
-  idType?: Exclude<IdType, 'none'> | null;
   onDone: (result: EditorResult) => void;
   onRetake: () => void;
 }) {
   const needsCorners = docType === 'id_front' || docType === 'id_back' || docType === 'id_extra';
-  const needsMask = needsCorners && idType === 'aadhaar';
 
   const [stage, setStage] = useState<Stage>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -35,8 +29,6 @@ export function DocumentEditor({ source, docType, idType, onDone, onRetake }: {
   const [detecting, setDetecting] = useState(false);
   const [edgesFound, setEdgesFound] = useState<boolean | null>(null);
   const [flat, setFlat] = useState<HTMLCanvasElement | null>(null);
-  const [masks, setMasks] = useState<MaskRect[]>([AADHAAR_DEFAULT_MASK]);
-  const [maskConfirmed, setMaskConfirmed] = useState(false);
   const [quality, setQuality] = useState<Quality | null>(null);
   const cvRef = useRef<CV | null>(null);
   const cornersTouched = useRef(false);
@@ -76,15 +68,14 @@ export function DocumentEditor({ source, docType, idType, onDone, onRetake }: {
     const out = straighten(cvRef.current, original, corners);
     setFlat(out);
     setQuality(measureQuality(out));
-    setStage(needsMask ? 'mask' : 'review');
+    setStage('review');
   }
 
   async function finish() {
     if (!flat) return;
     setStage('encoding');
     try {
-      const output = needsMask ? applyMasks(flat, masks) : flat;
-      onDone({ blob: await encodeJpeg(output), maskedOnDevice: needsMask });
+      onDone({ blob: await encodeJpeg(flat) });
     } catch (err) {
       setError((err as Error).message);
       setStage('review');
@@ -125,30 +116,9 @@ export function DocumentEditor({ source, docType, idType, onDone, onRetake }: {
           </motion.div>
         )}
 
-        {stage === 'mask' && flat && (
-          <motion.div key="mask" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-3">
-            <div className="rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
-              Aadhaar: cover the <strong>first 8 digits</strong> of the number (and the QR code on the back). Only the masked image is uploaded — the original never leaves this device.
-            </div>
-            <MaskEditor image={flat} masks={masks} onChange={(m) => { setMasks(m); setMaskConfirmed(false); }} />
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => setMasks((m) => [...m, { x: 0.35, y: 0.4, w: 0.3, h: 0.12 }])}><Plus className="h-4 w-4" />Add box</Button>
-              {masks.length > 1 && <Button variant="ghost" size="sm" onClick={() => setMasks((m) => m.slice(0, -1))}><Trash2 className="h-4 w-4" />Remove last box</Button>}
-            </div>
-            <label className="flex min-h-11 items-start gap-3 rounded-md border border-border p-3 text-sm">
-              <input type="checkbox" className="mt-0.5 h-5 w-5 accent-[var(--brand)]" checked={maskConfirmed} onChange={(e) => setMaskConfirmed(e.target.checked)} />
-              I have checked the preview: the first 8 digits are fully covered.
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" onClick={() => setStage('corners')}>Back</Button>
-              <Button disabled={!maskConfirmed} onClick={() => setStage('review')}><Check className="h-4 w-4" />Continue</Button>
-            </div>
-          </motion.div>
-        )}
-
         {(stage === 'review' || stage === 'encoding') && flat && (
           <motion.div key="review" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-3">
-            <PreviewCanvas canvas={needsMask ? applyMasks(flat, masks) : flat} />
+            <PreviewCanvas canvas={flat} />
             {quality && (quality.blurry || quality.tooDark || quality.tooBright) && (
               <div role="alert" className="flex items-start gap-2 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -247,51 +217,3 @@ function CornerEditor({ image, corners, onChange }: { image: HTMLCanvasElement; 
   );
 }
 
-/** Black boxes the user drags and resizes over the Aadhaar number. What you see is exactly what is uploaded. */
-function MaskEditor({ image, masks, onChange }: { image: HTMLCanvasElement; masks: MaskRect[]; onChange: (m: MaskRect[]) => void }) {
-  const container = useRef<HTMLDivElement>(null);
-  const preview = useRef<HTMLCanvasElement>(null);
-  const drag = useRef<{ index: number; mode: 'move' | 'resize'; startX: number; startY: number; start: MaskRect } | null>(null);
-
-  useEffect(() => {
-    const el = preview.current;
-    if (!el) return;
-    const small = scaleToFit(image, 1200);
-    el.width = small.width;
-    el.height = small.height;
-    el.getContext('2d')!.drawImage(small, 0, 0);
-  }, [image]);
-
-  function onMove(e: ReactPointerEvent) {
-    const d = drag.current;
-    if (!d) return;
-    const rect = container.current!.getBoundingClientRect();
-    const dx = (e.clientX - d.startX) / rect.width;
-    const dy = (e.clientY - d.startY) / rect.height;
-    const next = [...masks];
-    const r = d.start;
-    next[d.index] = d.mode === 'move'
-      ? { ...r, x: Math.min(1 - r.w, Math.max(0, r.x + dx)), y: Math.min(1 - r.h, Math.max(0, r.y + dy)) }
-      : { ...r, w: Math.min(1 - r.x, Math.max(0.05, r.w + dx)), h: Math.min(1 - r.y, Math.max(0.04, r.h + dy)) };
-    onChange(next);
-  }
-
-  return (
-    <div ref={container} className="relative w-full touch-none select-none" style={{ aspectRatio: `${image.width} / ${image.height}` }}
-      onPointerMove={onMove} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
-      <canvas ref={preview} className="absolute inset-0 h-full w-full rounded-md" aria-label="Document with masking boxes" />
-      {masks.map((m, i) => (
-        <div key={i} className={cn('absolute cursor-move bg-black ring-2 ring-warning')}
-          style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%`, width: `${m.w * 100}%`, height: `${m.h * 100}%` }}
-          onPointerDown={(e) => { drag.current = { index: i, mode: 'move', startX: e.clientX, startY: e.clientY, start: m }; (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); }}
-          role="img" aria-label={`Masking box ${i + 1}`}>
-          <span className="absolute -bottom-3 -right-3 flex h-8 w-8 cursor-nwse-resize items-center justify-center"
-            onPointerDown={(e) => { e.stopPropagation(); drag.current = { index: i, mode: 'resize', startX: e.clientX, startY: e.clientY, start: m }; (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); }}
-            aria-label={`Resize masking box ${i + 1}`}>
-            <span className="h-4 w-4 rounded-sm border-2 border-white bg-warning" />
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}

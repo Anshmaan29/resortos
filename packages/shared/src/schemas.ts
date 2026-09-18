@@ -314,12 +314,10 @@ export const documentUploadRequestSchema = z.object({
   docType: z.enum(DOCUMENT_TYPES),
   idType: z.enum(ID_TYPES).exclude(['none']).optional(),
   occupantKey: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/).optional(),
-  maskedOnDevice: z.boolean().default(false),
   contentType: z.enum(DOCUMENT_CONTENT_TYPES),
   sizeBytes: z.number().int().min(1).max(MAX_DOCUMENT_BYTES),
   sha256: z.string().regex(/^[a-f0-9]{64}$/, 'Checksum must be a SHA-256 hex digest'),
-}).refine((d) => d.idType !== 'aadhaar' || !['id_front', 'id_back', 'id_extra'].includes(d.docType) || d.maskedOnDevice,
-  { message: 'Aadhaar images must be masked on the device before upload', path: ['maskedOnDevice'] });
+});
 export type DocumentUploadRequest = z.infer<typeof documentUploadRequestSchema>;
 
 export const roomShiftSchema = z.object({

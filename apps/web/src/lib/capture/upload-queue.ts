@@ -29,7 +29,6 @@ export interface QueueItem {
   docType: DocumentType;
   occupantKey?: string;
   idType?: Exclude<IdType, 'none'>;
-  maskedOnDevice: boolean;
   source: 'desk_camera' | 'file_upload' | 'signature_pad' | 'phone_scanner';
   /**
    * The photo itself, as bytes — never as a Blob or File.

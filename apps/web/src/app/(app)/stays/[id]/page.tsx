@@ -195,7 +195,6 @@ function DocumentRow({ doc, whose, onError }: { doc: StayDocument; whose: string
         </p>
         <p className="text-xs text-text-3">
           {doc.status === 'verified' ? `Verified ${doc.verifiedAt ? formatDateTime(doc.verifiedAt) : ''}` : doc.status}
-          {doc.maskedOnDevice && ' · masked on the device'}
         </p>
       </div>
       <Button variant="ghost" size="sm" loading={view.isPending} disabled={doc.status !== 'verified'} onClick={() => view.mutate()}>
