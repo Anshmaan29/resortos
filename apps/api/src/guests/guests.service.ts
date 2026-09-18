@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { normalizeIndianMobile, type GuestInput } from '@resortos/shared';
+import { normalizeIndianMobile, type GuestInput, type Role } from '@resortos/shared';
 import { AuditService } from '../common/audit.service';
 import { notFound, staleVersion } from '../common/errors';
 import type { Actor } from '../common/request-context';
@@ -17,7 +17,7 @@ export const mapGuest = (r: GuestRow) => ({
 export class GuestsService {
   constructor(private readonly db: DbService, private readonly audit: AuditService) {}
 
-  /** Search by mobile, name, booking number, OTA reference (spec §16). */
+  /** Search by mobile, name, booking number, OTA reference and vehicle number (spec §16). */
   async search(propertyId: string, term: string) {
     const t = term.trim();
     if (t.length < 2) return [];
@@ -35,6 +35,11 @@ export class GuestsService {
              OR lower(g.first_name || ' ' || g.last_name) LIKE '%' || lower($4::text) || '%'
              OR upper(r.number) = upper($4)
              OR r.ota_reference = $4
+             -- A car is often all the desk remembers. stay_vehicles is indexed on (property_id, registration).
+             OR EXISTS (
+                  SELECT 1 FROM stay_vehicles v JOIN stays st ON st.id = v.stay_id
+                   WHERE st.primary_guest_id = g.id AND v.registration = upper(regexp_replace($4, '[^A-Za-z0-9]', '', 'g'))
+                )
         )
         ORDER BY g.id
         LIMIT 20`,
@@ -55,21 +60,69 @@ export class GuestsService {
     return rows.map((r) => ({ ...mapGuest(r), matchedOn: r.mobile === input.mobile ? 'mobile' : 'name_city' }));
   }
 
-  async get(propertyId: string, id: string) {
+  /**
+   * Guest profile (spec §16): who they are, every visit, what is still to come, their vehicles and
+   * their documents.
+   *
+   * Documents are permission-controlled the same way the image itself is: a receptionist sees the
+   * documents of a stay that is in house now, and the owner sees everything. The list never carries
+   * the image — only a signed 60-second URL from `GET /documents/:id/view-url` does, and that logs
+   * the view.
+   */
+  async get(propertyId: string, id: string, role: Role = 'owner') {
     const { rows } = await this.db.query<GuestRow>(`SELECT * FROM guests WHERE id = $1 AND property_id = $2`, [id, propertyId]);
     if (!rows[0]) throw notFound('Guest');
-    const { rows: history } = await this.db.query<{ id: string; number: string; arrival: string; departure: string; status: string; source: string; rooms: string | null }>(
-      `SELECT r.id, r.number, r.arrival, r.departure, r.status, r.source,
-              (SELECT string_agg(DISTINCT rm.number, ', ') FROM reservation_rooms rr LEFT JOIN rooms rm ON rm.id = rr.room_id WHERE rr.reservation_id = r.id AND rr.status <> 'replaced') AS rooms
-         FROM reservations r WHERE r.primary_guest_id = $1 ORDER BY r.arrival DESC LIMIT 50`,
-      [id],
-    );
+
+    const [history, stays, vehicles, documents] = await Promise.all([
+      this.db.query<{ id: string; number: string; arrival: string; departure: string; status: string; source: string; purpose: string | null; rooms: string | null }>(
+        `SELECT r.id, r.number, r.arrival, r.departure, r.status, r.source, r.purpose,
+                (SELECT string_agg(DISTINCT rm.number, ', ') FROM reservation_rooms rr LEFT JOIN rooms rm ON rm.id = rr.room_id WHERE rr.reservation_id = r.id AND rr.status <> 'replaced') AS rooms
+           FROM reservations r WHERE r.primary_guest_id = $1 ORDER BY r.arrival DESC LIMIT 50`,
+        [id],
+      ),
+      this.db.query<{ id: string; room_number: string; status: string; business_date_in: string; expected_departure: string; business_date_out: string | null }>(
+        `SELECT s.id, rm.number AS room_number, s.status, s.business_date_in, s.expected_departure, s.business_date_out
+           FROM stays s JOIN rooms rm ON rm.id = s.room_id
+          WHERE s.primary_guest_id = $1 ORDER BY s.checked_in_at DESC LIMIT 50`,
+        [id],
+      ),
+      this.db.query<{ registration: string; vehicle_type: string; parking_slot: string | null; last_seen: Date }>(
+        `SELECT v.registration, v.vehicle_type, v.parking_slot, max(v.created_at) AS last_seen
+           FROM stay_vehicles v JOIN stays s ON s.id = v.stay_id
+          WHERE s.primary_guest_id = $1
+          GROUP BY v.registration, v.vehicle_type, v.parking_slot
+          ORDER BY last_seen DESC LIMIT 20`,
+        [id],
+      ),
+      this.db.query<{ id: string; doc_type: string; id_type: string | null; created_at: Date; stay_status: string; room_number: string }>(
+        `SELECT d.id, d.doc_type, d.id_type, d.created_at, s.status AS stay_status, rm.number AS room_number
+           FROM guest_documents d JOIN stays s ON s.id = d.stay_id JOIN rooms rm ON rm.id = s.room_id
+          WHERE s.primary_guest_id = $1 AND d.status = 'verified'
+            AND ($2::text = 'owner' OR s.status = 'in_house')
+          ORDER BY d.created_at DESC LIMIT 60`,
+        [id, role],
+      ),
+    ]);
+
+    const businessDate = await this.db.query<{ d: string }>(
+      `SELECT current_business_date AS d FROM properties WHERE id = $1`, [propertyId],
+    ).then((r) => r.rows[0]!.d);
+
+    const upcoming = history.rows.filter((h) => ['tentative', 'confirmed'].includes(h.status) && h.departure > businessDate);
+
     return {
       ...mapGuest(rows[0]!),
       mergedIntoId: rows[0]!.merged_into_id,
-      history: history.map((h) => ({ id: h.id, number: h.number, arrival: h.arrival, departure: h.departure, status: h.status, source: h.source, rooms: h.rooms })),
+      history: history.rows.map((h) => ({ id: h.id, number: h.number, arrival: h.arrival, departure: h.departure, status: h.status, source: h.source, purpose: h.purpose, rooms: h.rooms })),
+      upcoming: upcoming.map((h) => ({ id: h.id, number: h.number, arrival: h.arrival, departure: h.departure, status: h.status, rooms: h.rooms })),
+      stays: stays.rows.map((v) => ({ id: v.id, roomNumber: v.room_number, status: v.status, checkedIn: v.business_date_in, dueOut: v.expected_departure, checkedOut: v.business_date_out })),
+      vehicles: vehicles.rows.map((v) => ({ registration: v.registration, vehicleType: v.vehicle_type, parkingSlot: v.parking_slot })),
+      documents: documents.rows.map((d) => ({ id: d.id, docType: d.doc_type, idType: d.id_type, roomNumber: d.room_number, at: d.created_at, current: d.stay_status === 'in_house' })),
+      /** Older documents are owner-only (spec §19.7); the screen says so instead of showing an empty list. */
+      documentsRestricted: role !== 'owner',
     };
   }
+
 
   /** Creates a guest inside an existing transaction (used by bookings and check-in). */
   async createInTx(q: Queryable, actor: Actor, input: GuestInput) {

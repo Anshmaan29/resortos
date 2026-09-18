@@ -1,4 +1,4 @@
-import type { HousekeepingStatus, IdType, MealPlanCode, OccupancyStatus, ReservationStatus, Role, RoomDisplayState, ServiceStatus } from '@resortos/shared';
+import type { HousekeepingStatus, IdType, MealPlanCode, OccupancyStatus, ReservationStatus, Role, RoomDisplayState, ServiceStatus, VisitPurpose } from '@resortos/shared';
 
 export interface Me { id: string; propertyId: string; fullName: string; username: string; role: Role; discountLimitPercent: string; mustChangePassword: boolean; canRunNightAudit: boolean }
 export interface Property { id: string; name: string; legalName: string; city: string; stateCode: string; gstin: string | null; businessDate: string; checkInTime: string; checkOutTime: string; isPractice: boolean; version: number }
@@ -20,7 +20,7 @@ export interface TaxEstimate {
 }
 export interface ReservationDetail {
   id: string; number: string; status: ReservationStatus; source: string; sourceLabel: string; otaReference: string | null; arrival: string; departure: string; nights: number;
-  groupName: string | null; billingMode: string; specialRequests: string | null; internalNotes: string | null;
+  groupName: string | null; billingMode: string; purpose: VisitPurpose | null; specialRequests: string | null; internalNotes: string | null;
   guest: { id: string; firstName: string; lastName: string; fullName: string; mobile: string; email: string | null; isVip: boolean; city: string | null };
   rooms: {
     id: string; roomTypeId: string; roomTypeName: string; roomId: string | null; roomNumber: string | null; adults: number; childAges: number[]; mealPlan: MealPlanCode;
@@ -90,3 +90,26 @@ export interface GrcVersion {
   signatureMethod: 'touchscreen' | 'phone' | 'paper_scan'; signedAt: string; noticeVersion: string; generatedAt: string; reason: string | null;
 }
 export interface GrcList { stayId: string; current: GrcVersion | null; versions: GrcVersion[] }
+
+export interface GuestProfile extends Omit<Guest, 'stays'> {
+  addressLine: string | null; state: string | null; pinCode: string | null; country: string;
+  companyName: string | null; companyGstin: string | null; preferences: string | null; specialNote: string | null;
+  mergedIntoId: string | null; documentsRestricted: boolean;
+  history: { id: string; number: string; arrival: string; departure: string; status: ReservationStatus; source: string; purpose: VisitPurpose | null; rooms: string | null }[];
+  upcoming: { id: string; number: string; arrival: string; departure: string; status: ReservationStatus; rooms: string | null }[];
+  stays: { id: string; roomNumber: string; status: 'in_house' | 'checked_out'; checkedIn: string; dueOut: string; checkedOut: string | null }[];
+  vehicles: { registration: string; vehicleType: string; parkingSlot: string | null }[];
+  documents: { id: string; docType: string; idType: string | null; roomNumber: string; at: string; current: boolean }[];
+}
+export interface StayListItem {
+  id: string; status: 'in_house' | 'checked_out'; roomNumber: string; roomTypeName: string;
+  guestId: string; guestName: string; mobile: string; isVip: boolean;
+  reservationId: string; reservationNumber: string; purpose: VisitPurpose | null;
+  checkedIn: string; dueOut: string; checkedOut: string | null; earlyDeparture: boolean;
+  adults: number; children: number; occupants: number;
+}
+export interface RoomShiftLogItem {
+  id: string; businessDate: string; from: string; to: string; reason: string; rateDecision: string;
+  at: string; by: string; authorisedBy: string | null; stayId: string; guestName: string;
+}
+export interface SearchHit { kind: 'guest' | 'booking' | 'room' | 'vehicle'; id: string; href: string; title: string; subtitle: string }

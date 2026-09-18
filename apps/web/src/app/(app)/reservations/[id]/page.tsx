@@ -4,7 +4,7 @@ import { ArrowLeft, BedDouble, CalendarCheck, CheckCircle2, CircleAlert, Crown, 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
-import { CANCELLATION_REASONS, formatDate, formatDateTime, formatINR, formatMobile, money, type CancellationReason } from '@resortos/shared';
+import { CANCELLATION_REASONS, formatDate, formatDateTime, formatINR, formatMobile, money, VISIT_PURPOSE_LABELS, type CancellationReason } from '@resortos/shared';
 import { EstimateBreakdown } from '@/components/booking/booking-form';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -128,6 +128,7 @@ export default function ReservationPage() {
               <Info k="Departure" v={formatDate(r.departure, { weekday: true })} />
               <Info k="Nights" v={String(r.nights)} />
               <Info k="Rooms" v={String(r.rooms.length)} />
+              {r.purpose && <Info k="Purpose" v={VISIT_PURPOSE_LABELS[r.purpose]} />}
             </dl>
             {r.specialRequests && <div className="border-t border-border px-5 py-4 text-sm"><p className="text-text-2">Special requests</p><p className="mt-1 whitespace-pre-wrap">{r.specialRequests}</p></div>}
           </Card>

@@ -284,11 +284,11 @@ export class ReservationsService {
 
     await q.query(
       `INSERT INTO reservations (id, property_id, number, primary_guest_id, source, ota_reference, arrival, departure, status,
-                                 group_name, group_leader_guest_id, billing_mode, special_requests, internal_notes, rebooked_from_id, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+                                 group_name, group_leader_guest_id, billing_mode, special_requests, internal_notes, rebooked_from_id, created_by, purpose)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [id, propertyId, number, guestId, input.source, input.otaReference ?? null, input.arrival, input.departure, input.status,
         isGroup ? input.groupName : null, isGroup ? guestId : null, isGroup ? 'master' : 'separate',
-        input.specialRequests ?? null, input.internalNotes ?? null, input.rebookedFromId ?? null, actor.user.id],
+        input.specialRequests ?? null, input.internalNotes ?? null, input.rebookedFromId ?? null, actor.user.id, input.purpose ?? null],
     );
     await this.writeRooms(q, actor, id, input, priced, auth);
     if (auth) await this.ownerAuth.recordOverrides(q, actor, auth, { type: 'reservation', id });
@@ -352,10 +352,10 @@ export class ReservationsService {
     await q.query(
       `UPDATE reservations SET primary_guest_id = $2, source = $3, ota_reference = $4, arrival = $5, departure = $6, status = $7,
               group_name = $8, group_leader_guest_id = $9, billing_mode = CASE WHEN $10 THEN billing_mode ELSE 'separate' END,
-              special_requests = $11, internal_notes = $12, updated_by = $13
+              special_requests = $11, internal_notes = $12, updated_by = $13, purpose = $14
         WHERE id = $1`,
       [id, guestId, input.source, input.otaReference ?? null, input.arrival, input.departure, input.status,
-        isGroup ? input.groupName : null, isGroup ? guestId : null, isGroup, input.specialRequests ?? null, input.internalNotes ?? null, actor.user.id],
+        isGroup ? input.groupName : null, isGroup ? guestId : null, isGroup, input.specialRequests ?? null, input.internalNotes ?? null, actor.user.id, input.purpose ?? null],
     );
     await this.writeRooms(q, actor, id, input, priced, auth);
     if (auth) await this.ownerAuth.recordOverrides(q, actor, auth, { type: 'reservation', id });
@@ -586,7 +586,7 @@ export class ReservationsService {
     return {
       id: r.id, number: r.number, status: r.status, source: r.source, sourceLabel: BOOKING_SOURCE_LABELS[r.source as BookingSource],
       otaReference: r.ota_reference, arrival: r.arrival, departure: r.departure, nights: nightsBetween(r.arrival, r.departure),
-      groupName: r.group_name, billingMode: r.billing_mode, specialRequests: r.special_requests, internalNotes: r.internal_notes,
+      groupName: r.group_name, billingMode: r.billing_mode, purpose: r.purpose, specialRequests: r.special_requests, internalNotes: r.internal_notes,
       guest: { id: r.primary_guest_id, firstName: r.first_name, lastName: r.last_name, fullName: `${r.first_name} ${r.last_name}`.trim(), mobile: r.mobile, email: r.email, isVip: r.is_vip, city: r.city },
       rooms,
       estimate,

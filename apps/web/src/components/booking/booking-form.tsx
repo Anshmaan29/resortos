@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import {
   addDays, BOOKING_SOURCE_LABELS, BOOKING_SOURCES, createReservationSchema, formatDate, formatINR, formatMobile, guestSchema, MEAL_PLAN_CODES,
-  money, nightsBetween, OTA_SOURCES, updateReservationSchema, type BookingSource, type MealPlanCode,
+  money, nightsBetween, OTA_SOURCES, updateReservationSchema, VISIT_PURPOSE_LABELS, VISIT_PURPOSES,
+  type BookingSource, type MealPlanCode, type VisitPurpose,
 } from '@resortos/shared';
 import { Button } from '@/components/ui/button';
 import { DateField } from '@/components/ui/date-field';
@@ -63,6 +64,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
   const [status, setStatus] = useState<'confirmed' | 'tentative'>(initial?.status === 'tentative' ? 'tentative' : 'confirmed');
   const [groupName, setGroupName] = useState(initial?.groupName ?? '');
   const [specialRequests, setSpecialRequests] = useState(initial?.specialRequests ?? '');
+  const [purpose, setPurpose] = useState<VisitPurpose | ''>(initial?.purpose ?? '');
   const [lines, setLines] = useState<RoomLine[]>(() => initial
     ? initial.rooms.filter((r) => mode === 'rebook' || r.status === 'reserved').map((r) => ({
         key: crypto.randomUUID(), reservationRoomId: mode === 'edit' ? r.id : undefined, roomTypeId: r.roomTypeId,
@@ -132,6 +134,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
     guest: guest ? undefined : { ...newGuest, email: newGuest.email || undefined, city: newGuest.city || undefined },
     source, otaReference: OTA_SOURCES.includes(source) ? otaReference || undefined : undefined, arrival, departure, status,
     groupName: lines.length > 1 ? groupName : undefined,
+    purpose: purpose || undefined,
     specialRequests: specialRequests || undefined,
     rooms: lines.map((l) => ({
       reservationRoomId: l.reservationRoomId, roomTypeId: l.roomTypeId, roomId: l.roomId || undefined, adults: l.adults,
@@ -310,6 +313,12 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
                   );
                 })}
               </AnimatePresence>
+              <Field label="Purpose of visit" hint="Used for the guest register and for reports">{(id) => (
+                <Select id={id} value={purpose} onChange={(e) => setPurpose(e.target.value as VisitPurpose | '')}>
+                  <option value="">Not recorded</option>
+                  {VISIT_PURPOSES.map((v) => <option key={v} value={v}>{VISIT_PURPOSE_LABELS[v]}</option>)}
+                </Select>
+              )}</Field>
               <Field label="Special requests">{(id) => <Textarea id={id} placeholder="Early check-in, extra pillow, anniversary cake…" value={specialRequests} onChange={(e) => setSpecialRequests(e.target.value)} />}</Field>
             </div>
           </Card>
