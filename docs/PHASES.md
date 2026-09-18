@@ -58,6 +58,7 @@ uses, so it plugs in when folios land without rewriting the audit.
 | 2.2 | Folio | Folio lines (never edited, void with reason), food/activity/other charges with saved items and quick-add, room-night posting step wired into night audit | 23, 24 |
 | 2.3 | Payments & payment accounts | **`payment_accounts` from the first migration** (cash counter, bank, UPI, card POS); cash / UPI / POS card / bank / cheque / OTA / company / credit recording, split payments, reversals, advances, receipts, security deposits. Every payment and expense posts to an account | 25–27, parity (a) |
 | 2.4 | Ledger & cashier shifts | Account-wise ledger ("Ledger Entries"), cashier shift open/close reconciled per account (counted cash vs cash counter, POS slip vs card account), owner review list | 34, parity (a) |
+| 2.4b | Balance integrity check | Nightly job: every folio balance and payment-account balance recalculated from rows and compared with any cached copy. Differences are **reported, never auto-repaired** — they raise an incident visible to the owner | 49, 55 |
 | 2.5 | Discounts & Owner PIN | Line/bill discounts, backend limits, on-screen Owner PIN override, slab recalculation preview | 4.5, 28 |
 | 2.6 | GST & invoices | Dated tax rules, per-room-per-night slab, tax invoice / bill of supply, `document_counters` numbering, immutable finalized invoices (DB trigger), credit/debit notes, PDF | 29–31 |
 | 2.7 | Company & OTA | Company accounts, company ledger, ageing, OTA commission/payout tracking, "availability changed today" list | 32, 33 |
