@@ -32,6 +32,7 @@ and every action audit-logged.
 | 1.6 | Guests & reservations | Guest profiles + duplicate warning, reservations, groups, availability, **exclusion constraint** on room allocations, cancellation (with money choice stub), no-show | 12, 13, 15, 16 |
 | 1.7 | Web app shell & design system | Tokens (light/dark), components, motion presets (150–250 ms, reduced motion), login, reception home, room board, reservations list, calendar | 67–71 |
 | 1.8 | Check-in / room shift / checkout | Server-side check-in drafts, occupants, vehicles, **photo/ID capture + phone-as-scanner (QR)**, upload queue with checksum verify, GRC + signature, room shift, checkout as a **stay/room status change only** with defined extension points where Phase 2's bill → payment → invoice steps slot in (no temporary billing checkout) | 17–22 |
+| 1.9 | Guests & the lists the old software had | Guests screen + sidebar, Ctrl+K global search (guest, mobile, room, booking, vehicle), in-house list ("Check In List"), room-shift log, purpose of visit | 16, 71, `docs/old-system-parity.md` |
 
 **Exit criteria:** concurrency test proves only one of two overlapping
 bookings succeeds; check-in draft survives refresh; documents must be
@@ -45,19 +46,43 @@ VERIFIED before confirm; E2E walk-in → check-in → checkout passes.
 Goal: every rupee is recorded correctly, GST invoices are legally correct
 and gap-free, and the business day closes cleanly.
 
+**Order changed deliberately.** Night audit and the business date come *first*, because every
+folio line, invoice and metric is attributed to a business date, and retrofitting that later means
+rewriting rows that are supposed to be immutable. Night audit's one job that genuinely needs folios
+— posting room nights — is a **registered step**, the same extension-point pattern checkout already
+uses, so it plugs in when folios land without rewriting the audit.
+
 | # | Milestone | Key deliverables | Spec § |
 |---|---|---|---|
-| 2.1 | Folio | Folio lines (never edited, void with reason), food/activity/other charges with saved items and quick-add | 23, 24 |
-| 2.2 | Payments | Cash / UPI / POS card / bank / cheque / OTA / company / credit recording, split payments, reversals, advances, receipts, security deposits | 25–27 |
-| 2.3 | Discounts & Owner PIN | Line/bill discounts, backend limits, on-screen Owner PIN override, slab recalculation preview | 4.5, 28 |
-| 2.4 | GST & invoices | Dated tax rules, per-room-per-night slab, tax invoice / bill of supply, `document_counters` numbering, immutable finalized invoices (DB trigger), credit/debit notes, PDF | 29–31 |
-| 2.5 | Company & OTA | Company accounts, ledger, ageing, OTA commission/payout tracking, "availability changed today" list | 32, 33 |
-| 2.6 | Shifts & night audit | Cashier shift open/close with POS reconciliation, business date, night audit (no-shows, room-night posting, locks), owner review list | 34, 35 |
-| 2.7 | Printing | A4 invoice, receipt, GRC, shift report; 80 mm thermal option | 36 |
+| 2.1 | Business date & night audit | Business date owned by night audit (never edited by hand), night audit run: arrivals not checked in (no-show / extend / cancel), departures not checked out, open shifts must be closed, room-status mismatches, summary, business-date advance, past date locked. Idempotent and re-runnable. Room-night posting registers as a step in 2.2. Day audit log | 15.2, 35 |
+| 2.2 | Folio | Folio lines (never edited, void with reason), food/activity/other charges with saved items and quick-add, room-night posting step wired into night audit | 23, 24 |
+| 2.3 | Payments & payment accounts | **`payment_accounts` from the first migration** (cash counter, bank, UPI, card POS); cash / UPI / POS card / bank / cheque / OTA / company / credit recording, split payments, reversals, advances, receipts, security deposits. Every payment and expense posts to an account | 25–27, parity (a) |
+| 2.4 | Ledger & cashier shifts | Account-wise ledger ("Ledger Entries"), cashier shift open/close reconciled per account (counted cash vs cash counter, POS slip vs card account), owner review list | 34, parity (a) |
+| 2.5 | Discounts & Owner PIN | Line/bill discounts, backend limits, on-screen Owner PIN override, slab recalculation preview | 4.5, 28 |
+| 2.6 | GST & invoices | Dated tax rules, per-room-per-night slab, tax invoice / bill of supply, `document_counters` numbering, immutable finalized invoices (DB trigger), credit/debit notes, PDF | 29–31 |
+| 2.7 | Company & OTA | Company accounts, company ledger, ageing, OTA commission/payout tracking, "availability changed today" list | 32, 33 |
+| 2.8 | Printing | A4 invoice, receipt, GRC, shift report; 80 mm thermal option | 36 |
 
 **Exit criteria:** GST boundary tests (₹7,500.00 vs ₹7,500.01), parallel
 invoice finalization produces no gaps/duplicates, double-click payment
 creates one record, E2E stay with food + activity + card/UPI split passes.
+
+### Milestone 2G — Minimum viable Gate 0 *(runs alongside Phase 2, not after it)*
+
+Gate 0 blocks the pilot no matter how finished the front desk looks, so the smallest honest version
+of it is built while Phase 2 is in progress rather than waiting for 3.6:
+
+- Managed PostgreSQL with point-in-time recovery
+- Nightly encrypted logical dump (`pg_dump`) to a **second provider** with Object Lock, written with
+  credentials that can write but not delete
+- Backup encryption key stored **outside** the primary cloud, in two places
+- **One restore test, actually performed and recorded** — date, duration, row counts, financial
+  totals — with the runbook in `ops/runbooks/`
+
+Staying in Phase 3 (3.6): second region, weekly automated restore tests, quarterly drill, integrity
+monitoring, the owner-facing Data Safety panel.
+
+**Until 2G is done and its restore test recorded, no real guest data enters any environment.**
 
 ---
 
@@ -97,6 +122,7 @@ operations and stays compliant; the system is hardened for a pilot.
 | 1.6 | Guests & reservations | ✅ Done — create / edit / cancel / rebook through one validation + authorisation path, groups, per-night agreed rates, availability, exclusion constraint + type-inventory lock, owner override history. Pending: guest merge; no-show runs in night audit (Phase 2). |
 | 1.7 | Web app & design system | ✅ Done — tokens meet WCAG AA in light and dark (automated test), own DD/MM/YYYY date picker, Owner PIN pad with keyboard support, booking form (create / edit / rebook) with GST estimate, booking detail with override record and check-in readiness, calendar, room board. Pending: calendar drag-to-move, Ctrl+K search, settings screens, Storybook. |
 | 1.8 | Check-in / room shift / checkout | 🟡 In progress on branch `milestone-1.8-check-in`. ✅ API (drafts, phone scanner, S3 verified uploads, confirm, room shift, checkout pipeline). ✅ Step 1 desk check-in screens (guests, room assignment in-flow, documents, registration & signature, confirm; autosave). ✅ Step 2 phone camera page (native camera first, live preview, edge detection + manual corners, blur/brightness, ≤2000 px JPEG without EXIF, IndexedDB queue with resume) — **awaiting real-device tests** (`docs/phone-testing.md`). ✅ Step 3 GRC PDF: reproducible one-page bilingual card rendered with pdfkit and a pinned font, stored only after the server re-read and re-hashed it, append-only versions in `grc_documents`, all three signature routes recorded. ✅ Step 4 stay screen: registration card (print, versions, checksum shown), room change with availability + rate decision + Owner PIN, and checkout built around the server's blocker list so Phase 2's bill → payment → invoice steps drop in. **Milestone 1.8 complete except the real-device capture tests** (`docs/phone-testing.md`). |
+| 1.9 | Guests & the lists the old software had | ⏳ Next. Comes from `docs/old-system-parity.md`: Guests screen + sidebar, Ctrl+K search, in-house list, room-shift log, purpose of visit. |
 
 Test suite (all against real PostgreSQL, no database mocks): see `docs/testing.md`.
 
@@ -107,5 +133,9 @@ Test suite (all against real PostgreSQL, no database mocks): see `docs/testing.m
 3. Authenticator-app 2FA for owner accounts
 4. Calendar drag-to-move (lowest priority)
 
-### Phase 2 — not started
+Then: **express check-in** — one screen for a walk-in by experienced staff, over the same draft and
+confirm path, same validation, limits, audit and idempotency. The wizard stays the default.
+
+### Phase 2 — not started (plan agreed; night audit and business dates first)
+### Milestone 2G — minimum viable Gate 0 — not started
 ### Phase 3 — not started
