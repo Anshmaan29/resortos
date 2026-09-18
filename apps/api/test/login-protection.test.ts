@@ -1,7 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { delayForFailures } from '../src/auth/auth.service';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { delayForFailures, remaining } from '../src/auth/auth.service';
 import { createStaff, login, post, sql } from './helpers';
 import { bootApp } from './helpers';
 
@@ -18,6 +18,14 @@ const attempt = (login: string, password: string, ip: string, agent?: ReturnType
 describe('progressive delays', () => {
   it('grows 30 s, 1 min, 2 min … up to 15 min', () => {
     expect([4, 5, 6, 7, 20].map(delayForFailures)).toEqual([0, 30, 60, 120, 900]);
+  });
+
+  it('counts down from the age the database reports, and never below zero', () => {
+    expect(remaining(30, '10')).toBe(20);
+    expect(remaining(30, 29.5)).toBeCloseTo(0.5);
+    expect(remaining(30, '45')).toBe(0);   // already served
+    expect(remaining(30, null)).toBe(0);   // nothing to wait for
+    expect(remaining(0, '1')).toBe(0);
   });
 });
 
@@ -60,6 +68,32 @@ describe('login throttling without lockout abuse', () => {
     for (let i = 0; i < 30; i++) await attempt('victim.four', 'wrong-password-x', `192.0.2.${i + 1}`);
     expect((await attempt('victim.four', PASSWORD, '192.0.2.200')).status).toBe(429);
     await attempt('victim.four', PASSWORD, '192.0.2.201', desk).expect(200);
+  });
+
+  it('holds when this server\'s clock drifts away from the database clock', async () => {
+    // Throttling is a security control, and in production the API and the database are different
+    // machines. If the wait were worked out by mixing a database timestamp with this process's
+    // clock, a fast app clock would switch throttling off silently. It must not.
+    const owner = await login(app, 'owner');
+    await createStaff(app, owner, 'victim.skew');
+    for (let i = 0; i < 5; i++) await attempt('victim.skew', 'wrong-password-x', '198.51.100.44').expect(401);
+
+    // Only Date is faked, so timers, sockets and the pg pool keep working normally.
+    vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date(Date.now() + 20 * 60_000)); // API 20 minutes ahead of PostgreSQL
+      const blocked = await attempt('victim.skew', PASSWORD, '198.51.100.44');
+      expect(blocked.status).toBe(429);
+      expect(blocked.body.details.retryAfterSeconds).toBeGreaterThan(0);
+
+      vi.setSystemTime(new Date(Date.now() - 40 * 60_000)); // and 20 minutes behind
+      const stillBlocked = await attempt('victim.skew', PASSWORD, '198.51.100.44');
+      expect(stillBlocked.status).toBe(429);
+    } finally {
+      vi.useRealTimers();
+    }
+    // A different network is unaffected, skew or no skew.
+    await attempt('victim.skew', PASSWORD, '203.0.113.90').expect(200);
   });
 
   it('the owner can clear throttling for a staff member', async () => {
