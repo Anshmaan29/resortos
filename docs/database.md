@@ -61,6 +61,20 @@ Every business table needs all five, or it is not finished (CLAUDE.md, spec §48
 ### Registration cards — `0007`
 `grc_documents`.
 
+### Job queue schema — `pgboss`
+Not a numbered migration. pg-boss creates and upgrades its own schema, and `pnpm db:migrate` runs
+that **as the migration role** after the numbered migrations; the API then starts pg-boss with
+`migrate: false`, so `resortos_app` never needs DDL rights. Copying pg-boss's DDL into a checksummed
+migration would pin one version of it forever and leave upgrades to be hand-written.
+
+`db/grants.sql` gives `resortos_app` read/write **and DELETE** on that schema only — jobs genuinely
+are disposable, which is the exception the no-delete rule describes.
+
+### Outbox dead-letter — `0009`
+`outbox_events.failed_at` marks an event the dispatcher gave up on. The event is kept; a failed
+WhatsApp message is still a record that the system meant to send one. A CHECK keeps an event from
+being both dispatched and dead.
+
 ### On-device Aadhaar masking removed — `0008`
 Drops the CHECK that required `masked_on_device` for Aadhaar images (product owner's decision; see
 CLAUDE.md rule 11). The column is kept as a historical record of files captured while masking

@@ -3,6 +3,7 @@ import { AuthModule } from './auth/auth.module';
 import { APP_CONFIG, loadConfig } from './config';
 import { DbModule } from './db/db.module';
 import { GuestsModule } from './guests/guests.module';
+import { JobsModule } from './jobs/jobs.module';
 import { HealthController } from './health/health.controller';
 import { PropertyModule } from './property/property.module';
 import { RatesModule } from './rates/rates.module';
@@ -16,7 +17,7 @@ import { Global } from '@nestjs/common';
 class ConfigModule {}
 
 @Module({
-  imports: [ConfigModule, DbModule, StorageModule, AuthModule, PropertyModule, RatesModule, GuestsModule, ReservationsModule, StaysModule],
+  imports: [ConfigModule, DbModule, StorageModule, JobsModule, AuthModule, PropertyModule, RatesModule, GuestsModule, ReservationsModule, StaysModule],
   controllers: [HealthController],
 })
 export class AppModule {}

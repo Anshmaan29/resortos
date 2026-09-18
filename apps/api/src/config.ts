@@ -19,7 +19,9 @@ const envSchema = z.object({
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
-});
+  /** Background job runner. Off in tests, which drive the dispatcher directly and deterministically. */
+  JOBS_ENABLED: z.enum(['true', 'false']).optional().transform((v) => v === undefined ? undefined : v === 'true'),
+}).transform((c) => ({ ...c, JOBS_ENABLED: c.JOBS_ENABLED ?? c.NODE_ENV !== 'test' }));
 
 export type AppConfig = z.infer<typeof envSchema>;
 
