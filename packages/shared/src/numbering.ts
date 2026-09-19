@@ -1,5 +1,6 @@
 /** GST document numbers (spec §31): unique, consecutive per series + FY, max 16 chars. */
-export type DocumentSeries = 'INV' | 'CN' | 'DN' | 'RV';
+/** INV tax invoice · BOS bill of supply · CN credit note · DN debit note · RV receipt voucher. */
+export type DocumentSeries = 'INV' | 'BOS' | 'CN' | 'DN' | 'RV';
 
 export function formatDocumentNumber(series: DocumentSeries, financialYear: string, n: number): string {
   if (!Number.isInteger(n) || n < 1) throw new Error('Document number must be a positive integer');
@@ -12,3 +13,4 @@ export function formatDocumentNumber(series: DocumentSeries, financialYear: stri
 export function formatReference(prefix: string, n: number, width = 6): string {
   return `${prefix}-${String(n).padStart(width, '0')}`;
 }
+

@@ -1,93 +1,118 @@
 'use client';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { CheckCircle2, CircleAlert, Lock } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CheckCircle2, CircleAlert, IndianRupee, Lock } from 'lucide-react';
 import { useRef, useState } from 'react';
-import { formatDate } from '@resortos/shared';
+import { formatDate, formatINR, isValidGstin, money } from '@resortos/shared';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
+import { Field, Input } from '@/components/ui/field';
+import { useOwnerApproval } from '@/components/ui/owner-pin';
 import { useToast } from '@/components/ui/toast';
 import { api, newIdempotencyKey } from '@/lib/api';
-import type { CheckoutPreview, StayDetail } from '@/lib/types';
+import { cn } from '@/lib/cn';
+import type { Bill, CheckoutPreview, InvoicePreview, StayDetail } from '@/lib/types';
+import { DepositDialog, RecordPaymentDialog } from './payment-dialogs';
 
 /**
- * Checkout (spec §22). Today this is a stay and room status change: the bill, payment and invoice
- * steps arrive with Phase 2.
+ * Checkout (spec §22): settle, invoice, leave — in one transaction on the server.
  *
- * The screen is laid out around the server's checkout pipeline rather than around what exists now.
- * `checkout-preview` returns the registered steps and whatever each one says is blocking; this
- * renders that list. When Phase 2 registers `bill-review`, `settlement`, `security-deposit` and
- * `invoice-finalize`, their blockers ("balance ₹4,500 is unpaid", "record the deposit decision")
- * appear here with no change to this component, and each step gets its own section below the
- * summary — the same pattern as "Before check-in" on the booking screen.
+ * The screen is laid out around the server's checkout pipeline. `checkout-preview` returns what
+ * each registered step says is blocking (a deposit still held, money still owed), and each blocker
+ * comes with the action that clears it, on this same screen. The invoice shown here is the exact
+ * one checkout will issue, less its number, which is only taken at the moment it is final (§31).
  */
-const STEP_TITLES: Record<string, string> = {
-  'bill-review': 'Bill',
-  settlement: 'Payment',
-  'security-deposit': 'Security deposit',
-  'invoice-finalize': 'Invoice',
-};
-
 export function CheckoutDialog({ stay, open, onClose, onDone }: {
   stay: StayDetail; open: boolean; onClose: () => void; onDone: (message: string) => void;
 }) {
   const toast = useToast();
+  const qc = useQueryClient();
   const [formError, setFormError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [business, setBusiness] = useState(false);
+  const [buyerName, setBuyerName] = useState('');
+  const [buyerGstin, setBuyerGstin] = useState('');
+  const [buyerAddress, setBuyerAddress] = useState('');
+  const [payOpen, setPayOpen] = useState(false);
+  const [depositOpen, setDepositOpen] = useState(false);
   const key = useRef(newIdempotencyKey());
+  const approval = useOwnerApproval((authorisationId) => checkout.mutate(authorisationId));
 
   const preview = useQuery({
     queryKey: ['checkout-preview', stay.id],
     enabled: open,
     queryFn: () => api<CheckoutPreview>(`/stays/${stay.id}/checkout-preview`),
   });
+  const bill = useQuery({ queryKey: ['bill', stay.id], enabled: open, queryFn: () => api<Bill>(`/stays/${stay.id}/bill`) });
+  const gstinOk = !buyerGstin || isValidGstin(buyerGstin.trim().toUpperCase());
+  const buyer = business && buyerName.trim().length >= 2 && gstinOk
+    ? { name: buyerName.trim(), gstin: buyerGstin.trim().toUpperCase() || undefined, address: buyerAddress.trim() || undefined }
+    : undefined;
+  const invoice = useQuery({
+    queryKey: ['invoice-preview', bill.data?.id, buyer],
+    enabled: open && Boolean(bill.data?.id),
+    queryFn: () => api<InvoicePreview>(`/folios/${bill.data!.id}/invoice/preview`, { method: 'POST', body: { buyer } }),
+  });
+
+  const refresh = () => {
+    void preview.refetch();
+    void qc.invalidateQueries({ queryKey: ['invoice-preview'] });
+  };
 
   const checkout = useMutation({
-    mutationFn: () => api<StayDetail>(`/stays/${stay.id}/checkout`, {
+    mutationFn: (ownerAuthorisationId?: string) => api<StayDetail>(`/stays/${stay.id}/checkout`, {
       method: 'POST',
       idempotencyKey: key.current,
-      // Phase 2 steps read their own input from this object, keyed by step name.
-      body: { steps: {} },
+      // Each billing step reads its own input from this object, keyed by step name.
+      body: { steps: { settlement: { pendingBalance: pending, ownerAuthorisationId }, invoice: { buyer } } },
     }),
     onSuccess: () => {
       key.current = newIdempotencyKey();
       setFormError(null);
-      onDone(`Room ${stay.roomNumber} checked out`);
+      void qc.invalidateQueries({ queryKey: ['bill', stay.id] });
+      onDone(`Room ${stay.roomNumber} checked out${invoice.data?.lines.length ? ' and the invoice issued' : ''}`);
     },
     onError: (err) => {
+      if (approval.handleError(err)) return;
       setFormError((err as Error).message);
       toast('error', (err as Error).message);
       void preview.refetch();
     },
   });
 
-  const blockers = preview.data?.blockers ?? [];
+  const b = bill.data;
+  const balance = b?.balance ? money(b.balance) : null;
+  // Leaving with money owed is a real option, but only the owner can allow it (§22).
+  const blockers = (preview.data?.blockers ?? []).filter((x) => !(x.step === 'settlement' && pending && balance?.gt(0)));
   const early = preview.data?.earlyDeparture ?? false;
-  const steps = preview.data?.steps ?? [];
 
   return (
     <Dialog
       open={open}
       onClose={onClose}
+      size="lg"
       title={`Check out room ${stay.roomNumber}?`}
       description={`${stay.guestName} · booking ${stay.reservationNumber}`}
       footer={<>
         <Button variant="outline" onClick={onClose}>Not yet</Button>
-        <Button disabled={preview.isLoading || blockers.length > 0} loading={checkout.isPending} onClick={() => { setFormError(null); checkout.mutate(); }}>
-          Check out
+        <Button disabled={preview.isLoading || blockers.length > 0 || (business && !buyer)} loading={checkout.isPending}
+          onClick={() => { setFormError(null); checkout.mutate(undefined); }}>
+          {invoice.data?.lines.length ? 'Issue invoice and check out' : 'Check out'}
         </Button>
       </>}
     >
       <div className="flex flex-col gap-4 text-sm">
-        <dl className="grid grid-cols-2 gap-3">
+        <dl className="grid grid-cols-3 gap-3">
           <div><dt className="text-text-3">Checked in</dt><dd className="mt-0.5 font-medium num">{formatDate(stay.businessDateIn)}</dd></div>
           <div><dt className="text-text-3">Due out</dt><dd className="mt-0.5 font-medium num">{formatDate(stay.expectedDeparture)}</dd></div>
+          <div><dt className="text-text-3">Balance</dt><dd className={cn('mt-0.5 font-semibold num', balance?.gt(0) && 'text-warning')}>{b?.balance ? formatINR(b.balance) : '—'}</dd></div>
         </dl>
 
         {early && (
           <p className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning-soft px-3 py-2.5 text-warning">
             <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <span>
-              The guest is leaving early — {formatDate(stay.expectedDeparture)} was the expected departure.
-              Charges for the nights actually stayed are worked out when billing arrives (Phase 2); the stay is recorded as an early departure.
+              The guest is leaving early — {formatDate(stay.expectedDeparture)} was the expected departure. Only the nights
+              actually stayed are on the bill, because night audit posts a room night only for a night the guest was in house.
             </span>
           </p>
         )}
@@ -95,33 +120,92 @@ export function CheckoutDialog({ stay, open, onClose, onDone }: {
         {blockers.length > 0 ? (
           <div className="rounded-md border border-border bg-surface-2 px-3 py-2.5">
             <p className="font-medium text-text">Before checkout</p>
-            <ul className="mt-1 list-disc pl-5 text-text-2">
-              {blockers.map((b) => <li key={`${b.step}:${b.message}`}>{b.message}</li>)}
+            <ul className="mt-1 flex flex-col gap-2 text-text-2">
+              {blockers.map((x) => (
+                <li key={`${x.step}:${x.message}`} className="flex flex-wrap items-center justify-between gap-2">
+                  <span>{x.message}</span>
+                  {x.step === 'settlement' && balance?.gt(0) && (
+                    <Button size="sm" onClick={() => setPayOpen(true)}><IndianRupee className="h-4 w-4" aria-hidden />Record payment</Button>
+                  )}
+                  {x.step === 'settlement' && balance?.isNegative() && (
+                    <Button size="sm" variant="outline" onClick={() => setPayOpen(true)}>Record refund</Button>
+                  )}
+                  {x.step === 'deposit' && <Button size="sm" onClick={() => setDepositOpen(true)}>Settle deposit</Button>}
+                </li>
+              ))}
             </ul>
           </div>
         ) : (
           <p className="flex items-start gap-2 rounded-md border border-success/30 bg-success-soft px-3 py-2.5 text-success">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <span>Nothing is blocking this checkout.</span>
+            <span>{pending ? 'The owner will be asked to allow checkout with the balance pending.' : 'Nothing is blocking this checkout.'}</span>
           </p>
         )}
 
-        {steps.length > 0 && (
-          <ul className="flex flex-col gap-1 text-text-2">
-            {steps.map((s) => <li key={s}>{STEP_TITLES[s] ?? s}</li>)}
-          </ul>
+        {balance?.gt(0) && (
+          <label className="flex items-start gap-2">
+            <input type="checkbox" className="mt-0.5 h-4 w-4" checked={pending} onChange={(e) => setPending(e.target.checked)} />
+            <span>Let the guest leave with {formatINR(b!.balance!)} still to pay — recorded as owed, needs the owner</span>
+          </label>
+        )}
+
+        {invoice.data && invoice.data.lines.length > 0 && (
+          <div className="rounded-lg border border-border">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+              <p className="font-medium">{invoice.data.documentType === 'bill_of_supply' ? 'Bill of supply' : 'Tax invoice'} to be issued</p>
+              <label className="flex items-center gap-2 text-text-2">
+                <input type="checkbox" className="h-4 w-4" checked={business} onChange={(e) => setBusiness(e.target.checked)} />
+                Bill a business (GSTIN)
+              </label>
+            </div>
+            {business && (
+              <div className="grid gap-3 border-b border-border p-3 sm:grid-cols-2">
+                <Field label="Business name" required>
+                  {(id) => <Input id={id} value={buyerName} onChange={(e) => setBuyerName(e.target.value)} maxLength={120} />}
+                </Field>
+                <Field label="GSTIN" error={gstinOk ? undefined : 'This GSTIN is not valid'}>
+                  {(id) => <Input id={id} value={buyerGstin} onChange={(e) => setBuyerGstin(e.target.value.toUpperCase())} maxLength={15} />}
+                </Field>
+                <Field label="Billing address" className="sm:col-span-2">
+                  {(id) => <Input id={id} value={buyerAddress} onChange={(e) => setBuyerAddress(e.target.value)} maxLength={300} />}
+                </Field>
+              </div>
+            )}
+            <dl className="flex flex-col gap-1 p-3">
+              <Line k={`Billed to ${invoice.data.buyer.name}${invoice.data.buyer.gstin ? ` · ${invoice.data.buyer.gstin}` : ''}`} v="" />
+              <Line k="Taxable value" v={formatINR(invoice.data.taxableTotal)} />
+              {invoice.data.groups.filter((g) => Number(g.ratePercent) > 0).map((g) => (
+                <Line key={g.ratePercent} k={`CGST + SGST at ${Number(g.ratePercent)}%`} v={formatINR(money(g.cgst).plus(g.sgst).toFixed(2))} />
+              ))}
+              {Number(invoice.data.roundOff) !== 0 && <Line k="Round off" v={formatINR(invoice.data.roundOff)} />}
+              <Line k="Invoice total" v={formatINR(invoice.data.grandTotal)} strong />
+            </dl>
+          </div>
         )}
 
         <p className="flex items-start gap-2 text-text-3">
           <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <span>
-            After checkout the stay can no longer be changed and room {stay.roomNumber} becomes dirty for housekeeping.
-            The booking and every document are kept in history.
+            After checkout the stay and the invoice cannot be changed, and room {stay.roomNumber} becomes dirty for housekeeping.
+            A mistake on the invoice is corrected with a credit note.
           </span>
         </p>
 
         {formError && <p role="alert" className="text-danger">{formError}</p>}
+        {approval.dialog}
       </div>
+
+      {b && payOpen && <RecordPaymentDialog bill={b} stayId={stay.id} open={payOpen} onClose={() => { setPayOpen(false); refresh(); }} />}
+      {b && depositOpen && <DepositDialog bill={b} stayId={stay.id} open={depositOpen} onClose={() => { setDepositOpen(false); refresh(); }} />}
     </Dialog>
+  );
+}
+
+function Line({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
+  return (
+    <div className={cn('flex items-baseline justify-between gap-4', strong && 'border-t border-border pt-1.5 font-semibold')}>
+      <dt className="text-text-2">{k}</dt>
+      <dd className="tabular-nums">{v}</dd>
+    </div>
   );
 }

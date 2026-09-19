@@ -103,7 +103,7 @@ async function clearBlockers(agent: Agent) {
         // screen never presents something the backend will refuse.
         if (item.actions.includes('no_show')) await post(agent, `/reservations/${item.id}/no-show`, { note: 'Never arrived' }).expect(200);
         else if (item.actions.includes('cancel')) await post(agent, `/reservations/${item.id}/cancel`, { reason: 'change_of_plans' }).expect(200);
-        else await post(agent, `/stays/${item.id}/checkout`, {}).expect(200);
+        else await post(agent, `/stays/${item.id}/checkout`, { steps: { settlement: { pendingBalance: true } } }).expect(200);
       }
     }
   }
@@ -246,7 +246,7 @@ describe('resolving the blockers', () => {
       `SELECT count(*) AS n FROM reservation_room_nights n JOIN stays s ON s.reservation_room_id = n.reservation_room_id WHERE s.id = $1`, [stayId],
     );
     expect(nights[0]!.n).toBe('1');
-    await post(owner, `/stays/${stayId}/checkout`, {}).expect(200);
+    await post(owner, `/stays/${stayId}/checkout`, { steps: { settlement: { pendingBalance: true } } }).expect(200);
     await post(owner, `/reservations/${next.body.id}/cancel`, { reason: 'guest_request' }).expect(200);
   });
 

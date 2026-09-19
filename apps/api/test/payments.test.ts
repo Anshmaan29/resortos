@@ -58,7 +58,7 @@ async function runNightAudit(agent: Agent) {
           await post(agent, `/shifts/${item.id}/close`, { countedCash: shift.body.expectedCash, version: shift.body.version }).expect(200);
         } else if (item.actions.includes('no_show')) await post(agent, `/reservations/${item.id}/no-show`, {}).expect(200);
         else if (item.actions.includes('cancel')) await post(agent, `/reservations/${item.id}/cancel`, { reason: 'change_of_plans' }).expect(200);
-        else await post(agent, `/stays/${item.id}/checkout`, {}).expect(200);
+        else await post(agent, `/stays/${item.id}/checkout`, { steps: { settlement: { pendingBalance: true } } }).expect(200);
       }
     }
   }
