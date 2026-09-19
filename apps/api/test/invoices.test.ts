@@ -272,3 +272,59 @@ describe('what the invoice is', () => {
     expect(preview.lines.map((l: any) => l.gstRate)).toEqual(['5.00', '12.00']);
   });
 });
+
+describe('printing (spec §36)', () => {
+  const pdf = (agent: Agent, path: string) => agent.get(`/api/v1${path}`).buffer(true).parse((res, cb) => {
+    const chunks: Buffer[] = [];
+    res.on('data', (c: Buffer) => chunks.push(c));
+    res.on('end', () => cb(null, Buffer.concat(chunks)));
+  });
+
+  it('prints the A4 invoice as a PDF, byte-for-byte the same every time', async () => {
+    const [inv] = await sql<{ id: string }>(`SELECT id FROM invoices WHERE number = 'INV/26-27/00001'`);
+    const a = await pdf(desk, `/invoices/${inv!.id}/pdf`).expect(200);
+    const b = await pdf(desk, `/invoices/${inv!.id}/pdf`).expect(200);
+    expect(a.headers['content-type']).toBe('application/pdf');
+    expect(a.headers['cache-control']).toContain('no-store');
+    expect((a.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
+    expect(Buffer.compare(a.body, b.body)).toBe(0);
+    expect((a.body as Buffer).toString('latin1')).toMatch(/\/MediaBox \[0 0 595\.28 841\.89\]/);
+  });
+
+  it('prints a receipt on A4 or on the 80 mm thermal roll', async () => {
+    const [p] = await sql<{ id: string }>(`SELECT id FROM payments WHERE method = 'cash' AND entry_type = 'payment' LIMIT 1`);
+    const a4 = await pdf(desk, `/payments/${p!.id}/receipt.pdf`).expect(200);
+    const roll = await pdf(desk, `/payments/${p!.id}/receipt.pdf?paper=thermal_80`).expect(200);
+    expect((a4.body as Buffer).toString('latin1')).toMatch(/\/MediaBox \[0 0 595\.28/);
+    expect((roll.body as Buffer).toString('latin1')).toMatch(/\/MediaBox \[0 0 226\.77/);
+  });
+
+  it('a shift report is the owner’s or the cashier’s own', async () => {
+    const [mine] = await sql<{ id: string }>(`SELECT s.id FROM cashier_shifts s JOIN users u ON u.id = s.opened_by WHERE u.role = 'receptionist' LIMIT 1`);
+    await pdf(desk, `/shifts/${mine!.id}/report.pdf`).expect(200);
+    await pdf(owner, `/shifts/${mine!.id}/report.pdf?paper=thermal_80`).expect(200);
+  });
+});
+
+describe('the owner review list (spec §34.4)', () => {
+  it('is the owner’s, and shows overrides, credit notes and a guest who left owing, from the records', async () => {
+    await desk.get('/api/v1/owner-review').expect(403);
+    const { body } = await owner.get('/api/v1/owner-review').expect(200);
+    const kinds = new Set(body.map((i: any) => i.kind));
+    for (const k of ['override', 'credit_note', 'pending_balance']) expect(kinds.has(k)).toBe(true);
+    const pending = body.find((i: any) => i.kind === 'pending_balance');
+    expect(Number(pending.amount)).toBeGreaterThan(0);
+  });
+
+  it('an item marked Seen leaves the list, stays marked, and can still be shown on request', async () => {
+    const before = (await owner.get('/api/v1/owner-review').expect(200)).body;
+    const item = before[0];
+    await post(owner, '/owner-review/seen', { keys: [item.key] }, null).expect(200);
+    await post(owner, '/owner-review/seen', { keys: [item.key] }, null).expect(200);
+    const after = (await owner.get('/api/v1/owner-review').expect(200)).body;
+    expect(after.map((i: any) => i.key)).not.toContain(item.key);
+    const all = (await owner.get('/api/v1/owner-review?includeSeen=true').expect(200)).body;
+    expect(all.find((i: any) => i.key === item.key).seen).toBe(true);
+    await expect(sql(`DELETE FROM owner_review_seen`)).rejects.toThrow(/kept/);
+  });
+});

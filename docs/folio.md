@@ -126,12 +126,10 @@ invoice is finalised in 2.6, because until then rates can still change for a fut
 can still be added. Nothing about the tax is stored on the line beyond `tax_category` and `sac`:
 storing a computed tax amount would be a second place for it to be wrong.
 
-## What 2.2 does not do
+## What came after 2.2
 
-- **No payments.** `payments` and `payment_accounts` arrive in 2.3, so "Balance" in 2.2 is the
-  charge total. The bill screen has the row and shows ₹0 paid.
-- **No invoice.** 2.6.
-- **No discounts beyond the line type.** The discount *line* exists; the receptionist limit and
-  Owner PIN flow around it are 2.5.
-- **No group master bills yet.** The `kind` column and the nullable `stay_id` are there so that
-  moving charges between bills in 2.7 does not need a migration, but only stay bills are created.
+Payments, deposits and shifts (2.3, 2.4): `docs/payments.md`. Discounts attached to the charge they
+reduce, so GST follows the net value (2.5): `docs/payments.md`. The invoice, credit and debit notes,
+and printing (2.6, 2.8): `docs/invoices.md`. A closed bill still takes a payment, and the owner can add
+a late charge, which goes on a debit note. Group master bills are still not created — the `kind`
+column and the nullable `stay_id` are ready for them.

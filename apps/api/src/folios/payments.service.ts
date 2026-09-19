@@ -182,7 +182,7 @@ export class PaymentsService {
   }
 
   /** The bill a payment is being recorded against, and who it belongs to. */
-  private async target(q: Queryable, propertyId: string, target: { folioId?: string; reservationId?: string }) {
+  private async target(q: Queryable, propertyId: string, target: { folioId?: string; reservationId?: string }, entryType?: string) {
     if (target.folioId) {
       const { rows } = await q.query<{ id: string; reservation_id: string; guest_id: string; status: string }>(
         `SELECT f.id, f.reservation_id, r.primary_guest_id AS guest_id, f.status
@@ -198,7 +198,9 @@ export class PaymentsService {
       [target.reservationId, propertyId],
     );
     if (!rows[0]) throw notFound('Booking');
-    if (['cancelled', 'no_show', 'checked_out'].includes(rows[0].status)) {
+    // A cancelled or no-show booking can still give its advance back (§15.1); nothing else.
+    const closedForRefund = ['cancelled', 'no_show'].includes(rows[0].status) && entryType === 'refund';
+    if (['cancelled', 'no_show', 'checked_out'].includes(rows[0].status) && !closedForRefund) {
       throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This booking is closed. Money for it is handled on the bill.');
     }
     // Once the guest is in house there is a bill, and an advance belongs on it.
@@ -216,7 +218,7 @@ export class PaymentsService {
     const on = input.businessDate ?? businessDate;
     await this.assertDateUsable(q, actor, on, businessDate, input.entryType === 'refund' ? 'refund' : 'payment');
 
-    const t = await this.target(q, propertyId, target);
+    const t = await this.target(q, propertyId, target, input.entryType);
     // A closed bill has been invoiced. Money can still arrive against it — a guest who left owing
     // pays later — but nothing that changes what was sold, and no new deposit.
     if (t.folioClosed && !['payment', 'refund'].includes(input.entryType)) {

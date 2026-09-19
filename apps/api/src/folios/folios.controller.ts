@@ -108,6 +108,7 @@ export class FoliosController {
     const reservationId = parse(zId, id);
     const input = parse(recordPaymentSchema, body);
     return this.mutate(actor, req, key, body, (q) =>
+      // Money on a booking before arrival is an advance; a refund of it stays a refund (§15.1, §26).
       this.payments.record(q, actor, { reservationId }, { ...input, entryType: input.entryType === 'payment' ? 'advance' : input.entryType }));
   }
 

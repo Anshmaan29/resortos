@@ -138,13 +138,21 @@ Test suite (all against real PostgreSQL, no database mocks): see `docs/testing.m
 Then: **express check-in** — one screen for a walk-in by experienced staff, over the same draft and
 confirm path, same validation, limits, audit and idempotency. The wizard stays the default.
 
-### Phase 2 — in progress
+### Phase 2 — billing complete (Sprint A)
 
 | Milestone | State |
 |---|---|
 | 2.1 Business date & night audit | ✅ Done — step registry (2.2 and 2.4 plug in without editing it), arrivals/departures blocking with the actions each row actually allows, room-status warnings, summary, day audit log, no-show, extend stay, and the business date moved only by a completed audit. Design and the concurrency reasoning: `docs/night-audit.md`. Open-shift check arrives with 2.4; revenue in the summary with 2.2 and 2.3. |
 | 2.2 Folio | ✅ Done — the bill: charges with GST worked out from type and date, a line that can only be voided (never edited) with the reason kept, saved charge items as owner settings, and **room-night posting registered as a night audit step** that posts once per room per business date. Design: `docs/folio.md`. |
-| 2.3 – 2.8 | Not started |
+| 2.3 Payments & payment accounts | ✅ Done — recorded, never processed, never edited: reversal rows only, at most once. Database-computed bill / deposit / cash effects, method ↔ account kind enforced by CHECK, cash only inside the taker's open shift, advances that carry to the stay's bill through a view, security deposits held apart from what is paid, guest credit, refunds on Owner PIN, printable receipts. Design: `docs/payments.md`. |
+| 2.4 Ledger & cashier shifts | ✅ Done — open with a count, close against what the ledger rows say, reason above the owner's threshold, card slip compared, closed shift locked; open shifts block night audit; account-wise ledger with running balance; owner review list (overrides, big discounts, voids, reversals, cash differences, credit notes, pending balances) with Seen marks. |
+| 2.4b Balance integrity check | ✅ Done — nightly step reports, never repairs: money on the wrong booking, reversals that do not match, rows added to a day after it closed, closed shifts that no longer add up, negative deposits or guest credit. Restore test runs the money checks too. |
+| 2.5 Discounts & Owner PIN | ✅ Done — line or bill, % or ₹, attached to the charge so the GST slab follows the net value; preview shows slab changes before saving; receptionist limit enforced on the server with Owner PIN bound to the exact parts. |
+| 2.6 GST & invoices | ✅ Done — invoice written whole at checkout from `document_counters` (gap-free under concurrency, rollback gives the number back), immutable by trigger, totals checked at commit; bill of supply without a GSTIN; credit notes (owner, original rates, never beyond what was sold) and debit notes for late charges. Design: `docs/invoices.md`. |
+| 2.7 Company & OTA | ✅ Done — company accounts with credit limit on Owner PIN, invoice in the company's name and GSTIN, statement with oldest-first ageing, company receipts; OTA terms, payouts and receivables report; "availability changed today" from the outbox. |
+| 2.8 Printing | ✅ Done — A4 invoice / credit / debit note, receipt and shift report on A4 or 80 mm thermal; byte-for-byte reproducible PDFs. |
+
+**Phase 2 exit criteria:** GST boundary ₹7,500.00 vs ₹7,500.01 ✅ (`discounts.test.ts`) · parallel finalization with no gap or duplicate ✅ (`invoices.test.ts`) · double-click payment creates one record ✅ (idempotency key on every money mutation) · E2E stay with food + activity + card/UPI split ✅ (`tests/e2e/billing.spec.ts`).
 ### Milestone 2G — minimum viable Gate 0 — in progress
 
 | | |

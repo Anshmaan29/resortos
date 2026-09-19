@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { CANCELLATION_REASONS, formatDate, formatDateTime, formatINR, formatMobile, money, VISIT_PURPOSE_LABELS, type CancellationReason } from '@resortos/shared';
 import { EstimateBreakdown } from '@/components/booking/booking-form';
+import { AdvanceDialog, OtaPanel } from '@/components/booking/booking-money';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Select, Textarea } from '@/components/ui/field';
@@ -26,6 +27,7 @@ export default function ReservationPage() {
   const toast = useToast();
   const res = useQuery({ queryKey: ['reservation', id], queryFn: () => api<ReservationDetail>(`/reservations/${id}`) });
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [advanceOpen, setAdvanceOpen] = useState(false);
   const router = useRouter();
   const startCheckIn = useMutation({
     mutationFn: () => api<{ id: string }>('/check-in-drafts', { method: 'POST', body: { reservationId: id } }),
@@ -155,12 +157,20 @@ export default function ReservationPage() {
             <CardHeader title="Estimate" />
             <div className="flex flex-col gap-2 p-5 text-sm">
               <EstimateBreakdown estimate={{ tax: r.estimate }} />
-              <div className="mt-2 flex justify-between border-t border-border pt-3"><span className="text-text-2">Advance received</span><span className="num">{money(r.advancePaid).gt(0) ? formatINR(r.advancePaid) : 'None'}</span></div>
+              <div className="mt-2 flex items-center justify-between border-t border-border pt-3">
+                <span className="text-text-2">Advance received</span>
+                <span className="flex items-center gap-2">
+                  <span className="num">{money(r.advancePaid).gt(0) ? formatINR(r.advancePaid) : 'None'}</span>
+                  {['tentative', 'confirmed'].includes(r.status) && <Button size="sm" variant="outline" onClick={() => setAdvanceOpen(true)}>Record advance</Button>}
+                </span>
+              </div>
             </div>
           </Card>
+          <OtaPanel reservationId={r.id} source={r.source} />
         </div>
       </div>
 
+      {advanceOpen && <AdvanceDialog reservationId={r.id} onClose={() => { setAdvanceOpen(false); void refreshAll(); }} />}
       <CancelDialog open={cancelOpen} reservation={r} onClose={() => setCancelOpen(false)} onDone={async () => { setCancelOpen(false); await refreshAll(); toast('success', `Booking ${r.number} cancelled`); }} />
     </div>
   );

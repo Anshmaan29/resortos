@@ -76,6 +76,8 @@ export default function HomePage() {
         </Card>
       </div>
 
+      <AvailabilityChanged />
+
       <Card>
         <CardHeader title="Rooms" description="Tap a room to update its status"
           action={<Link href="/rooms" className="flex items-center gap-1 text-sm font-medium text-brand hover:underline">Room board<ArrowRight className="h-4 w-4" /></Link>} />
@@ -118,5 +120,33 @@ function Row({ href, title, meta, right }: { href: string; title: React.ReactNod
         {right}
       </Link>
     </li>
+  );
+}
+
+/**
+ * Without a channel manager the desk updates OTA extranets by hand (spec §33). This is the list of
+ * what changed today — bookings, cancellations, extensions, rooms out of order — so nothing is missed.
+ */
+function AvailabilityChanged() {
+  const changes = useQuery({
+    queryKey: ['availability-changes'], refetchInterval: 60_000,
+    queryFn: () => api<{ id: string; at: string; what: string; from: string | null; to: string | null }[]>('/availability-changes/today'),
+  });
+  if (!changes.data?.length) return null;
+  return (
+    <Card>
+      <CardHeader title="Availability changed today" description="Update these dates on the OTA extranets" />
+      <ul className="border-t border-border text-sm">
+        {changes.data.slice(0, 12).map((c) => (
+          <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-2 last:border-0">
+            <span>{c.what}</span>
+            <span className="tabular-nums text-text-2">
+              {c.from && c.to ? `${formatDate(c.from, { year: false })} – ${formatDate(c.to, { year: false })}` : ''}
+              <span className="ml-3 text-xs text-text-3">{new Date(c.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

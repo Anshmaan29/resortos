@@ -51,6 +51,34 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | A day night audit has closed refuses new charges, and voiding on it needs Owner PIN | `apps/api/test/folio.test.ts` |
 | Saved charge items are owner-only and are deactivated, never deleted | `apps/api/test/folio.test.ts` |
 | Adding and removing a charge on the stay screen, with the removed line kept and the reason shown | `tests/e2e/check-in.spec.ts` |
+| Money lands in the right kind of account — refused by the API and again by the database | `apps/api/test/payments.test.ts` |
+| A payment is never edited or deleted; a reversal is a new row, at most once, and never of a reversal | `apps/api/test/payments.test.ts` |
+| A refund needs Owner PIN and takes money out; a reversal on a closed day needs the owner and is dated today | `apps/api/test/payments.test.ts` |
+| An advance taken before arrival counts on the stay's bill without the payment row changing | `apps/api/test/payments.test.ts` |
+| A cancelled booking's advance must be decided; "keep as credit" writes guest credit; a refund after cancelling needs the owner | `apps/api/test/payments.test.ts` |
+| A security deposit is held, not paid; it must be fully accounted for; an unusual split needs the owner | `apps/api/test/payments.test.ts` |
+| Guest credit can be spent only up to what the guest has, and a reversal gives it back | `apps/api/test/payments.test.ts` |
+| Cash without an open shift, or into someone else's shift, is refused by the database | `apps/api/test/payments.test.ts` |
+| Shift close: expected = opening + cash taken; reason above the threshold; closed shift locked; one open shift per person under concurrency | `apps/api/test/payments.test.ts` |
+| Nightly integrity check reports a payment on the wrong booking and repairs nothing | `apps/api/test/payments.test.ts` |
+| GST slab follows the discount: ₹8,000 night at 18%, ₹1,000 off → 5%, shown in the preview first | `apps/api/test/discounts.test.ts` |
+| ₹7,500.00 is 5% and ₹7,500.01 is 18%; one paisa off moves it back | `apps/api/test/discounts.test.ts` |
+| Receptionist discount limit enforced on the server; Owner PIN approves exactly the amounts asked | `apps/api/test/discounts.test.ts` |
+| A bill discount is spread to the paisa and removed as one; a discounted charge cannot be removed alone | `apps/api/test/discounts.test.ts` |
+| The database refuses a discount bigger than its charge, a discount of a discount, and any edit | `apps/api/test/discounts.test.ts` |
+| Checkout refuses while money is owed or a deposit is held; pending balance needs the owner | `apps/api/test/invoices.test.ts` |
+| Mixed-rate invoice INV/26-27/00001 adds up and closes the bill | `apps/api/test/invoices.test.ts` |
+| Bills finalized at the same moment get consecutive numbers — no gap, no duplicate | `apps/api/test/invoices.test.ts` |
+| A rolled-back finalization gives its number back | `apps/api/test/invoices.test.ts` |
+| An issued invoice refuses update, delete, a line added later, and voiding a charge on it; totals that disagree do not commit | `apps/api/test/invoices.test.ts` |
+| A full credit note equals the original to the paisa; partial credit at the original rate, never beyond what was sold | `apps/api/test/invoices.test.ts` |
+| Late charges: owner only, on a debit note; the invoice is untouched | `apps/api/test/invoices.test.ts` |
+| No GSTIN → bill of supply with no tax; a mid-stay rate change applies per night | `apps/api/test/invoices.test.ts` |
+| Invoice, receipt and shift report PDFs are byte-for-byte reproducible, on A4 and 80 mm | `apps/api/test/invoices.test.ts` |
+| Owner review list: owner only, derived from records, Seen is kept and hides the item | `apps/api/test/invoices.test.ts` |
+| Company accounts: GSTIN checked, invoice in the company's name, credit limit on Owner PIN, oldest-first ageing, receipts in the account ledger | `apps/api/test/receivables.test.ts` |
+| OTA terms only on OTA bookings; payouts into a bank; receivables show pending and missing terms; availability changed today | `apps/api/test/receivables.test.ts` |
+| A stay with food and an activity, paid card + UPI, checks out with a tax invoice and a printable PDF | `tests/e2e/billing.spec.ts` |
 | Edit / rebook use the same validation, limits and audit | `apps/api/test/booking-changes.test.ts` |
 | No SQL interpolation; demo data blocked from production | `apps/api/test/guards.test.ts` |
 | A backup really restores: dump → encrypt → upload → download → decrypt → hash check → restore → integrity checks | `apps/api/test/backup-restore.test.ts` |

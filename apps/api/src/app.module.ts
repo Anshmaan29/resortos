@@ -8,8 +8,10 @@ import { GuestsModule } from './guests/guests.module';
 import { JobsModule } from './jobs/jobs.module';
 import { NightAuditModule } from './night-audit/night-audit.module';
 import { HealthController } from './health/health.controller';
+import { PrintingModule } from './printing/printing.module';
 import { PropertyModule } from './property/property.module';
 import { ReceivablesModule } from './receivables/receivables.module';
+import { ReviewModule } from './review/review.module';
 import { RatesModule } from './rates/rates.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { StaysModule } from './stays/stays.module';
@@ -21,7 +23,7 @@ import { Global } from '@nestjs/common';
 class ConfigModule {}
 
 @Module({
-  imports: [ConfigModule, DbModule, StorageModule, JobsModule, AuthModule, PropertyModule, RatesModule, GuestsModule, ReservationsModule, StaysModule, FoliosModule, CashierModule, ReceivablesModule, NightAuditModule],
+  imports: [ConfigModule, DbModule, StorageModule, JobsModule, AuthModule, PropertyModule, RatesModule, GuestsModule, ReservationsModule, StaysModule, FoliosModule, CashierModule, ReceivablesModule, PrintingModule, ReviewModule, NightAuditModule],
   controllers: [HealthController],
 })
 export class AppModule {}

@@ -174,6 +174,31 @@ describe('advances taken before the guest arrives', () => {
   });
 });
 
+describe('an advance on a booking that is then cancelled (spec §15.1)', () => {
+  it('must be decided, and "keep as credit" puts it in the guest credit ledger', async () => {
+    const res = await post(owner, '/reservations', booking({ roomTypeId: f.type('VILLA'), roomId: f.room('V2'), arrival: '2026-09-25', departure: '2026-09-26' })).expect(201);
+    await post(desk, `/reservations/${res.body.id}/advance`, { method: 'upi', paymentAccountId: accounts.upi, amount: '2000', reference: 'UTR-C1' }).expect(200);
+    expect((await owner.get(`/api/v1/reservations/${res.body.id}`).expect(200)).body.advancePaid).toBe('2000.00');
+
+    const undecided = await post(owner, `/reservations/${res.body.id}/cancel`, { reason: 'change_of_plans' }).expect(400);
+    expect(undecided.body.message).toMatch(/advance of ₹2,000/);
+    await post(owner, `/reservations/${res.body.id}/cancel`, { reason: 'change_of_plans', moneyOption: 'guest_credit' }).expect(200);
+    const [credit] = await sql<{ amount: string }>(`SELECT amount FROM guest_credit_entries WHERE reservation_id = $1`, [res.body.id]);
+    expect(credit!.amount).toBe('2000.00');
+  });
+
+  it('can be refunded after cancelling, with Owner PIN like every refund', async () => {
+    const res = await post(owner, '/reservations', booking({ roomTypeId: f.type('VILLA'), roomId: f.room('V2'), arrival: '2026-09-27', departure: '2026-09-28' })).expect(201);
+    await post(desk, `/reservations/${res.body.id}/advance`, { method: 'upi', paymentAccountId: accounts.upi, amount: '1500', reference: 'UTR-C2' }).expect(200);
+    await post(owner, `/reservations/${res.body.id}/cancel`, { reason: 'guest_request', moneyOption: 'refund' }).expect(200);
+    await post(desk, `/reservations/${res.body.id}/advance`, { method: 'upi', paymentAccountId: accounts.upi, amount: '10', reference: 'x' }).expect(409);
+    const refused = await post(desk, `/reservations/${res.body.id}/advance`, { entryType: 'refund', method: 'upi', paymentAccountId: accounts.upi, amount: '1500', reference: 'UTR-R2' }).expect(403);
+    expect(refused.body.code).toBe('OWNER_PIN_REQUIRED');
+    await post(owner, `/reservations/${res.body.id}/advance`, { entryType: 'refund', method: 'upi', paymentAccountId: accounts.upi, amount: '1500', reference: 'UTR-R2' }).expect(200);
+    expect((await owner.get(`/api/v1/reservations/${res.body.id}`).expect(200)).body.advancePaid).toBe('0.00');
+  });
+});
+
 describe('a refund', () => {
   it('needs Owner PIN, and takes money out rather than putting it in', async () => {
     const refused = await post(desk, `/folios/${folioId}/payments`, {
