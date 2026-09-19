@@ -21,7 +21,7 @@ interface LiveLine {
 
 interface Parties {
   seller: { legalName: string; address: string; gstin: string | null; stateCode: string };
-  buyer: { name: string; gstin: string | null; address: string | null; stateCode: string | null; mobile: string | null };
+  buyer: { name: string; gstin: string | null; address: string | null; stateCode: string | null; mobile: string | null; companyId: string | null };
   stay: { from: string | null; to: string | null; rooms: string | null; reservationNumber: string | null };
   registered: boolean;
 }
@@ -34,7 +34,7 @@ interface InvoiceRow {
   place_of_supply: string; supply_type: string; stay_from: string | null; stay_to: string | null; room_numbers: string | null;
   reservation_number: string | null;
   taxable_total: string; cgst_total: string; sgst_total: string; igst_total: string; round_off: string; grand_total: string;
-  paid_at_issue: string; finalized_at: Date; finalized_by_name: string; authorised_by: string | null;
+  paid_at_issue: string; finalized_at: Date; finalized_by_name: string; authorised_by: string | null; company_id: string | null;
 }
 
 export interface InvoiceDraftLine {
@@ -128,7 +128,8 @@ export class InvoicesService {
   }
 
   /** The seller, the buyer and the stay, as the invoice will print them. */
-  private async parties(q: Queryable, propertyId: string, folioId: string, buyer?: InvoiceBuyerInput): Promise<Parties> {
+  private async parties(q: Queryable, propertyId: string, folioId: string, buyerInput?: InvoiceBuyerInput): Promise<Parties> {
+    let buyer = buyerInput;
     const [prop, stay] = await gather(q, [
       () => q.query<{ legal_name: string; address_line1: string; address_line2: string | null; city: string; state_code: string; pin_code: string; gstin: string | null }>(
         `SELECT legal_name, address_line1, address_line2, city, state_code, pin_code, gstin FROM properties WHERE id = $1`, [propertyId],
@@ -151,6 +152,18 @@ export class InvoicesService {
     ]);
     const p = prop.rows[0]!;
     const s = stay.rows[0]!;
+    // A bill moved to a company account is invoiced in the company's name and GSTIN (§32), unless
+    // the desk said otherwise.
+    const { rows: company } = buyer ? { rows: [] } : await q.query<{ id: string; name: string; gstin: string | null; billing_address: string | null }>(
+      `SELECT c.id, c.name, c.gstin, c.billing_address
+         FROM payment_folios pf JOIN payments p ON p.id = pf.payment_id JOIN companies c ON c.id = p.company_id
+        WHERE pf.folio_id = $1 AND p.reverses_payment_id IS NULL
+          AND NOT EXISTS (SELECT 1 FROM payments r WHERE r.reverses_payment_id = p.id)
+        ORDER BY p.received_at DESC LIMIT 1`,
+      [folioId],
+    );
+    const c = company[0];
+    if (c) buyer = { name: c.name, gstin: c.gstin ?? undefined, address: c.billing_address ?? undefined };
     const gstin = buyer?.gstin ?? null;
     return {
       seller: {
@@ -164,7 +177,8 @@ export class InvoicesService {
         address: buyer?.address ?? s.address,
         // A registered buyer's state is the first two digits of their GSTIN.
         stateCode: gstin ? gstin.slice(0, 2) : null,
-        mobile: s.mobile,
+        mobile: c ? null : s.mobile,
+        companyId: c?.id ?? null,
       },
       stay: { from: s.stay_from, to: s.stay_to, rooms: s.room_number, reservationNumber: s.reservation_number },
       registered: Boolean(p.gstin),
@@ -211,9 +225,9 @@ export class InvoicesService {
                              buyer_name, buyer_gstin, buyer_address, buyer_state_code, buyer_mobile, place_of_supply, supply_type,
                              stay_from, stay_to, room_numbers, reservation_number,
                              taxable_total, cgst_total, sgst_total, igst_total, round_off, grand_total, paid_at_issue,
-                             finalized_by, authorised_by)
+                             finalized_by, authorised_by, company_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'intra_state',
-               $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
+               $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)
        RETURNING id`,
       [propertyId, doc.folioId, doc.type, doc.series, fy, seq, number, invoiceDate,
         doc.originalInvoiceId ?? null, doc.reason ?? null,
@@ -223,7 +237,7 @@ export class InvoicesService {
         doc.parties.seller.stateCode,
         doc.parties.stay.from, doc.parties.stay.to, doc.parties.stay.rooms, doc.parties.stay.reservationNumber,
         c.taxableTotal, c.cgstTotal, c.sgstTotal, c.igstTotal, c.roundOff, c.grandTotal, toMoneyString(paidTotal),
-        actor.user.id, doc.authorisedBy ?? null],
+        actor.user.id, doc.authorisedBy ?? null, doc.parties.buyer.companyId],
     );
     const id = rows[0]!.id;
     let no = 0;
@@ -318,11 +332,12 @@ export class InvoicesService {
       });
       return this.detail(q, actor.user.propertyId, id);
     }
-    const { rows: buyer } = await q.query<{ buyer_name: string; buyer_gstin: string | null; buyer_address: string | null }>(
-      `SELECT buyer_name, buyer_gstin, buyer_address FROM invoices WHERE id = $1`, [original[0].id],
+    const { rows: buyer } = await q.query<{ buyer_name: string; buyer_gstin: string | null; buyer_address: string | null; buyer_mobile: string | null; company_id: string | null }>(
+      `SELECT buyer_name, buyer_gstin, buyer_address, buyer_mobile, company_id FROM invoices WHERE id = $1`, [original[0].id],
     );
     // A debit note is to the same buyer as the invoice it adds to.
-    const same = { ...parties, buyer: { ...parties.buyer, name: buyer[0]!.buyer_name, gstin: buyer[0]!.buyer_gstin, address: buyer[0]!.buyer_address, stateCode: buyer[0]!.buyer_gstin?.slice(0, 2) ?? null } };
+    const b = buyer[0]!;
+    const same = { ...parties, buyer: { name: b.buyer_name, gstin: b.buyer_gstin, address: b.buyer_address, stateCode: b.buyer_gstin?.slice(0, 2) ?? null, mobile: b.buyer_mobile, companyId: b.company_id } };
     const id = await this.write(q, actor, {
       folioId, type: 'debit_note', series: 'DN', originalInvoiceId: original[0].id, reason,
       parties: same, composed: await this.compose(q, actor.user.propertyId, lines, original[0].series === 'INV'), paid: [],
@@ -377,7 +392,7 @@ export class InvoicesService {
 
     const parties = {
       seller: { legalName: original.seller_legal_name, address: original.seller_address, gstin: original.seller_gstin, stateCode: original.seller_state_code },
-      buyer: { name: original.buyer_name, gstin: original.buyer_gstin, address: original.buyer_address, stateCode: original.buyer_state_code, mobile: original.buyer_mobile },
+      buyer: { name: original.buyer_name, gstin: original.buyer_gstin, address: original.buyer_address, stateCode: original.buyer_state_code, mobile: original.buyer_mobile, companyId: original.company_id },
       stay: { from: original.stay_from, to: original.stay_to, rooms: original.room_numbers, reservationNumber: original.reservation_number },
       registered: Boolean(original.seller_gstin),
     };

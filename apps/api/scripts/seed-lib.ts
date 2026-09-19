@@ -134,6 +134,11 @@ export async function seed(connectionString: string, opts: { businessDate?: stri
       [propertyId, ownerId],
     );
     await client.query(
+      `INSERT INTO companies (property_id, name, billing_address, contact_person, credit_limit, payment_terms_days, created_by)
+       VALUES ($1,'Demo Corporate Travels','Tonk Road, Jaipur','Accounts desk',50000,30,$2)`,
+      [propertyId, ownerId],
+    );
+    await client.query(
       `INSERT INTO charge_items (property_id, name, line_type, default_rate, tax_category, sort_order, created_by) VALUES
          ($1,'Paneer Tikka','food',280.00,'food',1,$2),
          ($1,'Masala Chai','beverage',60.00,'food',2,$2),
