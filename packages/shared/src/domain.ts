@@ -230,3 +230,13 @@ export const PAYMENT_ENTRY_TYPE_LABELS: Record<PaymentEntryType, string> = {
   payment: 'Payment', advance: 'Advance', deposit: 'Security deposit', refund: 'Refund',
   deposit_refund: 'Deposit returned', deposit_adjustment: 'Deposit applied to bill',
 };
+
+/** Why a discount was given (spec §28): a short list plus a note, so the review list can group them. */
+export const DISCOUNT_REASONS = [
+  'regular_guest', 'complaint', 'corporate_rate', 'long_stay', 'owner_guest', 'promotion', 'rounding', 'other',
+] as const;
+export type DiscountReason = (typeof DISCOUNT_REASONS)[number];
+export const DISCOUNT_REASON_LABELS: Record<DiscountReason, string> = {
+  regular_guest: 'Regular guest', complaint: 'Complaint', corporate_rate: 'Corporate rate', long_stay: 'Long stay',
+  owner_guest: "Owner's guest", promotion: 'Offer / promotion', rounding: 'Rounding off the bill', other: 'Other',
+};

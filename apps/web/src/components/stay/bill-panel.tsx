@@ -1,9 +1,10 @@
 'use client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { IndianRupee, Plus, Receipt, Undo2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { IndianRupee, Percent, Plus, Receipt, Undo2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  ADDABLE_LINE_TYPES, FOLIO_LINE_TYPE_LABELS, formatDate, formatINR, money, PAYMENT_ENTRY_TYPE_LABELS,
+  ADDABLE_LINE_TYPES, DISCOUNT_REASON_LABELS, DISCOUNT_REASONS, FOLIO_LINE_TYPE_LABELS, formatDate,
+  type DiscountReason, formatINR, money, PAYMENT_ENTRY_TYPE_LABELS,
   PAYMENT_METHOD_LABELS, toMoneyString, type AddableLineType,
 } from '@resortos/shared';
 import { Button } from '@/components/ui/button';
@@ -15,7 +16,7 @@ import { useToast } from '@/components/ui/toast';
 import { DepositDialog, RecordPaymentDialog, ReversePaymentDialog } from './payment-dialogs';
 import { api, newIdempotencyKey, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import type { Bill, BillLine, BillPayment, ChargeItem } from '@/lib/types';
+import type { Bill, BillLine, BillPayment, ChargeItem, DiscountPreview } from '@/lib/types';
 
 /** Staff word is "Bill", never "folio" (CLAUDE.md conventions). */
 export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolean }) {
@@ -24,6 +25,7 @@ export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolea
   const [payOpen, setPayOpen] = useState(false);
   const [reversing, setReversing] = useState<BillPayment | null>(null);
   const [depositOpen, setDepositOpen] = useState(false);
+  const [discounting, setDiscounting] = useState<{ line: BillLine | null } | null>(null);
 
   const bill = useQuery({ queryKey: ['bill', stayId], queryFn: () => api<Bill>(`/stays/${stayId}/bill`) });
 
@@ -40,6 +42,9 @@ export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolea
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={() => setAddOpen(true)}>
               <Plus className="h-4 w-4" aria-hidden />Add charge
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setDiscounting({ line: null })}>
+              <Percent className="h-4 w-4" aria-hidden />Discount
             </Button>
             <Button size="sm" onClick={() => setPayOpen(true)}>
               <IndianRupee className="h-4 w-4" aria-hidden />Record payment
@@ -83,6 +88,10 @@ export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolea
                       <p className="mt-0.5 text-xs">Removed by {line.voidedBy} — {line.voidReason}</p>
                     )}
                     {line.note && !line.voided && <p className="mt-0.5 text-xs text-text-3">{line.note}</p>}
+                    {line.discountReason && !line.voided && <p className="mt-0.5 text-xs text-text-3">{line.discountReason} · {Number(line.discountPercent)}%</p>}
+                    {line.hasDiscount && line.net && !line.voided && (
+                      <p className="mt-0.5 text-xs text-text-3">After discount {formatINR(line.net)}{line.gstRate ? ` · GST ${Number(line.gstRate)}%` : ''}</p>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums">{line.quantity}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{formatINR(line.unitRate)}</td>
@@ -90,9 +99,16 @@ export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolea
                   {canEdit && (
                     <td className="px-4 py-2 text-right">
                       {!line.voided && b.status === 'open' && (
-                        <Button size="sm" variant="ghost" onClick={() => setVoiding(line)} aria-label={`Remove ${line.name}`}>
-                          <Undo2 className="h-4 w-4" aria-hidden />Remove
-                        </Button>
+                        <div className="flex justify-end gap-1">
+                          {line.lineType !== 'discount' && Number(line.net ?? line.amount) > 0 && (
+                            <Button size="sm" variant="ghost" onClick={() => setDiscounting({ line })} aria-label={`Discount ${line.name}`}>
+                              <Percent className="h-4 w-4" aria-hidden />
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost" onClick={() => setVoiding(line)} aria-label={`Remove ${line.name}`}>
+                            <Undo2 className="h-4 w-4" aria-hidden />Remove
+                          </Button>
+                        </div>
                       )}
                     </td>
                   )}
@@ -170,6 +186,7 @@ export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolea
       <VoidLineDialog line={voiding} stayId={stayId} onClose={() => setVoiding(null)} />
       <RecordPaymentDialog bill={b} stayId={stayId} open={payOpen} onClose={() => setPayOpen(false)} />
       <ReversePaymentDialog payment={reversing} stayId={stayId} onClose={() => setReversing(null)} />
+      {discounting && <DiscountDialog bill={b} line={discounting.line} stayId={stayId} onClose={() => setDiscounting(null)} />}
       {depositOpen && <DepositDialog bill={b} stayId={stayId} open={depositOpen} onClose={() => setDepositOpen(false)} />}
     </Card>
   );
@@ -342,6 +359,114 @@ function VoidLineDialog({ line, stayId, onClose }: { line: BillLine | null; stay
         <Field label="Why" required hint="Shown on the bill next to the removed line">
           {(id) => <Input id={id} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Added to the wrong room" maxLength={300} />}
         </Field>
+        {approval.dialog}
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * A discount (spec §28), previewed before it is saved: the amount, the share of the bill, whether
+ * the owner is needed, and any room night whose GST changes because of it (§30.2).
+ */
+function DiscountDialog({ bill, line, stayId, onClose }: { bill: Bill; line: BillLine | null; stayId: string; onClose: () => void }) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const key = useRef(newIdempotencyKey());
+  const approval = useOwnerApproval((authorisationId) => give.mutate(authorisationId));
+  const [kind, setKind] = useState<'percent' | 'amount'>('percent');
+  const [value, setValue] = useState('');
+  const [reason, setReason] = useState<DiscountReason>('regular_guest');
+  const [note, setNote] = useState('');
+  const [preview, setPreview] = useState<DiscountPreview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const body = { scope: line ? 'line' : 'bill', lineId: line?.id, kind, value, reason, note: note || undefined };
+
+  // Recalculate the preview as the numbers change, so the desk sees the GST effect before saving.
+  useEffect(() => {
+    if (!value || Number(value) <= 0) { setPreview(null); return; }
+    const controller = new AbortController();
+    const t = setTimeout(() => {
+      api<DiscountPreview>(`/folios/${bill.id}/discounts/preview`, { method: 'POST', body, signal: controller.signal })
+        .then((p) => { setPreview(p); setError(null); })
+        .catch((err) => { if ((err as Error).name !== 'AbortError') { setPreview(null); setError((err as Error).message); } });
+    }, 250);
+    return () => { clearTimeout(t); controller.abort(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, value, reason, note, line?.id, bill.id]);
+
+  const give = useMutation({
+    mutationFn: (ownerAuthorisationId?: string) => api<Bill>(`/folios/${bill.id}/discounts`, {
+      method: 'POST', idempotencyKey: key.current, body: { ...body, ownerAuthorisationId },
+    }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['bill', stayId], updated);
+      toast('success', 'Discount given');
+      onClose();
+    },
+    onError: (err) => {
+      if (approval.handleError(err)) return;
+      setError((err as Error).message);
+    },
+  });
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={line ? `Discount on ${line.name}` : 'Discount on the whole bill'}
+      description={line ? `${formatINR(line.net ?? line.amount)} after any earlier discount` : 'Spread across every charge, so GST is right on each one'}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button loading={give.isPending} disabled={!preview || (reason === 'other' && !note.trim())} onClick={() => give.mutate(undefined)}>
+            {preview ? `Give ${formatINR(preview.discount)} off` : 'Give discount'}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {error && <ErrorBanner message={error} />}
+        <div className="grid grid-cols-[auto_1fr] items-end gap-3">
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface-2 p-1" role="radiogroup" aria-label="Percentage or amount">
+            {(['percent', 'amount'] as const).map((k) => (
+              <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
+                className={cn('rounded-md px-3 py-2 text-sm', kind === k ? 'bg-surface font-medium shadow-sm' : 'text-text-2')}>
+                {k === 'percent' ? '%' : '₹'}
+              </button>
+            ))}
+          </div>
+          <Field label={kind === 'percent' ? 'Percentage off' : 'Amount off'} required>
+            {(id) => <Input id={id} inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} autoFocus />}
+          </Field>
+        </div>
+        <Field label="Reason" required>
+          {(id) => (
+            <Select id={id} value={reason} onChange={(e) => setReason(e.target.value as DiscountReason)}>
+              {DISCOUNT_REASONS.map((r) => <option key={r} value={r}>{DISCOUNT_REASON_LABELS[r]}</option>)}
+            </Select>
+          )}
+        </Field>
+        <Field label="Note" hint={reason === 'other' ? 'Required for "Other"' : 'Optional'}>
+          {(id) => <Input id={id} value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />}
+        </Field>
+
+        {preview && (
+          <div className="rounded-lg border border-border p-3 text-sm">
+            <p><strong className="tabular-nums">{formatINR(preview.discount)}</strong> off · {Number(preview.percentOfCharges)}% of what is being discounted</p>
+            <p className="mt-1 text-text-2">
+              Bill total {formatINR(preview.before.grandTotal ?? '0')} → <strong>{formatINR(preview.after.grandTotal ?? '0')}</strong>
+              {' '}· GST {formatINR(preview.before.taxTotal ?? '0')} → {formatINR(preview.after.taxTotal ?? '0')}
+            </p>
+            {preview.slabChanges.map((c) => (
+              <p key={c.lineId} className="mt-1 text-warning">
+                {c.name} on {formatDate(c.businessDate, { year: false })} moves from {Number(c.fromRate)}% to {Number(c.toRate)}% GST
+              </p>
+            ))}
+            {preview.needsOwner && <p className="mt-1 text-warning">Above your {Number(preview.yourLimitPercent)}% limit — the owner will be asked for their PIN.</p>}
+          </div>
+        )}
         {approval.dialog}
       </div>
     </Dialog>

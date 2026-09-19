@@ -1,6 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
-  computeTax, DEFAULT_TAX_CATEGORY, ERROR_CODES, formatDate, formatINR, formatReference, money, TaxRuleError, toMoneyString,
+  computeTax, DEFAULT_TAX_CATEGORY, DISCOUNT_REASON_LABELS, ERROR_CODES, round2, type DiscountInput, formatDate, formatINR, formatReference, money, TaxRuleError, toMoneyString,
   type AddChargeInput, type ChargeItemInput, type FolioLineType, type TaxableLine, type VoidLineInput,
 } from '@resortos/shared';
 import { OwnerAuthorisationService } from '../auth/owner-authorisation.service';
@@ -13,6 +14,8 @@ import { PropertyService } from '../property/property.service';
 import { RatesService } from '../rates/rates.service';
 import { PaymentsService } from './payments.service';
 
+type Decimal = ReturnType<typeof money>;
+
 interface FolioRow {
   id: string; property_id: string; number: string; stay_id: string | null; reservation_id: string;
   kind: string; status: string; opened_at: Date; closed_at: Date | null; version: number;
@@ -23,6 +26,16 @@ interface LineRow {
   unit_rate: string; amount: string; tax_category: string; source: string; room_id: string | null;
   note: string | null; created_at: Date; created_by_name: string;
   voided_at: Date | null; void_reason: string | null; voided_by_name: string | null;
+  applies_to_line_id: string | null; discount_group_id: string | null; discount_percent: string | null;
+  discount_reason: string | null;
+}
+
+export interface BillTax {
+  available: boolean; message: string | null; taxTotal: string | null; roundOff: string | null;
+  grandTotal: string | null; groups: { ratePercent: string; taxableValue: string; cgst: string; sgst: string; igst: string }[];
+  usesPlaceholderRates: boolean;
+  /** Per charge: net of its discounts, and the GST rate that net attracts. */
+  lines: { lineId: string; net: string; ratePercent: string; sac: string }[];
 }
 
 interface ChargeItemRow {
@@ -127,32 +140,7 @@ export class FolioService {
 
     // Tax is an estimate until the invoice is finalised (2.6), and is never written to a line:
     // storing it would be a second place for it to be wrong when a dated rule changes.
-    const taxable: TaxableLine[] = live.map((l) => ({
-      key: l.id,
-      taxCategory: l.tax_category as TaxableLine['taxCategory'],
-      dateOfSupply: l.business_date,
-      taxableValue: l.amount,
-      // Accommodation is slab-rated per room per night, so the unit value is this one night's
-      // value, not the running total.
-      ...(l.tax_category === 'accommodation' ? { unitValue: l.amount } : {}),
-    }));
-
-    const { rules, placeholderIds } = await this.rates.taxRules(q, propertyId);
-    let tax: { taxTotal: string | null; grandTotal: string | null; roundOff: string | null; groups: unknown[]; available: boolean; message: string | null; usesPlaceholderRates: boolean };
-    try {
-      const computed = computeTax(rules, taxable);
-      tax = {
-        available: true, message: null, taxTotal: computed.taxTotal, roundOff: computed.roundOff,
-        grandTotal: computed.grandTotal, groups: computed.groups,
-        usesPlaceholderRates: computed.lines.some((l) => placeholderIds.has(l.ruleId)),
-      };
-    } catch (err) {
-      if (!(err instanceof TaxRuleError)) throw err;
-      tax = {
-        available: false, taxTotal: null, roundOff: null, grandTotal: null, groups: [],
-        message: 'GST cannot be worked out: tax rates are not set up for these dates.', usesPlaceholderRates: false,
-      };
-    }
+    const tax = await this.billTax(q, propertyId, live);
 
     // Recalculated from the payment rows every time — there is no stored balance to drift (§49).
     const [payments, paidTotal, depositHeld] = await gather(q, [
@@ -174,9 +162,14 @@ export class FolioService {
         taxCategory: l.tax_category, source: l.source, note: l.note,
         at: l.created_at, by: l.created_by_name,
         voided: Boolean(l.voided_at), voidedAt: l.voided_at, voidReason: l.void_reason, voidedBy: l.voided_by_name,
+        appliesToLineId: l.applies_to_line_id, discountGroupId: l.discount_group_id,
+        discountPercent: l.discount_percent, discountReason: l.discount_reason,
+        hasDiscount: live.some((d) => d.applies_to_line_id === l.id),
+        net: tax.lines.find((t) => t.lineId === l.id)?.net ?? null,
+        gstRate: tax.lines.find((t) => t.lineId === l.id)?.ratePercent ?? null,
       })),
       charges: toMoneyString(charges),
-      tax,
+      tax: { ...tax, lines: undefined },
       payments,
       paid: toMoneyString(paid),
       // Held for the guest, not income and not part of "paid" (§27).
@@ -262,10 +255,11 @@ export class FolioService {
    */
   async voidLine(q: Queryable, actor: Actor, lineId: string, input: VoidLineInput) {
     const { rows } = await q.query<{
-      id: string; folio_id: string; business_date: string; name: string; amount: string;
-      voided_at: Date | null; folio_status: string;
+      id: string; folio_id: string; business_date: string; name: string; amount: string; line_type: string;
+      voided_at: Date | null; folio_status: string; discount_group_id: string | null;
     }>(
-      `SELECT l.id, l.folio_id, l.business_date, l.name, l.amount, l.voided_at, f.status AS folio_status
+      `SELECT l.id, l.folio_id, l.business_date, l.name, l.amount, l.line_type, l.voided_at, l.discount_group_id,
+              f.status AS folio_status
          FROM folio_lines l JOIN folios f ON f.id = l.folio_id
         WHERE l.id = $1 AND l.property_id = $2 FOR UPDATE OF l`,
       [lineId, actor.user.propertyId],
@@ -276,9 +270,25 @@ export class FolioService {
     if (line.folio_status === 'closed') {
       throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This bill is closed. A correction needs a credit note.');
     }
+    const { rows: discounted } = await q.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM folio_lines WHERE applies_to_line_id = $1 AND voided_at IS NULL`, [lineId],
+    );
+    if (discounted[0]!.n > 0) {
+      throw new AppError(ERROR_CODES.INVALID_TRANSITION, `${line.name} has a discount on it. Remove the discount first, then the charge.`);
+    }
+
+    // A discount spread over several charges was given as one and is removed as one.
+    const { rows: group } = line.discount_group_id
+      ? await q.query<{ id: string; business_date: string; amount: string }>(
+        `SELECT id, business_date, amount FROM folio_lines WHERE discount_group_id = $1 AND voided_at IS NULL FOR UPDATE`,
+        [line.discount_group_id],
+      )
+      : { rows: [{ id: line.id, business_date: line.business_date, amount: line.amount }] };
+    const total = group.reduce((t, g) => t.plus(g.amount), money(0));
 
     const { rows: closed } = await q.query<{ closed: boolean }>(
-      `SELECT is_business_date_closed($1, $2::date) AS closed`, [actor.user.propertyId, line.business_date],
+      `SELECT bool_or(is_business_date_closed($1, d)) AS closed FROM unnest($2::date[]) AS d`,
+      [actor.user.propertyId, group.map((g) => g.business_date)],
     );
     let authorisedBy: string | null = null;
     if (closed[0]!.closed) {
@@ -286,10 +296,10 @@ export class FolioService {
         q, actor,
         {
           operation: 'folio.void_line',
-          scope: { lineId, amount: line.amount },
+          scope: { lineId, amount: toMoneyString(total) },
           reasons: [{
             action: 'discount_above_limit',
-            description: `${line.name} for ${formatINR(line.amount)} is on ${formatDate(line.business_date)}, which night audit has closed`,
+            description: `${line.name} for ${formatINR(toMoneyString(total))} is on ${formatDate(line.business_date)}, which night audit has closed`,
           }],
         },
         input.ownerAuthorisationId, { type: 'folio', id: line.folio_id },
@@ -299,16 +309,210 @@ export class FolioService {
     }
 
     await q.query(
-      `UPDATE folio_lines SET voided_at = now(), voided_by = $2, void_reason = $3, authorised_by = $4 WHERE id = $1`,
-      [lineId, actor.user.id, input.reason, authorisedBy],
+      `UPDATE folio_lines SET voided_at = now(), voided_by = $2, void_reason = $3, void_authorised_by = $4
+        WHERE id = ANY($1::uuid[])`,
+      [group.map((g) => g.id), actor.user.id, input.reason, authorisedBy],
     );
     await this.audit.record(q, actor, {
-      action: 'folio.line_voided', entityType: 'folio', entityId: line.folio_id, reason: input.reason, authorisedBy,
-      before: { lineId, name: line.name, amount: line.amount, businessDate: line.business_date },
+      action: line.line_type === 'discount' ? 'folio.discount_removed' : 'folio.line_voided',
+      entityType: 'folio', entityId: line.folio_id, reason: input.reason, authorisedBy,
+      before: { lineId, name: line.name, amount: toMoneyString(total), businessDate: line.business_date, lines: group.length },
       after: { voided: true },
     });
     await this.outbox.emit(q, actor.user.propertyId, 'folio.changed', { type: 'folio', id: line.folio_id }, { reason: 'line_voided' });
     return this.detail(q, actor.user.propertyId, line.folio_id);
+  }
+
+  /**
+   * GST on a set of live bill lines (spec §30). A discount is not taxed on its own: it reduces the
+   * charge it points at, and that charge is taxed on what is left — which is what lets a discount
+   * move a room night across the ₹7,500 slab (§30.2).
+   */
+  async billTax(q: Queryable, propertyId: string, live: Pick<LineRow, 'id' | 'line_type' | 'amount' | 'tax_category' | 'business_date' | 'applies_to_line_id'>[]): Promise<BillTax> {
+    const discounts = new Map<string, Decimal>();
+    for (const d of live) {
+      if (d.line_type === 'discount' && d.applies_to_line_id) {
+        discounts.set(d.applies_to_line_id, (discounts.get(d.applies_to_line_id) ?? money(0)).plus(d.amount));
+      }
+    }
+    const taxable: TaxableLine[] = live.filter((l) => l.line_type !== 'discount').map((l) => {
+      const net = toMoneyString(money(l.amount).plus(discounts.get(l.id) ?? 0));
+      return {
+        key: l.id,
+        taxCategory: l.tax_category as TaxableLine['taxCategory'],
+        dateOfSupply: l.business_date,
+        taxableValue: net,
+        // Accommodation is slab-rated per room per night on the value actually charged, so the unit
+        // value is this one night's value after discount, not the running total.
+        ...(l.tax_category === 'accommodation' ? { unitValue: net } : {}),
+      };
+    });
+
+    const { rules, placeholderIds } = await this.rates.taxRules(q, propertyId);
+    try {
+      const computed = computeTax(rules, taxable);
+      return {
+        available: true, message: null, taxTotal: computed.taxTotal, roundOff: computed.roundOff,
+        grandTotal: computed.grandTotal, groups: computed.groups,
+        usesPlaceholderRates: computed.lines.some((l) => placeholderIds.has(l.ruleId)),
+        lines: computed.lines.map((l) => ({ lineId: l.key, net: l.taxableValue, ratePercent: l.ratePercent, sac: l.sac })),
+      };
+    } catch (err) {
+      if (!(err instanceof TaxRuleError)) throw err;
+      return {
+        available: false, taxTotal: null, roundOff: null, grandTotal: null, groups: [], lines: [],
+        message: 'GST cannot be worked out: tax rates are not set up for these dates.', usesPlaceholderRates: false,
+      };
+    }
+  }
+
+  private async liveLines(q: Queryable, folioId: string): Promise<LineRow[]> {
+    const { rows } = await q.query<LineRow>(
+      `SELECT l.*, '' AS created_by_name, NULL AS voided_by_name FROM folio_lines l
+        WHERE l.folio_id = $1 AND l.voided_at IS NULL ORDER BY l.business_date, l.created_at`,
+      [folioId],
+    );
+    return rows;
+  }
+
+  /**
+   * Work out a discount without saving it (spec §28): how much comes off each charge, what share of
+   * the bill that is, whether it needs the owner, and what it does to GST — including a room night
+   * that moves into a different slab. Shown before anything is saved.
+   */
+  private async planDiscount(q: Queryable, actor: Actor, folioId: string, input: DiscountInput) {
+    const live = await this.liveLines(q, folioId);
+    const net = new Map<string, Decimal>();
+    for (const l of live) if (l.line_type !== 'discount') net.set(l.id, money(l.amount));
+    for (const d of live) if (d.line_type === 'discount' && d.applies_to_line_id) net.set(d.applies_to_line_id, net.get(d.applies_to_line_id)!.plus(d.amount));
+
+    let targets = live.filter((l) => l.line_type !== 'discount' && net.get(l.id)!.gt(0));
+    if (input.scope === 'line') {
+      const target = live.find((l) => l.id === input.lineId);
+      if (!target) throw notFound('Charge');
+      if (target.line_type === 'discount') throw new AppError(ERROR_CODES.VALIDATION, 'A discount cannot be discounted.');
+      if (!net.get(target.id)!.gt(0)) throw new AppError(ERROR_CODES.VALIDATION, 'This charge is already fully discounted.');
+      targets = [target];
+    }
+    if (!targets.length) throw new AppError(ERROR_CODES.VALIDATION, 'There is nothing on this bill to discount.');
+
+    const base = targets.reduce((t, l) => t.plus(net.get(l.id)!), money(0));
+    const value = money(input.value);
+    if (input.kind === 'amount' && value.gt(base)) {
+      throw new AppError(ERROR_CODES.VALIDATION, `The discount cannot be more than ${formatINR(toMoneyString(base))}.`, {
+        fields: [{ path: 'value', message: 'More than what is being discounted' }],
+      });
+    }
+    // Spread across the charges in proportion to what each is worth; any paisa left over by rounding
+    // goes on the largest, so the parts add up to exactly what was asked for.
+    const wanted = input.kind === 'percent' ? round2(base.times(value).dividedBy(100)) : value;
+    const parts = targets.map((l) => ({ line: l, amount: round2(net.get(l.id)!.times(wanted).dividedBy(base)) }));
+    const drift = wanted.minus(parts.reduce((t, p) => t.plus(p.amount), money(0)));
+    if (!drift.isZero()) {
+      const largest = parts.reduce((a, b) => (net.get(b.line.id)!.gt(net.get(a.line.id)!) ? b : a));
+      largest.amount = largest.amount.plus(drift);
+    }
+    const allocations = parts.filter((p) => p.amount.gt(0));
+    const percent = round2(wanted.dividedBy(base).times(100));
+
+    const after = [
+      ...live,
+      ...allocations.map((p) => ({
+        id: `new-${p.line.id}`, line_type: 'discount' as FolioLineType, amount: toMoneyString(p.amount.negated()),
+        tax_category: p.line.tax_category, business_date: p.line.business_date, applies_to_line_id: p.line.id,
+      })),
+    ];
+    const [taxBefore, taxAfter] = [await this.billTax(q, actor.user.propertyId, live), await this.billTax(q, actor.user.propertyId, after)];
+    const slabChanges = taxAfter.lines.flatMap((a) => {
+      const b = taxBefore.lines.find((x) => x.lineId === a.lineId);
+      const line = live.find((l) => l.id === a.lineId)!;
+      return b && b.ratePercent !== a.ratePercent
+        ? [{ lineId: a.lineId, name: line.name, businessDate: line.business_date, fromRate: b.ratePercent, toRate: a.ratePercent }]
+        : [];
+    });
+    const limit = money(actor.user.discountLimitPercent);
+    return {
+      live, allocations, wanted, base, percent, slabChanges, taxBefore, taxAfter,
+      needsOwner: actor.user.role !== 'owner' && percent.gt(limit),
+      limit,
+    };
+  }
+
+  async previewDiscount(q: Queryable, actor: Actor, folioId: string, input: DiscountInput) {
+    await this.assertOpen(q, actor.user.propertyId, folioId);
+    const plan = await this.planDiscount(q, actor, folioId, input);
+    return {
+      discount: toMoneyString(plan.wanted), percentOfCharges: toMoneyString(plan.percent),
+      needsOwner: plan.needsOwner, yourLimitPercent: toMoneyString(plan.limit),
+      parts: plan.allocations.map((p) => ({ lineId: p.line.id, name: p.line.name, amount: toMoneyString(p.amount) })),
+      before: { taxTotal: plan.taxBefore.taxTotal, grandTotal: plan.taxBefore.grandTotal },
+      after: { taxTotal: plan.taxAfter.taxTotal, grandTotal: plan.taxAfter.grandTotal },
+      slabChanges: plan.slabChanges,
+    };
+  }
+
+  private async assertOpen(q: Queryable, propertyId: string, folioId: string) {
+    const { rows } = await q.query<{ status: string }>(
+      `SELECT status FROM folios WHERE id = $1 AND property_id = $2 FOR UPDATE`, [folioId, propertyId],
+    );
+    if (!rows[0]) throw notFound('Bill');
+    if (rows[0].status === 'closed') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This bill is closed. A correction needs a credit note.');
+  }
+
+  /**
+   * Give a discount (spec §28). Beyond the receptionist's limit it needs Owner PIN, approved against
+   * the exact amount and charges — so what the owner approved is what gets saved.
+   */
+  async applyDiscount(q: Queryable, actor: Actor, folioId: string, input: DiscountInput) {
+    // The bill row is locked first, so two discounts given at once are planned one after the other.
+    await this.assertOpen(q, actor.user.propertyId, folioId);
+    const plan = await this.planDiscount(q, actor, folioId, input);
+
+    let authorisedBy: string | null = null;
+    if (plan.needsOwner) {
+      const auth = await this.ownerAuth.require(
+        q, actor,
+        {
+          operation: 'folio.discount',
+          scope: { folioId, parts: plan.allocations.map((p) => [p.line.id, toMoneyString(p.amount)]), reason: input.reason },
+          reasons: [{
+            action: 'discount_above_limit',
+            description: `Discount of ${formatINR(toMoneyString(plan.wanted))} (${toMoneyString(plan.percent)}%) is above the ${toMoneyString(plan.limit)}% limit`,
+          }],
+        },
+        input.ownerAuthorisationId, { type: 'folio', id: folioId },
+      );
+      authorisedBy = auth?.authorisedBy ?? null;
+      if (auth) await this.ownerAuth.recordOverrides(q, actor, auth, { type: 'folio', id: folioId });
+    }
+
+    const businessDate = await this.property.businessDate(q, actor.user.propertyId);
+    const groupId = randomUUID();
+    const reason = `${DISCOUNT_REASON_LABELS[input.reason]}${input.note ? ` — ${input.note}` : ''}`;
+    for (const p of plan.allocations) {
+      const name = input.scope === 'bill'
+        ? `Discount ${input.kind === 'percent' ? `${Number(input.value)}% ` : ''}on ${p.line.name}`
+        : `Discount on ${p.line.name}`;
+      await q.query(
+        `INSERT INTO folio_lines (property_id, folio_id, business_date, line_type, name, quantity, unit_rate, amount,
+                                  tax_category, source, room_id, note, created_by, authorised_by,
+                                  applies_to_line_id, discount_group_id, discount_percent, discount_reason)
+         VALUES ($1,$2,$3::date,'discount',$4,1,$5,$5,$6,'manual',$7,$8,$9,$10,$11,$12,$13,$14)`,
+        [actor.user.propertyId, folioId, businessDate, name.slice(0, 120), toMoneyString(p.amount.negated()),
+          p.line.tax_category, p.line.room_id, input.note ?? null, actor.user.id, authorisedBy,
+          p.line.id, groupId, toMoneyString(plan.percent), reason],
+      );
+    }
+
+    await this.audit.record(q, actor, {
+      action: 'folio.discount_given', entityType: 'folio', entityId: folioId, reason, authorisedBy,
+      after: {
+        groupId, scope: input.scope, kind: input.kind, value: input.value, total: toMoneyString(plan.wanted),
+        percent: toMoneyString(plan.percent), parts: plan.allocations.length, slabChanges: plan.slabChanges.length,
+      },
+    });
+    await this.outbox.emit(q, actor.user.propertyId, 'folio.changed', { type: 'folio', id: folioId }, { reason: 'discount_given' });
+    return this.detail(q, actor.user.propertyId, folioId);
   }
 
   // ---------------- saved charge items (spec §24.2) ----------------

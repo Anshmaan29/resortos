@@ -137,6 +137,15 @@ export interface BillLine {
   source: 'manual' | 'night_audit' | 'import'; note: string | null;
   at: string; by: string;
   voided: boolean; voidedAt: string | null; voidReason: string | null; voidedBy: string | null;
+  appliesToLineId: string | null; discountGroupId: string | null; discountPercent: string | null; discountReason: string | null;
+  hasDiscount: boolean; net: string | null; gstRate: string | null;
+}
+export interface DiscountPreview {
+  discount: string; percentOfCharges: string; needsOwner: boolean; yourLimitPercent: string;
+  parts: { lineId: string; name: string; amount: string }[];
+  before: { taxTotal: string | null; grandTotal: string | null };
+  after: { taxTotal: string | null; grandTotal: string | null };
+  slabChanges: { lineId: string; name: string; businessDate: string; fromRate: string; toRate: string }[];
 }
 export interface Bill {
   id: string; number: string; stayId: string | null; reservationId: string; reservationNumber: string;
