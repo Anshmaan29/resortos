@@ -1,5 +1,5 @@
 'use client';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import { AlertTriangle, Camera, CheckCircle2, CircleDashed, CloudOff, FileUp, Loader2, Maximize2, Video } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { DocumentType, IdType } from '@resortos/shared';
@@ -57,25 +57,31 @@ export function CapturePreview({ item, label }: { item: QueueItem | undefined; l
   );
 }
 
+/**
+ * The slot's live status. The new state replaces the old one at once and only animates in.
+ *
+ * This used to be an AnimatePresence in "wait" mode, which keeps the old label on screen until its
+ * exit animation finishes. The status changes several times within a second (uploading → checking →
+ * received), and when that exit stalled the old label stayed for good: the phone said "Checking…"
+ * next to a photo the server had already verified. A status must never lag the state it reports.
+ */
 export function SlotStatus({ state }: { state: SlotState }) {
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      <motion.span key={state.kind} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-        className={cn('inline-flex items-center gap-1.5 text-sm font-medium',
-          state.kind === 'received' ? 'text-success'
-            : state.kind === 'failed' ? 'text-danger'
-            : state.kind === 'blocked' ? 'text-warning'
-            : state.kind === 'empty' ? 'text-text-2' : 'text-info')}
-        role="status">
-        {state.kind === 'empty' && <><CircleDashed className="h-4 w-4" />Not captured</>}
-        {state.kind === 'uploading' && <><Loader2 className="h-4 w-4 animate-spin" />Uploading {Math.round(state.progress * 100)}%</>}
-        {state.kind === 'waiting_network' && <><CloudOff className="h-4 w-4" />Saved — waiting for network</>}
-        {state.kind === 'blocked' && <><CloudOff className="h-4 w-4" />{state.message}</>}
-        {state.kind === 'verifying' && <><Loader2 className="h-4 w-4 animate-spin" />Checking…</>}
-        {state.kind === 'received' && <><CheckCircle2 className="h-4 w-4" />Received</>}
-        {state.kind === 'failed' && <><AlertTriangle className="h-4 w-4" />{state.message}</>}
-      </motion.span>
-    </AnimatePresence>
+    <motion.span key={state.kind} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.18 }}
+      className={cn('inline-flex items-center gap-1.5 text-sm font-medium',
+        state.kind === 'received' ? 'text-success'
+          : state.kind === 'failed' ? 'text-danger'
+          : state.kind === 'blocked' ? 'text-warning'
+          : state.kind === 'empty' ? 'text-text-2' : 'text-info')}
+      role="status">
+      {state.kind === 'empty' && <><CircleDashed className="h-4 w-4" />Not captured</>}
+      {state.kind === 'uploading' && <><Loader2 className="h-4 w-4 animate-spin" />Uploading {Math.round(state.progress * 100)}%</>}
+      {state.kind === 'waiting_network' && <><CloudOff className="h-4 w-4" />Saved — waiting for network</>}
+      {state.kind === 'blocked' && <><CloudOff className="h-4 w-4" />{state.message}</>}
+      {state.kind === 'verifying' && <><Loader2 className="h-4 w-4 animate-spin" />Checking…</>}
+      {state.kind === 'received' && <><CheckCircle2 className="h-4 w-4" />Received</>}
+      {state.kind === 'failed' && <><AlertTriangle className="h-4 w-4" />{state.message}</>}
+    </motion.span>
   );
 }
 
