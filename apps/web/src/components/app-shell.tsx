@@ -1,7 +1,7 @@
 'use client';
 import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { BedDouble, CalendarDays, ChevronDown, ClipboardList, Home, LogOut, Palmtree, Plus, Search, UserRound, WifiOff } from 'lucide-react';
+import { BedDouble, CalendarDays, ChevronDown, ClipboardList, Home, LogOut, MoonStar, Palmtree, Plus, Search, UserRound, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -19,6 +19,7 @@ const NAV = [
   { href: '/in-house', label: 'In house', icon: BedDouble, phone: true },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays, phone: false },
   { href: '/rooms', label: 'Rooms', icon: BedDouble, phone: false },
+  { href: '/night-audit', label: 'Night audit', icon: MoonStar, phone: false },
 ];
 
 /** Four fit around the new-booking button; the rest live in the sidebar on bigger screens. */

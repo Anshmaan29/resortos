@@ -66,6 +66,32 @@ Every business table needs all five, or it is not finished (CLAUDE.md, spec §48
 visits for different reasons. A list rather than free text because Form C (§58.1) and the revenue
 breakdowns (§62) both read it back, and typed-in text cannot be grouped.
 
+### Night audit runs — `0011`
+
+`night_audits` — one row per **closed** business date (spec §35). There is deliberately no `status`
+column: the row's existence *is* "this date was closed", which is what makes
+`UNIQUE (property_id, business_date)` a real guarantee rather than a hint. Append-only (no update,
+no delete, `UPDATE` revoked from `resortos_app`). `started_at`/`completed_at` are
+`transaction_timestamp()`/`clock_timestamp()` — both from the database, so a drifting app clock
+cannot record a run that finished before it started.
+
+`is_business_date_closed(property_id, date)` is the shared definition of a closed date, for 2.2's
+folio lines and 2.3's payments to call instead of each re-deriving it.
+
+`properties.receptionist_can_run_night_audit` — the owner setting from §35.2, default true.
+
+**Lock note, learned the hard way:** take `FOR NO KEY UPDATE` on a `properties` row, never
+`FOR UPDATE`. Every table here has a foreign key to `properties`, so every insert anywhere takes a
+`KEY SHARE` lock on that row. `FOR UPDATE` blocks those and deadlocks against the audit chain's
+advisory lock. `FOR NO KEY UPDATE` still serialises writers of the row while letting unrelated
+inserts through, and nothing here ever changes a property's key.
+
+### No-show — `0012`
+
+`reservations.no_show_at`, `no_show_by`, `no_show_note`, `no_show_money_option`, with
+`CHECK ((status = 'no_show') = (no_show_at IS NOT NULL))`. Kept separate from the cancellation
+columns because they are different facts about a booking, and §15.3 counts them separately.
+
 ### Job queue schema — `pgboss`
 Not a numbered migration. pg-boss creates and upgrades its own schema, and `pnpm db:migrate` runs
 that **as the migration role** after the numbered migrations; the API then starts pg-boss with

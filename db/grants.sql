@@ -26,6 +26,9 @@ REVOKE UPDATE ON room_shifts, document_access_log FROM resortos_app;
 -- A registration card is replaced by a new version, never edited (spec §20).
 REVOKE UPDATE ON grc_documents FROM resortos_app;
 
+-- A completed night audit run is never edited (spec §35).
+REVOKE UPDATE ON night_audits FROM resortos_app;
+
 -- Job queue (pg-boss). Its schema is created and upgraded by the migration role; the API only
 -- reads and writes jobs. DELETE is granted here because jobs genuinely are disposable — pg-boss
 -- archives and prunes completed work — which is the exception the rule above describes.

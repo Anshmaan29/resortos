@@ -233,6 +233,41 @@ export const cancelReservationSchema = z.object({
 });
 export type CancelReservationInput = z.infer<typeof cancelReservationSchema>;
 
+/**
+ * Marking a booking a no-show (spec §15.2). The money options are the same as cancellation's,
+ * because the guest not arriving leaves the advance in exactly the same position.
+ */
+export const noShowSchema = z.object({
+  note: optionalText(500),
+  moneyOption: z.enum(CANCELLATION_MONEY_OPTIONS).optional(),
+  refundAmount: zNonNegativeMoney.optional(),
+  ownerAuthorisationId: zId.optional(),
+});
+export type NoShowInput = z.infer<typeof noShowSchema>;
+
+/**
+ * Extending a stay that is already in house — the other resolution night audit's departures step
+ * offers. The new nights are quoted at current rates unless a rate is given, and a rate below the
+ * room type's floor needs Owner PIN, exactly as it does on a booking.
+ */
+export const extendStaySchema = z.object({
+  newDeparture: zIsoDate,
+  reason: z.string().trim().min(3, 'Say why the stay is being extended').max(300),
+  nightlyRate: zNonNegativeMoney.optional(),
+  ownerAuthorisationId: zId.optional(),
+});
+export type ExtendStayInput = z.infer<typeof extendStaySchema>;
+
+/**
+ * Completing a night audit names the business date the screen was showing (spec §35).
+ *
+ * This is optimistic concurrency, like `expectedVersion` elsewhere: without it, two people pressing
+ * Complete a moment apart would close two consecutive days — the second request would acquire the
+ * lock, read the date the first one had just advanced to, and close that as well.
+ */
+export const completeNightAuditSchema = z.object({ businessDate: zIsoDate });
+export type CompleteNightAuditInput = z.infer<typeof completeNightAuditSchema>;
+
 export const rateQuoteQuerySchema = z
   .object({
     roomTypeId: zId,

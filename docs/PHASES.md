@@ -138,6 +138,11 @@ Test suite (all against real PostgreSQL, no database mocks): see `docs/testing.m
 Then: **express check-in** — one screen for a walk-in by experienced staff, over the same draft and
 confirm path, same validation, limits, audit and idempotency. The wizard stays the default.
 
-### Phase 2 — not started (plan agreed; night audit and business dates first)
+### Phase 2 — in progress
+
+| Milestone | State |
+|---|---|
+| 2.1 Business date & night audit | ✅ Done — step registry (2.2 and 2.4 plug in without editing it), arrivals/departures blocking with the actions each row actually allows, room-status warnings, summary, day audit log, no-show, extend stay, and the business date moved only by a completed audit. Design and the concurrency reasoning: `docs/night-audit.md`. Open-shift check arrives with 2.4; revenue in the summary with 2.2 and 2.3. |
+| 2.2 – 2.8 | Not started |
 ### Milestone 2G — minimum viable Gate 0 — not started
 ### Phase 3 — not started

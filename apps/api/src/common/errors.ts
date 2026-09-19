@@ -68,6 +68,11 @@ export function fromPgError(err: unknown): AppError | null {
       if (e.constraint === 'room_types_property_id_code_key') {
         return new AppError(ERROR_CODES.CONFLICT, 'A room type with this code already exists.');
       }
+      if (e.constraint === 'night_audits_one_per_date') {
+        // Two people completed the audit at the same moment. Nothing was lost: the other run is
+        // the real one, and the business date moved exactly once.
+        return new AppError(ERROR_CODES.CONFLICT, 'Night audit for this date has already been completed. Reload to see the day audit log.');
+      }
       if (e.constraint === 'users_username_key' || e.constraint === 'users_mobile_key') {
         return new AppError(ERROR_CODES.CONFLICT, 'This username or mobile number is already used by another account.');
       }
@@ -75,6 +80,9 @@ export function fromPgError(err: unknown): AppError | null {
     case '23514': // check_violation (incl. status-machine trigger)
       if (e.message?.includes('reservation cannot move')) {
         return new AppError(ERROR_CODES.INVALID_TRANSITION, 'This booking cannot be changed to that status.');
+      }
+      if (e.message?.includes('business date cannot move backwards')) {
+        return new AppError(ERROR_CODES.CONFLICT, 'The business date cannot move backwards. Corrections belong on the current date.');
       }
       return new AppError(ERROR_CODES.VALIDATION, 'Some values are not allowed. Please check the form.');
     case '23503': // foreign_key_violation
