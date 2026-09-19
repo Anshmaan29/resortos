@@ -114,10 +114,10 @@ export default function PhoneCapturePage() {
     if (secondsLeft === 0 && phase.kind === 'ready') setPhase({ kind: 'closed', message: 'This QR code has expired (codes last 10 minutes). Ask the desk to show a new one.' });
   }, [secondsLeft, phase.kind]);
 
-  async function captured(occupant: Occupant, docType: DocumentType, idType: Exclude<IdType, 'none'> | null, blob: Blob) {
+  async function captured(occupant: Occupant, docType: DocumentType, idType: Exclude<IdType, 'none'> | null, blob: Blob, thumbnail?: Blob) {
     await queueRef.current?.add({
       slotKey: `${occupant.key}:${docType}`, docType, occupantKey: occupant.key, idType: idType ?? undefined, source: 'phone_scanner',
-      blob, contentType: 'image/jpeg', sha256: await sha256Hex(blob),
+      blob, thumbnail, contentType: 'image/jpeg', sha256: await sha256Hex(blob),
     });
   }
 
@@ -198,10 +198,10 @@ export default function PhoneCapturePage() {
                   const item = latestItem(slotKey);
                   const state = slotState(serverStatus(o.key, s.docType), item, item ? queueRef.current?.progressOf(item.id) ?? 0 : 0);
                   return (
-                    <CaptureSlot key={slotKey} label={s.label} hint={s.hint} docType={s.docType} idType={s.docType === 'guest_photo' ? null : idType} state={state}
+                    <CaptureSlot key={slotKey} label={s.label} hint={s.hint} docType={s.docType} idType={s.docType === 'guest_photo' ? null : idType} state={state} item={item}
                       allowFiles={s.docType !== 'guest_photo'}
                       onDiscardFailed={() => { if (item?.status === 'failed') void queueRef.current?.remove(item.id); }}
-                      onCaptured={(r) => void captured(o, s.docType, s.docType === 'guest_photo' ? null : idType, r.blob)} />
+                      onCaptured={(r) => void captured(o, s.docType, s.docType === 'guest_photo' ? null : idType, r.blob, r.thumbnail)} />
                   );
                 })}
               </section>

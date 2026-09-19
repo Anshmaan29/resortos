@@ -5,12 +5,16 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import type { DocumentType } from '@resortos/shared';
 import { Button } from '@/components/ui/button';
 import {
-  decodeImage, defaultCorners, detectDocument, encodeJpeg, measureQuality, scaleToFit, straighten,
+  decodeImage, defaultCorners, detectDocument, encodeJpeg, makeThumbnail, measureQuality, scaleToFit, straighten,
   type Corners, type Point, type Quality,
 } from '@/lib/capture/image';
 import { loadOpenCv, type CV } from '@/lib/capture/opencv';
 
-export interface EditorResult { blob: Blob }
+export interface EditorResult {
+  blob: Blob;
+  /** A small local preview, so the screen can show what was sent without fetching it back. */
+  thumbnail: Blob;
+}
 
 type Stage = 'loading' | 'corners' | 'review' | 'encoding';
 
@@ -75,7 +79,7 @@ export function DocumentEditor({ source, docType, onDone, onRetake }: {
     if (!flat) return;
     setStage('encoding');
     try {
-      onDone({ blob: await encodeJpeg(flat) });
+      onDone({ blob: await encodeJpeg(flat), thumbnail: await makeThumbnail(flat) });
     } catch (err) {
       setError((err as Error).message);
       setStage('review');

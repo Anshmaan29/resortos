@@ -1,7 +1,7 @@
 'use client';
 import { AnimatePresence, motion } from 'motion/react';
-import { AlertTriangle, Camera, CheckCircle2, CircleDashed, CloudOff, FileUp, Loader2, Video } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { AlertTriangle, Camera, CheckCircle2, CircleDashed, CloudOff, FileUp, Loader2, Maximize2, Video } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import type { DocumentType, IdType } from '@resortos/shared';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -12,6 +12,50 @@ import { DocumentEditor, type EditorResult } from './document-editor';
 import { LiveCamera } from './live-camera';
 
 const ID_NAMES: Record<string, string> = { aadhaar: 'Aadhaar', passport: 'Passport', driving_licence: 'Driving licence', voter_id: 'Voter ID', pan: 'PAN card', other: 'Other ID' };
+
+/**
+ * Shows the photo that was captured, from the copy kept on this device.
+ *
+ * Not the stored document: that one is private, encrypted, behind a 60-second signed URL, and every
+ * view of it is audit-logged (spec §19.4). Looking at what you just took should not cost an audit
+ * entry, and the receptionist should not have to trust a tick — they should see the photo.
+ */
+function useThumbnail(bytes: ArrayBuffer | null | undefined): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!bytes) { setUrl(null); return; }
+    const objectUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [bytes]);
+  return url;
+}
+
+/** The mini viewer: a thumbnail in the slot, tapped to see it big enough to check. */
+export function CapturePreview({ item, label }: { item: QueueItem | undefined; label: string }) {
+  const url = useThumbnail(item?.thumbnail);
+  const [open, setOpen] = useState(false);
+  if (!url) return null;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={`View the ${label.toLowerCase()} photo you captured`}
+        className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+      >
+        <img src={url} alt="" className="h-full w-full object-cover" />
+        <span className="absolute inset-0 flex items-center justify-center bg-ink/0 text-transparent transition group-hover:bg-black/40 group-hover:text-white">
+          <Maximize2 className="h-4 w-4" aria-hidden />
+        </span>
+      </button>
+
+      <Dialog open={open} onClose={() => setOpen(false)} title={label} description="The photo on this device. Capture it again if it is not clear.">
+        <img src={url} alt={`${label} as captured`} className="mx-auto max-h-[60vh] w-auto rounded-md" />
+      </Dialog>
+    </>
+  );
+}
 
 export function SlotStatus({ state }: { state: SlotState }) {
   return (
@@ -39,7 +83,7 @@ export function SlotStatus({ state }: { state: SlotState }) {
  * One document slot. Order of capture methods follows spec §19.3:
  * native camera input first (most reliable on phones), live preview second, file upload third.
  */
-export function CaptureSlot({ label, hint, docType, idType, state, facing = 'environment', allowLive = true, allowFiles = true, compact, onCaptured, onDiscardFailed }: {
+export function CaptureSlot({ label, hint, docType, idType, state, facing = 'environment', allowLive = true, allowFiles = true, compact, onCaptured, onDiscardFailed, item }: {
   label: string;
   hint?: string;
   docType: DocumentType;
@@ -51,6 +95,8 @@ export function CaptureSlot({ label, hint, docType, idType, state, facing = 'env
   compact?: boolean;
   onCaptured: (result: EditorResult, via: 'camera' | 'live' | 'file') => void;
   onDiscardFailed?: () => void;
+  /** The queued item, if there is one — carries the local thumbnail for the mini viewer. */
+  item?: QueueItem;
 }) {
   const cameraInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -71,9 +117,13 @@ export function CaptureSlot({ label, hint, docType, idType, state, facing = 'env
   return (
     <div className={cn('flex flex-col gap-3 rounded-lg border p-4 transition-colors', done ? 'border-success/40 bg-success-soft/40' : state.kind === 'failed' ? 'border-danger/40' : 'border-border bg-surface')}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="font-medium">{label}<span className="font-normal text-text-2">{idLabel}</span></p>
-          {hint && <p className="text-xs text-text-2">{hint}</p>}
+        <div className="flex min-w-0 items-center gap-3">
+          {/* The photo that was captured, so nobody has to take a tick on trust. */}
+          <CapturePreview item={item} label={label + idLabel} />
+          <div className="min-w-0">
+            <p className="font-medium">{label}<span className="font-normal text-text-2">{idLabel}</span></p>
+            {hint && <p className="text-xs text-text-2">{hint}</p>}
+          </div>
         </div>
         <SlotStatus state={state} />
       </div>

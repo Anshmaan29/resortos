@@ -35,7 +35,7 @@ export function useDeskQueue(draftId: string) {
     return () => { stop(); unsub(); };
   }, [draftId]);
 
-  const add = useCallback(async (input: { slotKey: string; docType: DocumentType; occupantKey?: string; idType?: Exclude<IdType, 'none'>; source: QueueItem['source']; blob: Blob; contentType: QueueItem['contentType'] }) => {
+  const add = useCallback(async (input: { slotKey: string; docType: DocumentType; occupantKey?: string; idType?: Exclude<IdType, 'none'>; source: QueueItem['source']; blob: Blob; thumbnail?: Blob; contentType: QueueItem['contentType'] }) => {
     await queue.current?.add({ ...input, sha256: await sha256Hex(input.blob) });
   }, []);
   const latest = (slotKey: string) => [...items].reverse().find((i) => i.slotKey === slotKey);
@@ -103,11 +103,11 @@ export function DocumentsStep({ draft, data, onChange, onRefresh, queue }: {
                       const item = queue.latest(slotKey);
                       return (
                         <CaptureSlot key={slotKey} compact label={s.label + (s.required ? '' : ' (optional)')} docType={s.docType} idType={s.docType === 'guest_photo' ? null : idType}
-                          state={slotState(serverStatus(o.key, s.docType), item, item ? queue.progressOf(item.id) : 0)}
+                          state={slotState(serverStatus(o.key, s.docType), item, item ? queue.progressOf(item.id) : 0)} item={item}
                           onDiscardFailed={() => { if (item?.status === 'failed') void queue.remove(item.id); }}
                           onCaptured={(r, via) => void queue.add({
                             slotKey, docType: s.docType, occupantKey: o.key, idType: s.docType === 'guest_photo' ? undefined : idType ?? undefined,
-                            source: via === 'file' ? 'file_upload' : 'desk_camera', blob: r.blob, contentType: 'image/jpeg',
+                            source: via === 'file' ? 'file_upload' : 'desk_camera', blob: r.blob, thumbnail: r.thumbnail, contentType: 'image/jpeg',
                           }).then(onRefresh)} />
                       );
                     })}
