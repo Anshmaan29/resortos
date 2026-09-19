@@ -222,7 +222,10 @@ export class StaysService {
     await q.query(`UPDATE reservation_rooms SET room_id = $2, room_type_id = $3 WHERE id = $1`, [rr.id, to.id, to.room_type_id]);
     await q.query(`UPDATE stays SET room_id = $2 WHERE id = $1`, [stayId, to.id]);
     await q.query(`SELECT set_config('resortos.reason', $1, true)`, [`Room shift to ${to.number}: ${input.reason}`]);
+    // The room left behind needs a full clean, like a checkout; the trigger opens that task (0021).
+    await q.query(`SELECT set_config('resortos.housekeeping_kind', 'checkout', true)`);
     await q.query(`UPDATE rooms SET housekeeping_status = 'dirty', updated_by = $2 WHERE id = $1`, [from.id, actor.user.id]);
+    await q.query(`SELECT set_config('resortos.housekeeping_kind', '', true)`);
     await q.query(
       `INSERT INTO room_shifts (property_id, stay_id, from_room_id, to_room_id, business_date, reason, rate_decision, authorised_by, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
@@ -360,7 +363,10 @@ export class StaysService {
       [stayId, actor.user.id, bd, early],
     );
     await q.query(`SELECT set_config('resortos.reason', 'Checkout', true)`);
+    // Opens the checkout cleaning task (trigger rooms_housekeeping_task, 0021).
+    await q.query(`SELECT set_config('resortos.housekeeping_kind', 'checkout', true)`);
     await q.query(`UPDATE rooms SET housekeeping_status = 'dirty', updated_by = $2 WHERE id = $1`, [stay.room_id, actor.user.id]);
+    await q.query(`SELECT set_config('resortos.housekeeping_kind', '', true)`);
 
     // The booking is checked out when no room is still waiting or in house.
     const { rows: open } = await q.query<{ n: string }>(

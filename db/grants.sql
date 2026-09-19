@@ -32,7 +32,7 @@ REVOKE UPDATE ON night_audits FROM resortos_app;
 -- Money and GST documents are append-only (spec §25.4, §29.4). Triggers refuse changes too; the
 -- grant is the first of the two locks.
 REVOKE UPDATE ON payments, invoices, invoice_lines, invoice_tax_groups, invoice_payments, owner_review_seen,
-  company_receipts, ota_payouts, message_events FROM resortos_app;
+  company_receipts, ota_payouts, message_events, expenses FROM resortos_app;
 
 -- Bill lines accept exactly one update, the void, and a trigger enforces which columns (spec §23).
 -- UPDATE stays granted because voiding is an update; the trigger is what makes it safe.

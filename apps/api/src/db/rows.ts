@@ -20,6 +20,7 @@ export interface PropertyRow {
   email_enabled: boolean; email_from_name: string | null; email_from_address: string | null; email_reply_to: string | null;
   quiet_hours_start: string; quiet_hours_end: string; checkout_reminder_time: string; reminder_skip_same_day: boolean;
   reception_phone: string | null; wifi_details: string | null; location_link: string | null; desk_lock_minutes: number;
+  housekeeping_stayovers: boolean; housekeeping_inspection: boolean; police_register_columns: string[];
 }
 
 export interface UserRow {

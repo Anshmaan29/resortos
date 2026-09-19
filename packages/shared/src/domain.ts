@@ -240,3 +240,21 @@ export const DISCOUNT_REASON_LABELS: Record<DiscountReason, string> = {
   regular_guest: 'Regular guest', complaint: 'Complaint', corporate_rate: 'Corporate rate', long_stay: 'Long stay',
   owner_guest: "Owner's guest", promotion: 'Offer / promotion', rounding: 'Rounding off the bill', other: 'Other',
 };
+
+/**
+ * Columns the police / guest register can show (spec §58.2), in the words printed on it. The owner
+ * picks which and in what order, to match the local police station's format.
+ */
+export const POLICE_REGISTER_COLUMNS = [
+  'serial', 'arrival', 'name', 'age', 'nationality', 'address', 'mobile', 'id_type', 'id_last4',
+  'room', 'persons', 'purpose', 'vehicle', 'departure', 'signature',
+] as const;
+export type PoliceRegisterColumn = (typeof POLICE_REGISTER_COLUMNS)[number];
+export const POLICE_REGISTER_LABELS: Record<PoliceRegisterColumn, string> = {
+  serial: 'S. No.', arrival: 'Arrival', name: 'Name', age: 'Age', nationality: 'Nationality', address: 'Address',
+  mobile: 'Mobile', id_type: 'ID type', id_last4: 'ID (last 4)', room: 'Room', persons: 'Persons',
+  purpose: 'Purpose of visit', vehicle: 'Vehicle', departure: 'Departure', signature: 'Signature',
+};
+
+/** Expense categories every new property starts with (spec §39). */
+export const DEFAULT_EXPENSE_CATEGORIES = ['Electricity', 'Salaries', 'Groceries', 'Repairs', 'Diesel', 'Marketing', 'Other'] as const;

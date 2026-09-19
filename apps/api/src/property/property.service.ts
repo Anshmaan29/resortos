@@ -43,6 +43,8 @@ export class PropertyService {
         quietHoursStart: String(p.quiet_hours_start).slice(0, 5), quietHoursEnd: String(p.quiet_hours_end).slice(0, 5),
         checkoutReminderTime: String(p.checkout_reminder_time).slice(0, 5), reminderSkipSameDay: p.reminder_skip_same_day,
         receptionPhone: p.reception_phone, wifiDetails: p.wifi_details, locationLink: p.location_link, deskLockMinutes: p.desk_lock_minutes,
+        housekeepingStayovers: p.housekeeping_stayovers, housekeepingInspection: p.housekeeping_inspection,
+        policeRegisterColumns: p.police_register_columns,
       },
     };
   }
@@ -59,13 +61,16 @@ export class PropertyService {
                 invoice_terms=$6, invoice_bank_details=$7, print_mask_mobile=$8, receipt_paper=$9, email_enabled=$10,
                 email_from_name=$11, email_from_address=$12, email_reply_to=$13, quiet_hours_start=$14, quiet_hours_end=$15,
                 checkout_reminder_time=$16, reminder_skip_same_day=$17, reception_phone=$18, wifi_details=$19, location_link=$20,
-                desk_lock_minutes=$21
+                desk_lock_minutes=$21, housekeeping_stayovers=COALESCE($22, housekeeping_stayovers),
+                housekeeping_inspection=COALESCE($23, housekeeping_inspection),
+                police_register_columns=COALESCE($24::text[], police_register_columns)
           WHERE id = $1 AND version = $2`,
         [actor.user.propertyId, input.version, input.receptionistCanRunNightAudit, input.cashDifferenceThreshold, input.reviewDiscountPercent,
           input.invoiceTerms ?? null, input.invoiceBankDetails ?? null, input.printMaskMobile, input.receiptPaper, input.emailEnabled,
           input.emailFromName ?? null, input.emailFromAddress ?? null, input.emailReplyTo ?? null, input.quietHoursStart, input.quietHoursEnd,
           input.checkoutReminderTime, input.reminderSkipSameDay, input.receptionPhone ?? null, input.wifiDetails ?? null,
-          input.locationLink ?? null, input.deskLockMinutes],
+          input.locationLink ?? null, input.deskLockMinutes, input.housekeepingStayovers ?? null, input.housekeepingInspection ?? null,
+          input.policeRegisterColumns ?? null],
       );
       if (!rowCount) throw staleVersion();
       const { version: _v, ...after } = input;
