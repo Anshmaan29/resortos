@@ -17,6 +17,7 @@ let f: Awaited<ReturnType<typeof fixtures>>;
 let stayId: string;
 let folioId: string;
 let accounts: Record<string, string> = {};
+let companyId: string;
 
 const bill = (agent: Agent = desk) => agent.get(`/api/v1/stays/${stayId}/bill`).expect(200);
 const ownerId = async () => (await sql<{ id: string }>(`SELECT id FROM users WHERE role = 'owner'`))[0]!.id;
@@ -79,6 +80,7 @@ beforeAll(async () => {
     accounts[kind] = created.body.id;
   }
   await post(desk, '/shifts/open', { openingCash: '2000' }).expect(200);
+  companyId = (await post(owner, '/companies', { name: 'Acme Travels', gstin: '' }, null).expect(201)).body.id;
 }, 120_000);
 afterAll(async () => { await app.close(); });
 
@@ -124,12 +126,12 @@ describe('where the money landed', () => {
     expect(JSON.stringify(noRef.body.details.fields)).toMatch(/UTR or transaction ID/i);
 
     const withAccount = await post(desk, `/folios/${folioId}/payments`, {
-      method: 'company_account', paymentAccountId: accounts.bank, amount: '1000',
+      method: 'company_account', companyId, paymentAccountId: accounts.bank, amount: '1000',
     }).expect(400);
     expect(JSON.stringify(withAccount.body.details.fields)).toMatch(/moves no money/i);
 
     // Company account settles the bill without money changing hands, so it takes no account.
-    const ok = await post(desk, `/folios/${folioId}/payments`, { method: 'company_account', amount: '1000' }).expect(200);
+    const ok = await post(desk, `/folios/${folioId}/payments`, { method: 'company_account', companyId, amount: '1000' }).expect(200);
     expect(ok.body.payments.at(-1).accountId).toBeNull();
   });
 
@@ -227,7 +229,7 @@ describe('correcting a payment', () => {
     await expect(sql(
       `INSERT INTO payments (property_id, number, folio_id, reservation_id, guest_id, entry_type, method,
                              amount, business_date, received_by, reverses_payment_id, reversal_reason)
-       SELECT p.property_id, 'PAY-RAW-2', p.folio_id, p.reservation_id, p.guest_id, p.entry_type, 'company_account',
+       SELECT p.property_id, 'PAY-RAW-2', p.folio_id, p.reservation_id, p.guest_id, p.entry_type, 'guest_credit',
               p.amount, p.business_date, p.received_by, p.id, 'twice'
          FROM payments p WHERE p.id = $1`,
       [reversed.id],
@@ -285,7 +287,7 @@ describe('a security deposit', () => {
 
   it('is refused as a settlement that moves no money', async () => {
     const refused = await post(desk, `/folios/${depositFolio}/payments`, {
-      entryType: 'deposit', method: 'company_account', amount: '100',
+      entryType: 'deposit', method: 'company_account', companyId, amount: '100',
     }).expect(400);
     expect(JSON.stringify(refused.body.details.fields)).toMatch(/real money/);
   });

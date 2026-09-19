@@ -240,6 +240,10 @@ export class PaymentsService {
     }
 
     const accountKind = await this.accountKind(q, propertyId, input.method, input.paymentAccountId);
+    if (input.method === 'company_account') {
+      if (input.entryType !== 'payment') throw new AppError(ERROR_CODES.VALIDATION, 'Only a bill can be moved to a company account.');
+      authorisedBy = (await this.checkCreditLimit(q, actor, input.companyId!, input.amount, t.reservationId, input.ownerAuthorisationId)) ?? authorisedBy;
+    }
     if (input.method === 'guest_credit') {
       if (input.entryType !== 'payment' && input.entryType !== 'advance') {
         throw new AppError(ERROR_CODES.VALIDATION, 'Guest credit can only be used to pay, not to refund or hold a deposit.');
@@ -252,11 +256,11 @@ export class PaymentsService {
     const { rows } = await q.query<{ id: string }>(
       `INSERT INTO payments (property_id, number, folio_id, reservation_id, guest_id, entry_type, method,
                              payment_account_id, account_kind, amount, reference, note, business_date,
-                             received_by, cashier_shift_id, authorised_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::date,$14,$15,$16) RETURNING id`,
+                             received_by, cashier_shift_id, authorised_by, company_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::date,$14,$15,$16,$17) RETURNING id`,
       [propertyId, number, t.folioId, t.reservationId, t.guestId, input.entryType, input.method,
         input.paymentAccountId ?? null, accountKind, input.amount, input.reference ?? null,
-        input.note ?? null, on, actor.user.id, shiftId, authorisedBy],
+        input.note ?? null, on, actor.user.id, shiftId, authorisedBy, input.companyId ?? null],
     );
 
     await this.audit.record(q, actor, {
@@ -265,6 +269,39 @@ export class PaymentsService {
     });
     await this.outbox.emit(q, propertyId, 'payment.recorded', { type: 'payment', id: rows[0]!.id }, { number, amount: input.amount, method: input.method, entryType: input.entryType });
     return { id: rows[0]!.id, number };
+  }
+
+
+  /**
+   * Moving a bill to a company account (spec §32). Beyond the company's credit limit it needs the
+   * owner. The company row is locked so two bills moved at once are checked one after the other.
+   */
+  private async checkCreditLimit(q: Queryable, actor: Actor, companyId: string, amount: string, reservationId: string, ownerAuthorisationId?: string): Promise<string | null> {
+    const { rows } = await q.query<{ name: string; credit_limit: string | null; is_active: boolean }>(
+      `SELECT name, credit_limit, is_active FROM companies WHERE id = $1 AND property_id = $2 FOR UPDATE`,
+      [companyId, actor.user.propertyId],
+    );
+    const company = rows[0];
+    if (!company) throw notFound('Company');
+    if (!company.is_active) throw new AppError(ERROR_CODES.VALIDATION, `${company.name} is no longer an active company account.`);
+    if (company.credit_limit === null) return null;
+    const { rows: out } = await q.query<{ outstanding: string }>(`SELECT company_outstanding($1) AS outstanding`, [companyId]);
+    const after = money(out[0]!.outstanding).plus(amount);
+    if (!after.gt(company.credit_limit)) return null;
+    const auth = await this.ownerAuth.require(
+      q, actor,
+      {
+        operation: 'payment.company_over_limit',
+        scope: { companyId, amount, reservationId },
+        reasons: [{
+          action: 'credit_limit_exceeded',
+          description: `${company.name} would owe ${formatINR(toMoneyString(after))}, over its ${formatINR(company.credit_limit)} limit`,
+        }],
+      },
+      ownerAuthorisationId, { type: 'company', id: companyId },
+    );
+    if (auth) await this.ownerAuth.recordOverrides(q, actor, auth, { type: 'company', id: companyId });
+    return auth?.authorisedBy ?? null;
   }
 
   /**
@@ -381,7 +418,7 @@ export class PaymentsService {
       id: string; number: string; folio_id: string | null; reservation_id: string; guest_id: string;
       entry_type: string; method: PaymentMethod; payment_account_id: string | null; account_kind: string | null;
       amount: string; business_date: string; reverses_payment_id: string | null; reversed_by: string | null;
-      received_by: string;
+      received_by: string; company_id: string | null;
     }>(
       `SELECT p.*, r.id AS reversed_by FROM payments p
          LEFT JOIN payments r ON r.reverses_payment_id = p.id
@@ -427,12 +464,12 @@ export class PaymentsService {
     const { rows: created } = await q.query<{ id: string }>(
       `INSERT INTO payments (property_id, number, folio_id, reservation_id, guest_id, entry_type, method,
                              payment_account_id, account_kind, amount, reference, business_date, received_by,
-                             cashier_shift_id, reverses_payment_id, reversal_reason, authorised_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::date,$13,$14,$15,$16,$17) RETURNING id`,
+                             cashier_shift_id, reverses_payment_id, reversal_reason, authorised_by, company_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::date,$13,$14,$15,$16,$17,$18) RETURNING id`,
       [propertyId, number, original.folio_id, original.reservation_id, original.guest_id, original.entry_type,
         original.method, original.payment_account_id, original.account_kind, original.amount,
         `Reverses ${original.number}`, businessDate, actor.user.id, shiftId,
-        paymentId, input.reason, authorisedBy],
+        paymentId, input.reason, authorisedBy, original.company_id],
     );
 
     await this.audit.record(q, actor, {

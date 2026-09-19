@@ -315,6 +315,7 @@ export const recordPaymentSchema = z
     entryType: z.enum(DESK_ENTRY_TYPES).default('payment'),
     method: z.enum(DESK_PAYMENT_METHODS),
     paymentAccountId: zId.optional(),
+    companyId: zId.optional(),
     amount: zPositiveMoney,
     reference: optionalText(80),
     note: optionalText(300),
@@ -322,6 +323,9 @@ export const recordPaymentSchema = z
     ownerAuthorisationId: zId.optional(),
   })
   .superRefine((v, ctx) => {
+    if ((v.method === 'company_account') !== Boolean(v.companyId)) {
+      ctx.addIssue({ code: 'custom', path: ['companyId'], message: v.method === 'company_account' ? 'Choose the company' : 'Only a company account settlement names a company' });
+    }
     const needsAccount = ACCOUNT_KINDS_FOR_METHOD[v.method] !== null;
     if (needsAccount && !v.paymentAccountId) {
       ctx.addIssue({ code: 'custom', path: ['paymentAccountId'], message: 'Choose where the money went' });
@@ -572,3 +576,55 @@ export const checkoutSettlementSchema = z.object({
 export const checkoutInvoiceSchema = z.object({
   buyer: invoiceBuyerSchema.optional(),
 }).default({});
+
+/** A company account (spec §32). Owner settings. */
+export const companySchema = z.object({
+  name: z.string().trim().min(2, 'Enter the company name').max(120),
+  gstin: z.string().trim().toUpperCase().refine(isValidGstin, 'This GSTIN is not valid').optional()
+    .or(z.literal('').transform(() => undefined)),
+  billingAddress: optionalText(300),
+  contactPerson: optionalText(80),
+  phone: optionalText(20),
+  email: z.string().trim().email('Enter a valid email').optional().or(z.literal('').transform(() => undefined)),
+  creditLimit: zNonNegativeMoney.optional(),
+  paymentTermsDays: z.coerce.number().int().min(0).max(365).default(30),
+  isActive: z.boolean().optional(),
+});
+export type CompanyInput = z.infer<typeof companySchema>;
+
+/** Money a company pays against its account (spec §32). */
+export const companyReceiptSchema = z
+  .object({
+    method: z.enum(['cash', 'upi', 'card', 'bank_transfer', 'cheque']),
+    paymentAccountId: zId,
+    amount: zPositiveMoney,
+    reference: optionalText(80),
+    note: optionalText(300),
+  })
+  .superRefine((v, ctx) => {
+    if (v.method !== 'cash' && !v.reference) ctx.addIssue({ code: 'custom', path: ['reference'], message: 'Enter the payment reference' });
+  });
+export type CompanyReceiptInput = z.infer<typeof companyReceiptSchema>;
+
+/** The commercial terms of an OTA booking (spec §33). */
+export const otaBookingSchema = z
+  .object({
+    paymentMode: z.enum(['prepaid_to_ota', 'pay_at_resort']),
+    grossAmount: zNonNegativeMoney,
+    commissionAmount: zNonNegativeMoney.default('0.00'),
+    taxWithheld: zNonNegativeMoney.default('0.00'),
+    note: optionalText(300),
+    version: z.coerce.number().int().min(1).optional(),
+  })
+  .refine((v) => money(v.commissionAmount).plus(v.taxWithheld).lte(v.grossAmount), {
+    path: ['commissionAmount'], message: 'Commission and deductions cannot be more than the booking',
+  });
+export type OtaBookingInput = z.infer<typeof otaBookingSchema>;
+
+/** An OTA payout received into the bank (spec §33). */
+export const otaPayoutSchema = z.object({
+  paymentAccountId: zId,
+  amount: zPositiveMoney,
+  reference: z.string().trim().min(2, 'Enter the payout reference').max(80),
+});
+export type OtaPayoutInput = z.infer<typeof otaPayoutSchema>;
