@@ -15,9 +15,14 @@ import { ApiError } from '@/lib/api';
 export interface UploadGrant { url: string; headers: Record<string, string>; expiresAt: string }
 
 export interface UploadTransport {
-  create(item: QueueItem): Promise<{ documentId: string; upload: UploadGrant }>;
-  refresh(documentId: string): Promise<{ documentId: string; upload: UploadGrant }>;
-  confirm(documentId: string): Promise<{ status: 'pending' | 'verified' | 'failed' | 'orphaned'; failureReason?: string | null }>;
+  create(item: QueueItem, signal?: AbortSignal): Promise<{ documentId: string; upload: UploadGrant }>;
+  refresh(documentId: string, signal?: AbortSignal): Promise<{ documentId: string; upload: UploadGrant }>;
+  confirm(documentId: string, signal?: AbortSignal): Promise<{ status: 'pending' | 'verified' | 'failed' | 'orphaned'; failureReason?: string | null }>;
+}
+
+/** A request that never came back, as distinct from one that came back with bad news. */
+export class UploadTimeoutError extends Error {
+  constructor(what: string) { super(`The server did not answer the ${what} request in time`); }
 }
 
 export type QueueStatus = 'queued' | 'uploading' | 'verifying' | 'waiting_network' | 'done' | 'failed';
@@ -73,6 +78,15 @@ function db() {
 const DONE_RETENTION_MS = 6 * 60 * 60 * 1000;
 /** Flat wait after a request that never reached the server. See `deferForNetwork`. */
 const NETWORK_RETRY_MS = 1500;
+/**
+ * Every call to our own API in this queue is given a deadline.
+ *
+ * The drain loop is single-threaded and guarded against re-entry, so one request that never returns
+ * stops every other photo on the device — the same way a hung PUT did until it was given a timeout.
+ * `fetch` has no timeout of its own, so without this a stalled confirm leaves an ID showing
+ * "Checking…" for ever, and the guest's other documents never upload at all.
+ */
+const REQUEST_TIMEOUT_MS = 20_000;
 
 function backoff(attempts: number) {
   const base = Math.min(30_000, 1000 * 2 ** Math.min(attempts, 5));
@@ -279,12 +293,28 @@ export class UploadQueue {
     await this.save(item, { status: 'failed', error: message });
   }
 
+  /** Runs a transport call under a deadline, cancelling the request rather than waiting for ever. */
+  private async call<T>(what: string, fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fn(controller.signal);
+    } catch (err) {
+      if (controller.signal.aborted) throw new UploadTimeoutError(what);
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   private async step(item: QueueItem) {
     try {
       // 1. Get a pre-signed URL (new document, or a fresh URL for the same pending document).
       if (!item.documentId || !item.grant || new Date(item.grant.expiresAt).getTime() < Date.now() + 30_000) {
         // create() sends item.id as the client upload id, so a retry after a lost reply returns the same document.
-        const res = item.documentId ? await this.transport.refresh(item.documentId) : await this.transport.create(item);
+        const res = item.documentId
+          ? await this.call('upload link', (signal) => this.transport.refresh(item.documentId!, signal))
+          : await this.call('upload link', (signal) => this.transport.create(item, signal));
         await this.save(item, { documentId: res.documentId, grant: res.upload });
       }
 
@@ -307,11 +337,14 @@ export class UploadQueue {
       }
 
       // 3. The server re-hashes the stored object; only then is it received.
-      const result = await this.transport.confirm(item.documentId!);
+      const result = await this.call('confirmation', (signal) => this.transport.confirm(item.documentId!, signal));
       if (result.status === 'verified') return this.save(item, { status: 'done', bytes: null, blob: null, error: undefined });
       if (result.status === 'failed' || result.status === 'orphaned') return this.fail(item, 'The server could not verify this photo. Capture it again.');
       return this.retryLater(item, 'Waiting for the server to receive the photo');
     } catch (err) {
+      // The request was cancelled for taking too long. Nothing is known about whether the server
+      // acted on it, which is exactly what idempotency keys are for: sending it again is safe.
+      if (err instanceof UploadTimeoutError) return this.retryLater(item, 'The server is taking a long time — trying again');
       if (err instanceof ApiError) {
         if (err.details?.scannerClosed) return this.fail(item, err.message);
         if (err.code === 'CONFLICT' && err.details?.retryable) { await this.save(item, { status: 'queued' }); return this.retryLater(item, 'Upload did not arrive — sending again'); }

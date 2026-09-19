@@ -84,12 +84,12 @@ export default function PhoneCapturePage() {
   useEffect(() => {
     if (!headers) return;
     const transport: UploadTransport = {
-      create: (item) => api(`/capture/${token}/uploads`, {
-        method: 'POST', headers,
+      create: (item, signal) => api(`/capture/${token}/uploads`, {
+        method: 'POST', headers, signal,
         body: { clientUploadId: item.id, docType: item.docType, idType: item.idType, occupantKey: item.occupantKey, contentType: item.contentType, sizeBytes: item.size, sha256: item.sha256 },
       }),
-      refresh: (documentId) => api(`/capture/${token}/uploads/${documentId}/grant`, { method: 'POST', body: {}, headers }),
-      confirm: (documentId) => api(`/capture/${token}/uploads/${documentId}/confirm`, { method: 'POST', body: {}, headers }),
+      refresh: (documentId, signal) => api(`/capture/${token}/uploads/${documentId}/grant`, { method: 'POST', body: {}, headers, signal }),
+      confirm: (documentId, signal) => api(`/capture/${token}/uploads/${documentId}/confirm`, { method: 'POST', body: {}, headers, signal }),
     };
     const queue = new UploadQueue(token, transport);
     queueRef.current = queue;
