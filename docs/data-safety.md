@@ -101,3 +101,28 @@ guest's name into this system.
 - **No retention jobs.** ID images and photos are kept indefinitely today; retention (spec §59) is
   milestone 3.5.
 - **Folio balance recalculation** (spec §49) has nothing to check yet — folios arrive in Phase 2.
+
+## Backups — what exists today
+
+The Layer 3 mechanism from spec §53.3 is built and exercised on every commit: a nightly `pg_dump`,
+encrypted so that **the machine taking the backup cannot read it back** (random data key, AES-256-GCM;
+the data key wrapped with an RSA public key whose private half never touches the primary cloud), then
+uploaded to a different provider's bucket under Object Lock so the credentials that wrote it cannot
+delete or overwrite it.
+
+`apps/api/test/backup-restore.test.ts` runs the whole loop against MinIO on every commit — dump,
+encrypt, upload, download, decrypt, check the plaintext hash against what was recorded, restore into
+a throwaway database, run the integrity checks. **A backup nobody has restored is not a backup**, and
+that test is what stops this code rotting between real drills.
+
+Two things it proved that are worth knowing:
+
+- **Object Lock does not stop a delete.** A plain `DeleteObject` on a versioned bucket is *accepted*
+  and writes a delete marker: nothing is destroyed, but the backup disappears from every listing,
+  including "find the newest backup". Only deleting the specific *version* is refused. So the write
+  credentials must deny `s3:DeleteObject` as well — the policy is in `ops/runbooks/restore.md`.
+- **One flipped byte is caught**, because the plaintext SHA-256 recorded at backup time is checked
+  after decryption. A file that decrypts is not the same as a file that is correct.
+
+What is not done: the real provider, the real key, and the recorded drill against them. Tracked in
+`docs/production-readiness.md` under Gate 0. Procedure: `ops/runbooks/restore.md`.

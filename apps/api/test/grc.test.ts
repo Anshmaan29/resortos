@@ -323,6 +323,13 @@ describe('a card is not recorded unless its file is safely stored', () => {
         WHERE d.id = $1 RETURNING id`,
       [started.body.id],
     );
+    // The rest of what a real check-in does to the booking. Without it this fixture leaves an
+    // in-house stay whose room is only 'reserved' — an impossible state that the restore test's
+    // integrity checks correctly report as a finding (ops/backup/integrity.sql).
+    await sql(`UPDATE room_allocations SET status = 'checked_in' WHERE reservation_room_id = (SELECT reservation_room_id FROM stays WHERE id = $1)`, [stay.id]);
+    await sql(`UPDATE reservation_rooms SET status = 'checked_in' WHERE id = (SELECT reservation_room_id FROM stays WHERE id = $1)`, [stay.id]);
+    await sql(`UPDATE reservations SET status = 'checked_in' WHERE id = (SELECT reservation_id FROM stays WHERE id = $1)`, [stay.id]);
+
     const res = await post(desk, `/stays/${stay.id}/grc`, {});
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/signature/i);
