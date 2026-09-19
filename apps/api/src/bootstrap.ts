@@ -17,6 +17,8 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 export async function createApp(): Promise<INestApplication> {
   const config = loadConfig();
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    // Webhook signatures are over the exact bytes received (Resend signs with Svix).
+    rawBody: true,
     logger: config.NODE_ENV === 'test' ? ['error'] : ['log', 'warn', 'error'],
   });
   app.set('trust proxy', 1);
@@ -30,7 +32,10 @@ export async function createApp(): Promise<INestApplication> {
   // CSRF defence (spec §57): unsafe methods must carry a custom header, which a
   // cross-site form or image cannot send without a CORS preflight we reject.
   app.use((req: AppRequest, res: Response, next: NextFunction) => {
-    if (!SAFE_METHODS.has(req.method) && req.header('x-resortos') !== '1') {
+    // Provider webhooks come from a server, not a browser, and prove themselves with a signature
+    // checked in the handler; they are the only unsafe requests without the header.
+    const webhook = req.path.startsWith('/api/v1/webhooks/');
+    if (!SAFE_METHODS.has(req.method) && !webhook && req.header('x-resortos') !== '1') {
       res.status(403).json({ code: ERROR_CODES.FORBIDDEN, message: 'Request blocked for security reasons. Please reload the page.', requestId: req.requestId });
       return;
     }

@@ -6,6 +6,7 @@ import { DbModule } from './db/db.module';
 import { FoliosModule } from './folios/folios.module';
 import { GuestsModule } from './guests/guests.module';
 import { JobsModule } from './jobs/jobs.module';
+import { MessagingModule } from './messaging/messaging.module';
 import { NightAuditModule } from './night-audit/night-audit.module';
 import { HealthController } from './health/health.controller';
 import { PrintingModule } from './printing/printing.module';
@@ -23,7 +24,7 @@ import { Global } from '@nestjs/common';
 class ConfigModule {}
 
 @Module({
-  imports: [ConfigModule, DbModule, StorageModule, JobsModule, AuthModule, PropertyModule, RatesModule, GuestsModule, ReservationsModule, StaysModule, FoliosModule, CashierModule, ReceivablesModule, PrintingModule, ReviewModule, NightAuditModule],
+  imports: [ConfigModule, DbModule, StorageModule, JobsModule, AuthModule, PropertyModule, RatesModule, GuestsModule, ReservationsModule, StaysModule, FoliosModule, CashierModule, ReceivablesModule, PrintingModule, ReviewModule, MessagingModule, NightAuditModule],
   controllers: [HealthController],
 })
 export class AppModule {}

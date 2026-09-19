@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
 import { PgBoss } from 'pg-boss';
 import { APP_CONFIG, type AppConfig } from '../config';
 import { OutboxDispatcher } from './outbox.dispatcher';
@@ -6,6 +6,18 @@ import { OutboxDispatcher } from './outbox.dispatcher';
 export const OUTBOX_QUEUE = 'outbox.drain';
 /** A heartbeat every minute, plus an immediate nudge whenever a batch comes back full. */
 const HEARTBEAT_CRON = '* * * * *';
+
+/**
+ * Other recurring work — the message sender, the checkout reminders — registered by the module that
+ * owns it, the same extension-point pattern as outbox handlers. Each run must be safe to repeat and
+ * to run on two machines at once.
+ */
+export interface ScheduledJob {
+  queue: string;
+  cron: string;
+  run(): Promise<void>;
+}
+export const SCHEDULED_JOBS = Symbol('SCHEDULED_JOBS');
 
 /**
  * The job runtime (spec §7): pg-boss, so jobs live in the same PostgreSQL database, are covered by
@@ -19,16 +31,18 @@ const HEARTBEAT_CRON = '* * * * *';
  * plans, and this process starts with `migrate: false` because `resortos_app` has no DDL rights.
  */
 @Injectable()
-export class JobsService implements OnModuleInit, OnApplicationShutdown {
+export class JobsService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(JobsService.name);
   private boss: PgBoss | null = null;
 
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly outbox: OutboxDispatcher,
+    @Inject(SCHEDULED_JOBS) private readonly scheduled: ScheduledJob[],
   ) {}
 
-  async onModuleInit() {
+  // After every module has initialised, so jobs other modules register are all present.
+  async onApplicationBootstrap() {
     if (!this.config.JOBS_ENABLED) {
       this.logger.log('Background jobs are switched off for this process');
       return;
@@ -54,13 +68,21 @@ export class JobsService implements OnModuleInit, OnApplicationShutdown {
 
     // Something must run even when nothing nudges it.
     await boss.schedule(OUTBOX_QUEUE, HEARTBEAT_CRON);
+
+    for (const job of this.scheduled) {
+      await boss.createQueue(job.queue);
+      await boss.work(job.queue, { batchSize: 1 }, async () => {
+        await job.run();
+      });
+      await boss.schedule(job.queue, job.cron);
+    }
     this.boss = boss;
     this.logger.log('Job queue started');
   }
 
-  /** Runs the drain now instead of waiting for the heartbeat. */
-  async nudge(): Promise<void> {
-    await this.boss?.send(OUTBOX_QUEUE, {}, { singletonKey: OUTBOX_QUEUE, singletonSeconds: 1 });
+  /** Runs the drain (or another registered queue) now instead of waiting for its schedule. */
+  async nudge(queue: string = OUTBOX_QUEUE): Promise<void> {
+    await this.boss?.send(queue, {}, { singletonKey: queue, singletonSeconds: 1 });
   }
 
   async onApplicationShutdown() {

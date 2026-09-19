@@ -1,5 +1,5 @@
 import { Global, Module } from '@nestjs/common';
-import { JobsService } from './jobs.service';
+import { JobsService, SCHEDULED_JOBS, type ScheduledJob } from './jobs.service';
 import { OUTBOX_HANDLERS, type OutboxHandler } from './outbox-handlers';
 import { OutboxDispatcher } from './outbox.dispatcher';
 
@@ -14,9 +14,11 @@ import { OutboxDispatcher } from './outbox.dispatcher';
 @Module({
   providers: [
     { provide: OUTBOX_HANDLERS, useFactory: (): OutboxHandler[] => [] },
+    // Filled in by the modules that own the work (messaging), during their own initialisation.
+    { provide: SCHEDULED_JOBS, useFactory: (): ScheduledJob[] => [] },
     OutboxDispatcher,
     JobsService,
   ],
-  exports: [OUTBOX_HANDLERS, OutboxDispatcher, JobsService],
+  exports: [OUTBOX_HANDLERS, SCHEDULED_JOBS, OutboxDispatcher, JobsService],
 })
 export class JobsModule {}

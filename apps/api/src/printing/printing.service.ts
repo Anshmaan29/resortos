@@ -38,17 +38,27 @@ export class PrintingService {
   }
 
   async invoicePdf(actor: Actor, invoiceId: string): Promise<{ pdf: Buffer; filename: string }> {
-    return this.db.tx({ userId: actor.user.id }, async (q) => {
-      const i = await this.invoices.detail(q, actor.user.propertyId, invoiceId);
-      const { seller, row } = await this.property(q, actor.user.propertyId);
+    return this.invoicePdfFor(actor.user.propertyId, invoiceId, { userId: actor.user.id });
+  }
+
+  /**
+   * The invoice as a PDF. `forEmail` is the copy that leaves the building (spec §40, CLAUDE.md rule
+   * 12): the guest's mobile is always masked, and a private guest's home address is left off — a
+   * company's billing address stays, because a B2B invoice needs it.
+   */
+  async invoicePdfFor(propertyId: string, invoiceId: string, opts: { userId?: string; forEmail?: boolean } = {}): Promise<{ pdf: Buffer; filename: string }> {
+    return this.db.tx({ userId: opts.userId }, async (q) => {
+      const i = await this.invoices.detail(q, propertyId, invoiceId);
+      const { seller, row } = await this.property(q, propertyId);
+      const buyer = opts.forEmail && !i.buyer.gstin ? { ...i.buyer, address: null } : i.buyer;
       // The seller block comes from the invoice, as issued — never from today's settings.
       const pdf = await renderInvoicePdf({
         seller: { ...seller, legalName: i.seller.legalName, address: i.seller.address, gstin: i.seller.gstin, stateCode: i.seller.stateCode },
         documentType: i.documentType, number: i.number, invoiceDate: i.invoiceDate, original: i.original?.number ? { number: i.original.number } : null, reason: i.reason,
-        buyer: i.buyer, placeOfSupply: i.placeOfSupply, stay: i.stay, lines: i.lines, groups: i.groups,
+        buyer, placeOfSupply: i.placeOfSupply, stay: i.stay, lines: i.lines, groups: i.groups,
         taxableTotal: i.taxableTotal, cgstTotal: i.cgstTotal, sgstTotal: i.sgstTotal, igstTotal: i.igstTotal,
         roundOff: i.roundOff, grandTotal: i.grandTotal, paid: i.paid, paidAtIssue: i.paidAtIssue,
-        terms: row.invoice_terms, bankDetails: row.invoice_bank_details, maskMobile: row.print_mask_mobile,
+        terms: row.invoice_terms, bankDetails: row.invoice_bank_details, maskMobile: opts.forEmail || row.print_mask_mobile,
         finalizedAt: new Date(i.finalizedAt), finalizedBy: i.finalizedBy,
       });
       return { pdf, filename: `${i.number.replace(/\//g, '-')}.pdf` };
@@ -56,7 +66,14 @@ export class PrintingService {
   }
 
   async receiptPdf(actor: Actor, paymentId: string, paper?: Paper): Promise<{ pdf: Buffer; filename: string }> {
-    return this.db.tx({ userId: actor.user.id }, async (q) => {
+    return this.receiptPdfFor(actor.user.propertyId, paymentId, { userId: actor.user.id, paper });
+  }
+
+  /** A payment receipt. The emailed copy is always A4 and always masks the mobile. */
+  async receiptPdfFor(propertyId: string, paymentId: string, opts: { userId?: string; paper?: Paper; forEmail?: boolean } = {}): Promise<{ pdf: Buffer; filename: string }> {
+    const actor = { user: { propertyId } };
+    const paper = opts.forEmail ? 'a4' : opts.paper;
+    return this.db.tx({ userId: opts.userId }, async (q) => {
       const { rows } = await q.query<{
         number: string; entry_type: PaymentEntryType; method: PaymentMethod; amount: string; reference: string | null; business_date: string;
         received_at: Date; received_by_name: string; account_name: string | null; guest_name: string; mobile: string;
@@ -87,7 +104,7 @@ export class PrintingService {
         businessDate: p.business_date, receivedAt: p.received_at, receivedBy: p.received_by_name, accountName: p.account_name,
         guestName: p.guest_name, guestMobile: p.mobile, reservationNumber: p.reservation_number, roomNumber: p.room_number,
         billNumber: p.folio_number, isReversal: Boolean(p.reverses_number), reverses: p.reverses_number, reason: p.reversal_reason,
-        maskMobile: row.print_mask_mobile,
+        maskMobile: opts.forEmail || row.print_mask_mobile,
       }, paper ?? row.receipt_paper);
       return { pdf, filename: `${p.number}.pdf` };
     });
