@@ -21,12 +21,12 @@ export function useDeskQueue(draftId: string) {
   const [items, setItems] = useState<QueueItem[]>([]);
   useEffect(() => {
     const q = new UploadQueue(draftId, {
-      create: (item) => api(`/check-in-drafts/${draftId}/documents`, {
-        method: 'POST',
+      create: (item, signal) => api(`/check-in-drafts/${draftId}/documents`, {
+        method: 'POST', signal,
         body: { clientUploadId: item.id, source: item.source === 'phone_scanner' ? 'desk_camera' : item.source, docType: item.docType, idType: item.idType, occupantKey: item.occupantKey, contentType: item.contentType, sizeBytes: item.size, sha256: item.sha256 },
       }),
-      refresh: (documentId) => api(`/check-in-drafts/${draftId}/documents/${documentId}/grant`, { method: 'POST', body: {} }),
-      confirm: (documentId) => api(`/check-in-drafts/${draftId}/documents/${documentId}/confirm`, { method: 'POST', body: {} }),
+      refresh: (documentId, signal) => api(`/check-in-drafts/${draftId}/documents/${documentId}/grant`, { method: 'POST', body: {}, signal }),
+      confirm: (documentId, signal) => api(`/check-in-drafts/${draftId}/documents/${documentId}/confirm`, { method: 'POST', body: {}, signal }),
     });
     queue.current = q;
     const stop = q.start();
