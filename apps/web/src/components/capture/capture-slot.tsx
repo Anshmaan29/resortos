@@ -7,41 +7,26 @@ import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { cn } from '@/lib/cn';
 import type { QueueItem } from '@/lib/capture/upload-queue';
+import { type SlotState } from '@/lib/capture/slot-state';
 import { DocumentEditor, type EditorResult } from './document-editor';
 import { LiveCamera } from './live-camera';
 
 const ID_NAMES: Record<string, string> = { aadhaar: 'Aadhaar', passport: 'Passport', driving_licence: 'Driving licence', voter_id: 'Voter ID', pan: 'PAN card', other: 'Other ID' };
-
-export type SlotState =
-  | { kind: 'empty' }
-  | { kind: 'uploading'; progress: number }
-  | { kind: 'waiting_network' }
-  | { kind: 'verifying' }
-  | { kind: 'received' }
-  | { kind: 'failed'; message: string };
-
-/** Local queue state wins while an upload is in flight; the server's verified status is final. */
-export function slotState(serverStatus: 'pending' | 'verified' | 'failed' | 'orphaned' | undefined, item: QueueItem | undefined, progress: number): SlotState {
-  if (serverStatus === 'verified' || item?.status === 'done') return { kind: 'received' };
-  if (item?.status === 'failed') return { kind: 'failed', message: item.error ?? 'Upload failed' };
-  if (item?.status === 'waiting_network') return { kind: 'waiting_network' };
-  if (item?.status === 'verifying') return { kind: 'verifying' };
-  if (item && (item.status === 'uploading' || item.status === 'queued')) return { kind: 'uploading', progress };
-  if (serverStatus === 'pending') return { kind: 'verifying' };
-  if (serverStatus === 'failed') return { kind: 'failed', message: 'Upload failed — capture it again' };
-  return { kind: 'empty' };
-}
 
 export function SlotStatus({ state }: { state: SlotState }) {
   return (
     <AnimatePresence mode="wait" initial={false}>
       <motion.span key={state.kind} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
         className={cn('inline-flex items-center gap-1.5 text-sm font-medium',
-          state.kind === 'received' ? 'text-success' : state.kind === 'failed' ? 'text-danger' : state.kind === 'empty' ? 'text-text-2' : 'text-info')}
+          state.kind === 'received' ? 'text-success'
+            : state.kind === 'failed' ? 'text-danger'
+            : state.kind === 'blocked' ? 'text-warning'
+            : state.kind === 'empty' ? 'text-text-2' : 'text-info')}
         role="status">
         {state.kind === 'empty' && <><CircleDashed className="h-4 w-4" />Not captured</>}
         {state.kind === 'uploading' && <><Loader2 className="h-4 w-4 animate-spin" />Uploading {Math.round(state.progress * 100)}%</>}
         {state.kind === 'waiting_network' && <><CloudOff className="h-4 w-4" />Saved — waiting for network</>}
+        {state.kind === 'blocked' && <><CloudOff className="h-4 w-4" />{state.message}</>}
         {state.kind === 'verifying' && <><Loader2 className="h-4 w-4 animate-spin" />Checking…</>}
         {state.kind === 'received' && <><CheckCircle2 className="h-4 w-4" />Received</>}
         {state.kind === 'failed' && <><AlertTriangle className="h-4 w-4" />{state.message}</>}
