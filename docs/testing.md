@@ -44,6 +44,9 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | The night audit screen shows every step and never offers a button the server would refuse | `tests/e2e/night-audit.spec.ts` |
 | Edit / rebook use the same validation, limits and audit | `apps/api/test/booking-changes.test.ts` |
 | No SQL interpolation; demo data blocked from production | `apps/api/test/guards.test.ts` |
+| A backup really restores: dump → encrypt → upload → download → decrypt → hash check → restore → integrity checks | `apps/api/test/backup-restore.test.ts` |
+| A backup under Object Lock cannot be destroyed, and a plain delete only hides it (why the write credentials must also deny DeleteObject) | `apps/api/test/backup-restore.test.ts` |
+| A backup is unreadable without the offline key, and one flipped byte is caught rather than restored | `apps/api/test/backup-restore.test.ts` |
 | No read fans out with `Promise.all` over a `Queryable`, and `gather()` really does serialise on a transaction client | `apps/api/test/guards.test.ts` |
 | The overridden `multer` stays patched and keeps the API and error messages Nest maps to HTTP statuses | `apps/api/test/dependency-pins.test.ts` |
 | Phone scanner: single-use QR, 10-minute expiry, upload-only, no guest data to phone, device secret | `apps/api/test/check-in.test.ts` |

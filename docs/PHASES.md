@@ -144,5 +144,12 @@ confirm path, same validation, limits, audit and idempotency. The wizard stays t
 |---|---|
 | 2.1 Business date & night audit | ✅ Done — step registry (2.2 and 2.4 plug in without editing it), arrivals/departures blocking with the actions each row actually allows, room-status warnings, summary, day audit log, no-show, extend stay, and the business date moved only by a completed audit. Design and the concurrency reasoning: `docs/night-audit.md`. Open-shift check arrives with 2.4; revenue in the summary with 2.2 and 2.3. |
 | 2.2 – 2.8 | Not started |
-### Milestone 2G — minimum viable Gate 0 — not started
+### Milestone 2G — minimum viable Gate 0 — in progress
+
+| | |
+|---|---|
+| Layer 3 mechanism | ✅ Built and tested on every commit: `ops/backup/backup.mjs` (dump → envelope-encrypt → upload under Object Lock), `ops/backup/restore-test.mjs` (download → decrypt → hash check → restore → integrity checks → drop), `ops/backup/integrity.sql`, and the round trip in `apps/api/test/backup-restore.test.ts` against MinIO. |
+| Runbook | ✅ `ops/runbooks/restore.md` — keys, bucket, IAM, the nightly job, the restore test, and recovering for real. |
+| Real provider, real key, real drill | ⬜ Needs an account. Checklist and the restore-test log: `docs/production-readiness.md`. |
+| Layers 1 and 2 (PITR, second region) | ⬜ Provider settings; no provider yet. |
 ### Phase 3 — not started

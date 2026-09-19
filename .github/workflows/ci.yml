@@ -91,6 +91,15 @@ jobs:
       - name: Start MinIO (S3-compatible storage, same code path as production)
         run: bash ops/ci/minio.sh
 
+      # The restore test runs pg_dump/pg_restore against the PostgreSQL 16 service. pg_dump refuses
+      # to talk to a newer server, so the client major version is pinned rather than inherited from
+      # whatever the runner image happens to ship this month.
+      - name: PostgreSQL 16 client tools (for the backup restore test)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-16
+          pg_dump --version
+
       - run: pnpm install --frozen-lockfile
 
       - name: Build

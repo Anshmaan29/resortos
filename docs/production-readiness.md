@@ -4,9 +4,26 @@ Extends spec §85. Every box is ticked, with evidence linked, before any real gu
 
 ## Gate 0 — before any real guest data (hard rule)
 
-- [ ] Backup layers 1–3 running (PITR Mumbai, copies in Hyderabad, off-site second provider with Object Lock)
-- [ ] Restore test from the off-site copy passed and recorded (date, duration, row counts, totals)
-- [ ] Backup encryption key stored in two places outside the primary cloud
+Procedure for all of this: **`ops/runbooks/restore.md`**. The Layer 3 mechanism is built and runs on
+every commit against MinIO (`apps/api/test/backup-restore.test.ts`); what is left below is the real
+provider, the real key and the real drill, which no test can stand in for.
+
+- [ ] **Layer 1** — managed PostgreSQL 16 with point-in-time recovery, 35 days, verified by doing one PITR to a side database
+- [ ] **Layer 2** — provider copies in a second region
+- [ ] **Layer 3** — nightly `node ops/backup/backup.mjs` after night audit, to a *different provider*, in a bucket created **with Object Lock**, 60-day COMPLIANCE retention
+- [ ] Backup host credentials **write but cannot delete** (IAM policy in the runbook). Object Lock alone is not enough: a plain delete writes a delete marker that hides the backup without destroying it
+- [ ] **Encryption key pair generated off the server.** Public half on the backup host; private half in two places, neither of them the primary cloud. Fingerprint printed and kept with each copy
+- [ ] **Restore test from the real off-site copy passed and recorded below** — with the real key, not the test one
+- [ ] Alerting wired to the backup and restore-test exit codes (two silent nights is an incident)
+
+### Restore test log
+
+Every run of `node ops/backup/restore-test.mjs` against the real bucket. Gate 0 needs at least one
+PASS here; after that it is weekly.
+
+| Date | Backup taken | Duration | Rows (properties / guests / reservations) | Findings | Result | Run by |
+|---|---|---|---|---|---|---|
+| _none yet_ | | | | | | |
 
 ## Demo data can never reach production
 
