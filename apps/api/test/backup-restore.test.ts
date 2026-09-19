@@ -15,7 +15,7 @@ import { MIGRATOR_URL } from './helpers';
  * below is worth something rather than being a comment about what production will do.
  */
 const S3 = {
-  endpoint: process.env.S3_ENDPOINT ?? 'http://localhost:9000',
+  endpoint: process.env.TEST_S3_ENDPOINT ?? process.env.S3_ENDPOINT ?? 'http://localhost:9000',
   region: 'auto',
   credentials: { accessKeyId: 'resortos', secretAccessKey: 'resortos-dev-minio-secret' },
   forcePathStyle: true,
