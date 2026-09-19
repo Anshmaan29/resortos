@@ -33,6 +33,15 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | Throttling holds when the API clock drifts from the database clock (a fast app clock must not switch it off) | `apps/api/test/login-protection.test.ts` |
 | Audit tamper detection; app role cannot rewrite history | `apps/api/test/reservations.test.ts` |
 | Audit chain does not fork under 60 parallel actions | `apps/api/test/audit-concurrency.test.ts` |
+| Night audit refuses to close a day with an arrival or departure unresolved, and records the refusal | `apps/api/test/night-audit.test.ts` |
+| Six simultaneous completions close the date once and move the business date exactly one day, with no request refused as busy | `apps/api/test/night-audit.test.ts` |
+| The database itself refuses a second run for the same business date | `apps/api/test/night-audit.test.ts` |
+| Replaying every audit step against a closed date posts nothing twice (the contract 2.2's room-night posting must meet) | `apps/api/test/night-audit.test.ts` |
+| A completed run cannot be edited or deleted, and the business date cannot move backwards | `apps/api/test/night-audit.test.ts` |
+| A receptionist cannot complete the audit once the owner turns the setting off | `apps/api/test/night-audit.test.ts` |
+| No-show is recorded separately from cancellation, frees the room, and is refused before the arrival date | `apps/api/test/night-audit.test.ts` |
+| Extending a stay prices the new nights and is refused when the room is already sold | `apps/api/test/night-audit.test.ts` |
+| The night audit screen shows every step and never offers a button the server would refuse | `tests/e2e/night-audit.spec.ts` |
 | Edit / rebook use the same validation, limits and audit | `apps/api/test/booking-changes.test.ts` |
 | No SQL interpolation; demo data blocked from production | `apps/api/test/guards.test.ts` |
 | No read fans out with `Promise.all` over a `Queryable`, and `gather()` really does serialise on a transaction client | `apps/api/test/guards.test.ts` |
@@ -61,8 +70,13 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 inside the API integration tests, because they need the same fixtures, the same app instance and the
 same real database: two overlapping bookings and double-click idempotency in
 `reservations.test.ts`, the audit chain under 60 parallel actions in `audit-concurrency.test.ts`,
-double confirm in `check-in.test.ts`, and double card generation in `grc.test.ts`. Parallel invoice
-finalisation and two simultaneous night audits join them in Phase 2.
+double confirm in `check-in.test.ts`, double card generation in `grc.test.ts`, and six simultaneous
+night audits in `night-audit.test.ts`. Parallel invoice finalisation joins them in 2.6.
+
+**`night-audit.test.ts` runs on a database of its own** (`bootAppOnOwnDatabase`), because completing
+an audit moves the business date and every other suite asserts the seeded 2026-09-16. A separate
+database is cheaper, and far more honest, than closing a day and then disabling the triggers that
+protect the date in order to put it back.
 
 **The harness binds a real port.** `bootApp()` calls `app.listen(0)`, not just `app.init()`. Given a
 server that is not listening, supertest binds one lazily on the first request it sends — so a burst

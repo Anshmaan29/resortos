@@ -113,3 +113,19 @@ export interface RoomShiftLogItem {
   at: string; by: string; authorisedBy: string | null; stayId: string; guestName: string;
 }
 export interface SearchHit { kind: 'guest' | 'booking' | 'room' | 'vehicle'; id: string; href: string; title: string; subtitle: string }
+
+export interface NightAuditItem { id: string; label: string; href: string | null; actions: string[] }
+export interface NightAuditStepView {
+  name: string; title: string; blocking: boolean;
+  items: NightAuditItem[]; warnings: string[]; willDo: string | null;
+}
+export interface NightAuditRun {
+  id: string; businessDate: string; startedAt: string; completedAt: string; completedBy: string;
+  steps: { name: string; title: string; posted: number; skipped: number }[];
+  summary: Record<string, number>;
+}
+export interface NightAuditPreview {
+  businessDate: string; nextBusinessDate: string; alreadyCompleted: NightAuditRun | null;
+  canComplete: boolean; blocked: boolean; mayRun: boolean;
+  steps: NightAuditStepView[]; summary: Record<string, number>;
+}

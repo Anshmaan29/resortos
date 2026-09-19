@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Headers, HttpCode, Param, Patch, Post, Query, Req, Sse } from '@nestjs/common';
 import {
-  checkoutSchema, createCheckInDraftSchema, documentUploadRequestSchema, regenerateGrcSchema, roomShiftSchema,
+  checkoutSchema, createCheckInDraftSchema, documentUploadRequestSchema, extendStaySchema, regenerateGrcSchema, roomShiftSchema,
   stayListQuerySchema, updateCheckInDraftSchema, zId, zIsoDate,
 } from '@resortos/shared';
 import { z } from 'zod';
@@ -168,6 +168,13 @@ export class StaysController {
   @Get('stays/:id')
   stay(@CurrentActor() actor: Actor, @Param('id') id: string) {
     return this.stays.detail(this.db, actor.user.propertyId, parse(zId, id));
+  }
+
+  @Post('stays/:id/extend')
+  @HttpCode(200)
+  extend(@CurrentActor() actor: Actor, @Req() req: AppRequest, @IdempotencyKey() key: string | undefined, @Param('id') id: string, @Body() body: unknown) {
+    const input = parse(extendStaySchema, body);
+    return this.mutate(actor, req, key, body, (q) => this.stays.extend(q, actor, parse(zId, id), input));
   }
 
   @Post('stays/:id/shift-room')

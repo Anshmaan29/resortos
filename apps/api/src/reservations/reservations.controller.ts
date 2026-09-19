@@ -1,8 +1,8 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { z } from 'zod';
 import {
-  availabilityQuerySchema, BOOKING_SOURCES, cancelReservationSchema, createReservationSchema, RESERVATION_STATUSES, reservationEstimateSchema,
-  updateReservationSchema, zId, zIsoDate,
+  availabilityQuerySchema, BOOKING_SOURCES, cancelReservationSchema, createReservationSchema, noShowSchema, RESERVATION_STATUSES,
+  reservationEstimateSchema, updateReservationSchema, zId, zIsoDate,
 } from '@resortos/shared';
 import { CurrentActor, IdempotencyKey } from '../common/decorators';
 import { IdempotencyService } from '../common/idempotency.service';
@@ -91,6 +91,14 @@ export class ReservationsController {
     const reservationId = parse(zId, id);
     const input = parse(cancelReservationSchema, body);
     return this.mutate(actor, req, key, body, (q) => this.reservations.cancel(q, actor, reservationId, input));
+  }
+
+  @Post('reservations/:id/no-show')
+  @HttpCode(200)
+  noShow(@CurrentActor() actor: Actor, @Req() req: AppRequest, @IdempotencyKey() key: string | undefined, @Param('id') id: string, @Body() body: unknown) {
+    const reservationId = parse(zId, id);
+    const input = parse(noShowSchema, body);
+    return this.mutate(actor, req, key, body, (q) => this.reservations.noShow(q, actor, reservationId, input));
   }
 
   @Post('reservation-rooms/:id/assign')

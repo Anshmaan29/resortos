@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ERROR_CODES, formatDate, formatINR, type RoomShiftInput, type StayListQuery } from '@resortos/shared';
+import { ERROR_CODES, formatDate, formatINR, type ExtendStayInput, type RoomShiftInput, type StayListQuery } from '@resortos/shared';
 import { OwnerAuthorisationService } from '../auth/owner-authorisation.service';
 import { AuditService } from '../common/audit.service';
 import { AppError, notFound } from '../common/errors';
@@ -233,6 +233,81 @@ export class StaysService {
       before: { roomId: from.id, roomNumber: from.number }, after: { roomId: to.id, roomNumber: to.number, rateDecision: input.rateDecision },
     });
     await this.outbox.emit(q, actor.user.propertyId, 'stay.room_shifted', { type: 'stay', id: stayId }, { from: from.id, to: to.id });
+    return this.detail(q, actor.user.propertyId, stayId);
+  }
+
+  /**
+   * Extend a stay that is already in house — the other resolution night audit's departures step
+   * offers (spec §35.1 step 2). Whether the extra nights are actually available is decided by the
+   * `no_overlapping_room_allocations` exclusion constraint, not by a check-then-insert: the room
+   * may have been sold to somebody else for tomorrow.
+   *
+   * The new nights are quoted at current rates, so an extension picks up the rate calendar rather
+   * than silently carrying an old agreed rate forward. A rate below the room type's floor needs
+   * Owner PIN, exactly as it does on a booking.
+   */
+  async extend(q: Queryable, actor: Actor, stayId: string, input: ExtendStayInput) {
+    const stay = await this.lockStay(q, actor, stayId);
+    if (stay.status !== 'in_house') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'Only a guest who is in house can have their stay extended.');
+    if (input.newDeparture <= stay.expected_departure) {
+      throw new AppError(
+        ERROR_CODES.VALIDATION,
+        `The guest is already booked until ${formatDate(stay.expected_departure)}. To shorten the stay, check them out instead.`,
+        { fields: [{ path: 'newDeparture', message: `Must be after ${formatDate(stay.expected_departure)}` }] },
+      );
+    }
+    const bd = await this.property.businessDate(q, actor.user.propertyId);
+
+    const { rows: rrRows } = await q.query<ReservationRoomRow>(`SELECT * FROM reservation_rooms WHERE id = $1 FOR UPDATE`, [stay.reservation_room_id]);
+    const rr = rrRows[0]!;
+
+    // Price only the nights being added; the nights already stayed keep their agreed rates.
+    const quote = await this.rates.quote(q, actor.user.propertyId, {
+      roomTypeId: rr.room_type_id, arrival: stay.expected_departure, departure: input.newDeparture,
+      adults: rr.adults, childAges: rr.child_ages.map(Number), mealPlan: rr.meal_plan,
+      ...(input.nightlyRate ? { manualRate: input.nightlyRate } : {}),
+    });
+    const reasons = quote.belowFloor
+      ? [{
+          action: 'rate_below_floor' as const,
+          description: `Rate ${formatINR(quote.nights.find((n) => n.belowFloor)!.roomRate)} is below the minimum ${formatINR(quote.minRate)}`,
+        }]
+      : [];
+    const auth = await this.ownerAuth.require(
+      q, actor,
+      { operation: 'stay.extend', scope: { stayId, newDeparture: input.newDeparture, rates: quote.nights.map((n) => n.roomRate) }, reasons },
+      input.ownerAuthorisationId, { type: 'stay', id: stayId },
+    );
+
+    // The exclusion constraint decides: if the room is taken tomorrow, this update is refused.
+    const { rows: alloc } = await q.query<{ id: string }>(
+      `SELECT id FROM room_allocations WHERE reservation_room_id = $1 AND status = 'checked_in' FOR UPDATE`, [rr.id],
+    );
+    if (!alloc[0]) throw new AppError(ERROR_CODES.CONFLICT, 'The room allocation changed. Reload and try again.');
+    await q.query(`UPDATE room_allocations SET end_date = $2::date WHERE id = $1`, [alloc[0].id, input.newDeparture]);
+
+    for (const n of quote.nights) {
+      await q.query(
+        `INSERT INTO reservation_room_nights (reservation_room_id, night_date, property_id, room_rate, extra_person_amount, meal_amount, rate_source)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [rr.id, n.date, actor.user.propertyId, n.roomRate, n.extraPersonAmount, n.mealAmount, n.rateSource],
+      );
+    }
+    await q.query(`UPDATE reservation_rooms SET departure = $2::date WHERE id = $1`, [rr.id, input.newDeparture]);
+    await q.query(`UPDATE reservations SET departure = greatest(departure, $2::date), updated_by = $3 WHERE id = $1`,
+      [stay.reservation_id, input.newDeparture, actor.user.id]);
+    await q.query(`UPDATE stays SET expected_departure = $2::date WHERE id = $1`, [stayId, input.newDeparture]);
+    if (auth) await this.ownerAuth.recordOverrides(q, actor, auth, { type: 'stay', id: stayId });
+
+    await this.audit.record(q, actor, {
+      action: 'stay.extended', entityType: 'stay', entityId: stayId, reason: input.reason, authorisedBy: auth?.authorisedBy ?? null,
+      before: { expectedDeparture: stay.expected_departure },
+      after: { expectedDeparture: input.newDeparture, businessDate: bd, nightsAdded: quote.nights.length, total: quote.total },
+    });
+    await this.outbox.emit(q, actor.user.propertyId, 'stay.extended', { type: 'stay', id: stayId },
+      { from: stay.expected_departure, to: input.newDeparture });
+    await this.outbox.emit(q, actor.user.propertyId, 'inventory.changed', { type: 'stay', id: stayId },
+      { from: stay.expected_departure, to: input.newDeparture });
     return this.detail(q, actor.user.propertyId, stayId);
   }
 

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
   addDays, BOOKING_SOURCE_LABELS, Decimal, ERROR_CODES, formatDate, formatINR, formatReference, money, nightsBetween, toMoneyString,
-  type BookingSource, type CancelReservationInput, type CreateReservationInput, type IsoDate, type ReservationEstimateInput,
+  type BookingSource, type CancelReservationInput, type CreateReservationInput, type IsoDate, type NoShowInput, type ReservationEstimateInput,
   type ReservationStatus, type UpdateReservationInput,
 } from '@resortos/shared';
 import { OwnerAuthorisationService, type Authorisation, type AuthorisationReason } from '../auth/owner-authorisation.service';
@@ -496,6 +496,67 @@ export class ReservationsService {
       before: { status: res.status }, after: { status: 'cancelled', moneyOption, advancePaid: toMoneyString(paid) },
     });
     await this.outbox.emit(q, actor.user.propertyId, 'reservation.cancelled', { type: 'reservation', id });
+    await this.outbox.emit(q, actor.user.propertyId, 'inventory.changed', { type: 'reservation', id }, { from: res.arrival, to: res.departure });
+    return this.detail(q, actor.user.propertyId, id);
+  }
+
+  /**
+   * Mark a booking a no-show (spec §15.2) — the guest never arrived. Offered by night audit's
+   * arrivals step, which will not let a business date close with an arrival left unresolved.
+   *
+   * Recorded separately from a cancellation, because they are different facts: a cancellation was
+   * called off, a no-show means somebody held a room all night for nobody. §15.3 counts them apart.
+   * An advance uses the same money options as a cancellation, for the obvious reason that the money
+   * is in the same position either way.
+   */
+  async noShow(q: Queryable, actor: Actor, id: string, input: NoShowInput) {
+    const { rows } = await q.query<ReservationRow>(`SELECT * FROM reservations WHERE id = $1 AND property_id = $2 FOR UPDATE`, [id, actor.user.propertyId]);
+    const res = rows[0];
+    if (!res) throw notFound('Booking');
+    if (res.status !== 'confirmed') {
+      throw new AppError(
+        ERROR_CODES.INVALID_TRANSITION,
+        res.status === 'no_show' ? 'This booking is already marked a no-show.'
+          : res.status === 'tentative' ? 'Confirm the booking first, or cancel it — a tentative booking cannot be a no-show.'
+          : 'Only a confirmed booking that never arrived can be marked a no-show.',
+      );
+    }
+    const businessDate = await this.property.businessDate(q, actor.user.propertyId);
+    if (res.arrival > businessDate) {
+      throw new AppError(ERROR_CODES.INVALID_TRANSITION, `This booking arrives on ${formatDate(res.arrival)}. It cannot be a no-show before then.`);
+    }
+
+    const paid = await this.advancePaid(q, id);
+    let moneyOption = 'none';
+    if (paid.gt(0)) {
+      if (!input.moneyOption) {
+        throw new AppError(ERROR_CODES.VALIDATION, `An advance of ${formatINR(paid)} was paid. Choose what happens to this money.`, {
+          fields: [{ path: 'moneyOption', message: 'Choose what happens to the advance' }], advancePaid: toMoneyString(paid),
+        });
+      }
+      moneyOption = input.moneyOption;
+    } else if (input.moneyOption) {
+      throw new AppError(ERROR_CODES.VALIDATION, 'No money was paid on this booking, so there is nothing to refund or keep.');
+    }
+
+    await q.query(
+      `UPDATE reservations SET status = 'no_show', no_show_at = now(), no_show_by = $2, no_show_note = $3,
+              no_show_money_option = $4, updated_by = $2
+        WHERE id = $1`,
+      [id, actor.user.id, input.note ?? null, moneyOption],
+    );
+    await q.query(`UPDATE reservation_rooms SET status = 'no_show' WHERE reservation_id = $1 AND status = 'reserved'`, [id]);
+    // The room is free again from tonight: nobody is coming.
+    await q.query(
+      `UPDATE room_allocations SET status = 'released', release_reason = 'no_show'
+        WHERE status = 'reserved' AND reservation_room_id IN (SELECT id FROM reservation_rooms WHERE reservation_id = $1)`,
+      [id],
+    );
+    await this.audit.record(q, actor, {
+      action: 'reservation.no_show', entityType: 'reservation', entityId: id, reason: input.note ?? undefined,
+      before: { status: res.status }, after: { status: 'no_show', businessDate, moneyOption, advancePaid: toMoneyString(paid) },
+    });
+    await this.outbox.emit(q, actor.user.propertyId, 'reservation.no_show', { type: 'reservation', id }, { businessDate });
     await this.outbox.emit(q, actor.user.propertyId, 'inventory.changed', { type: 'reservation', id }, { from: res.arrival, to: res.departure });
     return this.detail(q, actor.user.propertyId, id);
   }
