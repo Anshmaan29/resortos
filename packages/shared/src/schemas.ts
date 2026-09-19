@@ -6,7 +6,8 @@ import {
   isE164, isValidGstin, isValidIndianVehicleNumber, isValidPinCode, normalizeIndianMobile, normalizeVehicleNumber,
 } from './validators';
 import {
-  ADDABLE_LINE_TYPES, TAX_CATEGORIES,
+  ACCOUNT_KINDS_FOR_METHOD, ADDABLE_LINE_TYPES, DESK_ENTRY_TYPES, DESK_PAYMENT_METHODS, PAYMENT_ACCOUNT_KINDS,
+  PAYMENT_REFERENCE_LABEL, TAX_CATEGORIES,
   BOOKING_SOURCES, CANCELLATION_MONEY_OPTIONS, CANCELLATION_REASONS, HOUSEKEEPING_STATUSES, MEAL_PLAN_CODES,
   OTA_SOURCES, ROLES, ROOM_VIEWS, SERVICE_STATUSES, UNIT_TYPES, VISIT_PURPOSES,
 } from './domain';
@@ -21,6 +22,7 @@ export const zMoney = z
   .transform((v) => money(v).toFixed(2));
 
 export const zNonNegativeMoney = zMoney.refine((v) => !money(v).isNegative(), 'Amount cannot be negative');
+export const zPositiveMoney = zMoney.refine((v) => money(v).gt(0), 'Amount must be more than zero');
 
 export const zMobile = z
   .string()
@@ -303,6 +305,81 @@ export const chargeItemSchema = z.object({
 });
 export type ChargeItemInput = z.infer<typeof chargeItemSchema>;
 
+/**
+ * Recording money taken (spec §25). The account is where it landed; the method is how it was taken,
+ * and drives which reference the desk must capture. The pair is checked again in the database, so a
+ * form that gets it wrong is refused rather than stored.
+ */
+export const recordPaymentSchema = z
+  .object({
+    entryType: z.enum(DESK_ENTRY_TYPES).default('payment'),
+    method: z.enum(DESK_PAYMENT_METHODS),
+    paymentAccountId: zId.optional(),
+    amount: zPositiveMoney,
+    reference: optionalText(80),
+    note: optionalText(300),
+    businessDate: zIsoDate.optional(),
+    ownerAuthorisationId: zId.optional(),
+  })
+  .superRefine((v, ctx) => {
+    const needsAccount = ACCOUNT_KINDS_FOR_METHOD[v.method] !== null;
+    if (needsAccount && !v.paymentAccountId) {
+      ctx.addIssue({ code: 'custom', path: ['paymentAccountId'], message: 'Choose where the money went' });
+    }
+    if (!needsAccount && v.paymentAccountId) {
+      ctx.addIssue({ code: 'custom', path: ['paymentAccountId'], message: 'This settlement moves no money, so it has no account' });
+    }
+    if (v.entryType === 'deposit' && !needsAccount) {
+      ctx.addIssue({ code: 'custom', path: ['method'], message: 'A security deposit is real money — take it by cash, UPI, card or bank' });
+    }
+    if (PAYMENT_REFERENCE_LABEL[v.method] && !v.reference) {
+      ctx.addIssue({ code: 'custom', path: ['reference'], message: `Enter the ${PAYMENT_REFERENCE_LABEL[v.method]!.toLowerCase()}` });
+    }
+  });
+export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
+
+/**
+ * The security deposit decision at checkout (spec §27): some of it applied to the bill, the rest
+ * given back. The two must account for all of it; the server decides whether the split needs the
+ * owner.
+ */
+export const depositDecisionSchema = z
+  .object({
+    adjust: zNonNegativeMoney.default('0.00'),
+    refund: zNonNegativeMoney.default('0.00'),
+    refundMethod: z.enum(['cash', 'upi', 'card', 'bank_transfer', 'cheque']).optional(),
+    refundAccountId: zId.optional(),
+    reference: optionalText(80),
+    ownerAuthorisationId: zId.optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (money(v.refund).gt(0) && (!v.refundMethod || !v.refundAccountId)) {
+      ctx.addIssue({ code: 'custom', path: ['refundAccountId'], message: 'Choose how the deposit goes back' });
+    }
+  });
+export type DepositDecisionInput = z.infer<typeof depositDecisionSchema>;
+
+/** Reversing a payment (spec §25.4). A new record; nothing is overwritten. */
+export const reversePaymentSchema = z.object({
+  reason: z.string().trim().min(3, 'Say why this payment is being reversed').max(300),
+  ownerAuthorisationId: zId.optional(),
+});
+export type ReversePaymentInput = z.infer<typeof reversePaymentSchema>;
+
+/** A place money lands (spec §25.1). Owner settings. */
+export const paymentAccountSchema = z.object({
+  name: z.string().trim().min(1, 'Enter a name').max(60),
+  kind: z.enum(PAYMENT_ACCOUNT_KINDS),
+  bankName: optionalText(80),
+  accountLast4: z.string().regex(/^\d{4}$/, 'Enter the last 4 digits').optional().or(z.literal('').transform(() => undefined)),
+  upiHandle: optionalText(80),
+  posTerminal: optionalText(40),
+  openingBalance: zMoney.default('0.00'),
+  sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
+  isActive: z.boolean().optional(),
+});
+export type PaymentAccountInput = z.infer<typeof paymentAccountSchema>;
+
 export const rateQuoteQuerySchema = z
   .object({
     roomTypeId: zId,
@@ -419,3 +496,22 @@ export const checkoutSchema = z.object({
   /** Reserved for Phase 2 steps (settlement, invoice). */
   steps: z.record(z.string(), z.unknown()).default({}),
 });
+
+/** Opening a cashier shift (spec §34.1): the cash in the drawer when it starts. */
+export const openShiftSchema = z.object({
+  openingCash: zNonNegativeMoney,
+});
+export type OpenShiftInput = z.infer<typeof openShiftSchema>;
+
+/**
+ * Closing a shift (spec §34.3): what was actually counted, and the card machine's settlement slip.
+ * Whether a difference needs a reason depends on the owner's threshold, so the server decides that.
+ */
+export const closeShiftSchema = z.object({
+  countedCash: zNonNegativeMoney,
+  posBatchTotal: zNonNegativeMoney.optional(),
+  differenceReason: optionalText(300),
+  handoverNote: optionalText(500),
+  version: z.coerce.number().int().min(1),
+});
+export type CloseShiftInput = z.infer<typeof closeShiftSchema>;

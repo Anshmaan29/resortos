@@ -165,3 +165,68 @@ export const DEFAULT_TAX_CATEGORY: Record<AddableLineType, (typeof TAX_CATEGORIE
   food: 'food', beverage: 'food', activity: 'activity', laundry: 'laundry', transport: 'transport',
   early_checkin: 'accommodation', late_checkout: 'accommodation', damage: 'other', other: 'other',
 };
+
+/** How money was taken (spec §25.1). ResortOS records payments; it never processes them. */
+export const PAYMENT_METHODS = [
+  'cash', 'upi', 'card', 'bank_transfer', 'cheque', 'ota_prepaid', 'company_account', 'guest_credit', 'deposit',
+] as const;
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
+/** What the desk can pick. `deposit` is only ever written by the checkout deposit decision. */
+export const DESK_PAYMENT_METHODS = [
+  'cash', 'upi', 'card', 'bank_transfer', 'cheque', 'ota_prepaid', 'company_account', 'guest_credit',
+] as const satisfies readonly PaymentMethod[];
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  cash: 'Cash', upi: 'UPI', card: 'Card (POS machine)', bank_transfer: 'Bank transfer',
+  cheque: 'Cheque', ota_prepaid: 'Prepaid via OTA', company_account: 'Company account',
+  guest_credit: 'Guest credit', deposit: 'From security deposit',
+};
+
+/** What reference the desk must capture for each method (§25.1). */
+export const PAYMENT_REFERENCE_LABEL: Record<PaymentMethod, string | null> = {
+  cash: null,
+  upi: 'UTR or transaction ID',
+  card: 'Approval code or last 4 digits',
+  bank_transfer: 'UTR or reference',
+  cheque: 'Cheque number and bank',
+  ota_prepaid: 'OTA reference',
+  company_account: null,
+  guest_credit: null,
+  deposit: null,
+};
+
+export const PAYMENT_ACCOUNT_KINDS = ['cash', 'bank', 'upi', 'card_pos', 'other'] as const;
+export type PaymentAccountKind = (typeof PAYMENT_ACCOUNT_KINDS)[number];
+
+export const PAYMENT_ACCOUNT_KIND_LABELS: Record<PaymentAccountKind, string> = {
+  cash: 'Cash counter', bank: 'Bank account', upi: 'UPI', card_pos: 'Card machine', other: 'Other',
+};
+
+/**
+ * Which account kinds a method may be posted to, mirroring the database CHECK exactly so the form
+ * can only offer what the database will accept. Null means the method moves no money at the desk
+ * and takes no account: it settles the bill against a company, an OTA, a guest credit or a deposit.
+ */
+export const ACCOUNT_KINDS_FOR_METHOD: Record<PaymentMethod, readonly PaymentAccountKind[] | null> = {
+  cash: ['cash'],
+  upi: ['upi'],
+  card: ['card_pos'],
+  bank_transfer: ['bank'],
+  cheque: ['bank'],
+  ota_prepaid: null,
+  company_account: null,
+  guest_credit: null,
+  deposit: null,
+};
+
+export const PAYMENT_ENTRY_TYPES = ['payment', 'advance', 'deposit', 'refund', 'deposit_refund', 'deposit_adjustment'] as const;
+export type PaymentEntryType = (typeof PAYMENT_ENTRY_TYPES)[number];
+
+/** What the desk records directly; deposit refunds and adjustments come from the deposit decision. */
+export const DESK_ENTRY_TYPES = ['payment', 'advance', 'deposit', 'refund'] as const;
+
+export const PAYMENT_ENTRY_TYPE_LABELS: Record<PaymentEntryType, string> = {
+  payment: 'Payment', advance: 'Advance', deposit: 'Security deposit', refund: 'Refund',
+  deposit_refund: 'Deposit returned', deposit_adjustment: 'Deposit applied to bill',
+};

@@ -1,5 +1,5 @@
 import type {
-  AddableLineType, FolioLineType, HousekeepingStatus, IdType, MealPlanCode, OccupancyStatus, ReservationStatus, Role, RoomDisplayState, ServiceStatus, VisitPurpose } from '@resortos/shared';
+  AddableLineType, FolioLineType, PaymentAccountKind, PaymentEntryType, PaymentMethod, HousekeepingStatus, IdType, MealPlanCode, OccupancyStatus, ReservationStatus, Role, RoomDisplayState, ServiceStatus, VisitPurpose } from '@resortos/shared';
 
 export interface Me { id: string; propertyId: string; fullName: string; username: string; role: Role; discountLimitPercent: string; mustChangePassword: boolean; canRunNightAudit: boolean }
 export interface Property { id: string; name: string; legalName: string; city: string; stateCode: string; gstin: string | null; businessDate: string; checkInTime: string; checkOutTime: string; isPractice: boolean; version: number }
@@ -149,10 +149,56 @@ export interface Bill {
     grandTotal: string | null; groups: { ratePercent: string; taxableValue: string; cgst: string; sgst: string; igst: string }[];
     usesPlaceholderRates: boolean;
   };
+  payments: BillPayment[];
   paid: string;
+  depositHeld: string;
   balance: string | null;
 }
 export interface ChargeItem {
   id: string; name: string; lineType: AddableLineType; defaultRate: string;
   taxCategory: string; isActive: boolean; sortOrder: number; version: number;
+}
+
+export interface BillPayment {
+  id: string; number: string; folioId: string | null; reservationId: string;
+  entryType: PaymentEntryType; method: PaymentMethod; accountId: string | null; accountName: string | null;
+  amount: string; billEffect: string; depositEffect: string; cashEffect: string;
+  reference: string | null; note: string | null;
+  businessDate: string; at: string; by: string;
+  isReversal: boolean; reverses: string | null; reversalReason: string | null;
+  reversed: boolean; reversedAt: string | null; reversedReason: string | null;
+  status: 'recorded' | 'reversed';
+}
+export interface PaymentAccount {
+  id: string; name: string; kind: PaymentAccountKind; bankName: string | null; accountLast4: string | null;
+  upiHandle: string | null; posTerminal: string | null; openingBalance: string;
+  isActive: boolean; sortOrder: number; version: number;
+}
+
+export interface ShiftAccountTotal { id: string; name: string; kind: PaymentAccountKind; amount: string; entries: number }
+export interface Shift {
+  id: string; businessDate: string; status: 'open' | 'closed';
+  openedAt: string; openedBy: string; openedById: string; openingCash: string;
+  closedAt: string | null; closedBy: string | null;
+  accounts: ShiftAccountTotal[];
+  expectedCash: string; expectedCard: string; countedCash: string | null; posBatchTotal: string | null;
+  cashDifference: string | null; cardDifference: string | null; differenceReason: string | null; handoverNote: string | null;
+  cashDifferenceThreshold: string;
+  payments: { id: string; number: string; entryType: PaymentEntryType; method: PaymentMethod; amount: string; cashEffect: string; accountName: string | null; reference: string | null; at: string; isReversal: boolean }[];
+  version: number;
+}
+export interface CurrentShift {
+  shift: Shift | null;
+  lastClosed: { countedCash: string; closedAt: string; closedBy: string; handoverNote: string | null } | null;
+}
+export interface ShiftListItem {
+  id: string; businessDate: string; status: 'open' | 'closed'; openedAt: string; openedBy: string;
+  closedAt: string | null; closedBy: string | null; openingCash: string; countedCash: string | null;
+  expectedCash: string | null; cashDifference: string | null; differenceReason: string | null;
+}
+export interface AccountBalance { id: string; name: string; kind: PaymentAccountKind; openingBalance: string; received: string; entries: number; balance: string }
+export interface AccountLedger {
+  account: { id: string; name: string; kind: PaymentAccountKind };
+  from: string | null; to: string | null; openingBalance: string; closingBalance: string;
+  lines: { source: string; sourceId: string; reference: string; businessDate: string; at: string; by: string; description: string; amount: string; balance: string }[];
 }

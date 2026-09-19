@@ -3,6 +3,8 @@ import { AuthModule } from '../auth/auth.module';
 import { PropertyModule } from '../property/property.module';
 import { RatesModule } from '../rates/rates.module';
 import { FolioService } from './folio.service';
+import { BalanceIntegrityStep } from './integrity.step';
+import { PaymentsService } from './payments.service';
 import { FoliosController } from './folios.controller';
 import { RoomNightPostingStep } from './room-night.step';
 
@@ -15,7 +17,7 @@ import { RoomNightPostingStep } from './room-night.step';
 @Module({
   imports: [PropertyModule, RatesModule, AuthModule],
   controllers: [FoliosController],
-  providers: [FolioService, RoomNightPostingStep],
-  exports: [FolioService, RoomNightPostingStep],
+  providers: [FolioService, PaymentsService, RoomNightPostingStep, BalanceIntegrityStep],
+  exports: [FolioService, PaymentsService, RoomNightPostingStep, BalanceIntegrityStep],
 })
 export class FoliosModule {}

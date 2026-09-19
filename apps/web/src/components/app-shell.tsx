@@ -1,7 +1,7 @@
 'use client';
 import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { BedDouble, CalendarDays, ChevronDown, ClipboardList, Home, LogOut, MoonStar, Palmtree, Plus, Search, UserRound, WifiOff } from 'lucide-react';
+import { BedDouble, CalendarDays, ChevronDown, ClipboardList, Home, Landmark, LogOut, MoonStar, Palmtree, Plus, Search, UserRound, Wallet, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -19,7 +19,9 @@ const NAV = [
   { href: '/in-house', label: 'In house', icon: BedDouble, phone: true },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays, phone: false },
   { href: '/rooms', label: 'Rooms', icon: BedDouble, phone: false },
+  { href: '/shifts', label: 'Shift', icon: Wallet, phone: false },
   { href: '/night-audit', label: 'Night audit', icon: MoonStar, phone: false },
+  { href: '/accounts', label: 'Accounts', icon: Landmark, phone: false, owner: true },
 ];
 
 /** Four fit around the new-booking button; the rest live in the sidebar on bigger screens. */
@@ -91,7 +93,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link href="/reservations/new"><Button className="w-full justify-start" size="md"><Plus className="h-4 w-4" />New booking<kbd className="ml-auto rounded border border-white/30 px-1.5 text-[10px] font-normal opacity-80">N</kbd></Button></Link>
         </div>
         <nav className="flex flex-col gap-0.5 px-3" aria-label="Main">
-          {NAV.map((item) => {
+          {NAV.filter((item) => !('owner' in item) || me.data?.role === 'owner').map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
             return (

@@ -11,6 +11,7 @@ import type { Actor } from '../common/request-context';
 import { DbService, gather, type Queryable } from '../db/db.service';
 import { PropertyService } from '../property/property.service';
 import { RatesService } from '../rates/rates.service';
+import { PaymentsService } from './payments.service';
 
 interface FolioRow {
   id: string; property_id: string; number: string; stay_id: string | null; reservation_id: string;
@@ -43,6 +44,7 @@ export class FolioService {
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
     private readonly ownerAuth: OwnerAuthorisationService,
+    private readonly payments: PaymentsService,
   ) {}
 
   /**
@@ -59,10 +61,16 @@ export class FolioService {
     );
     if (existing[0]) return existing[0];
 
+    // Serialise on the stay, then look again. Without the lock two first looks both find no bill,
+    // both insert, and the loser is refused by `folios_one_per_stay` — correct, but a 409 on what is
+    // only a read to the person at the desk. NO KEY UPDATE, so it does not block the foreign-key
+    // share lock that inserting the bill itself takes.
     const { rows: stay } = await q.query<{ reservation_id: string }>(
-      `SELECT reservation_id FROM stays WHERE id = $1 AND property_id = $2`, [stayId, actor.user.propertyId],
+      `SELECT reservation_id FROM stays WHERE id = $1 AND property_id = $2 FOR NO KEY UPDATE`, [stayId, actor.user.propertyId],
     );
     if (!stay[0]) throw notFound('Stay');
+    const { rows: again } = await q.query<FolioRow>(`SELECT * FROM folios WHERE stay_id = $1`, [stayId]);
+    if (again[0]) return again[0];
 
     const { rows: n } = await q.query<{ next_reference: string }>(
       `SELECT next_reference($1, 'folio')`, [actor.user.propertyId],
@@ -146,9 +154,13 @@ export class FolioService {
       };
     }
 
-    // Payments arrive in 2.3. Until then nothing has been paid, and the bill says so rather than
-    // hiding the row — the desk should see where the number will appear.
-    const paid = money(0);
+    // Recalculated from the payment rows every time — there is no stored balance to drift (§49).
+    const [payments, paidTotal, depositHeld] = await gather(q, [
+      () => this.payments.forFolio(q, propertyId, folioId),
+      () => this.payments.paidOnFolio(q, folioId),
+      () => this.payments.depositHeld(q, folioId),
+    ]);
+    const paid = money(paidTotal);
     const balance = tax.grandTotal ? money(tax.grandTotal).minus(paid) : null;
 
     return {
@@ -165,7 +177,10 @@ export class FolioService {
       })),
       charges: toMoneyString(charges),
       tax,
+      payments,
       paid: toMoneyString(paid),
+      // Held for the guest, not income and not part of "paid" (§27).
+      depositHeld: toMoneyString(depositHeld),
       balance: balance ? toMoneyString(balance) : null,
     };
   }

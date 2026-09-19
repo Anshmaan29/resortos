@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from './auth/auth.module';
+import { CashierModule } from './cashier/cashier.module';
 import { APP_CONFIG, loadConfig } from './config';
 import { DbModule } from './db/db.module';
 import { FoliosModule } from './folios/folios.module';
@@ -19,7 +20,7 @@ import { Global } from '@nestjs/common';
 class ConfigModule {}
 
 @Module({
-  imports: [ConfigModule, DbModule, StorageModule, JobsModule, AuthModule, PropertyModule, RatesModule, GuestsModule, ReservationsModule, StaysModule, FoliosModule, NightAuditModule],
+  imports: [ConfigModule, DbModule, StorageModule, JobsModule, AuthModule, PropertyModule, RatesModule, GuestsModule, ReservationsModule, StaysModule, FoliosModule, CashierModule, NightAuditModule],
   controllers: [HealthController],
 })
 export class AppModule {}

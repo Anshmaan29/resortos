@@ -1,24 +1,29 @@
 'use client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Receipt, Undo2 } from 'lucide-react';
+import { IndianRupee, Plus, Receipt, Undo2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import {
-  ADDABLE_LINE_TYPES, FOLIO_LINE_TYPE_LABELS, formatDate, formatINR, money, toMoneyString,
-  type AddableLineType,
+  ADDABLE_LINE_TYPES, FOLIO_LINE_TYPE_LABELS, formatDate, formatINR, money, PAYMENT_ENTRY_TYPE_LABELS,
+  PAYMENT_METHOD_LABELS, toMoneyString, type AddableLineType,
 } from '@resortos/shared';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input, Select, Textarea } from '@/components/ui/field';
 import { Card, CardHeader, EmptyState, ErrorBanner, Skeleton } from '@/components/ui/surface';
+import { useOwnerApproval } from '@/components/ui/owner-pin';
 import { useToast } from '@/components/ui/toast';
+import { DepositDialog, RecordPaymentDialog, ReversePaymentDialog } from './payment-dialogs';
 import { api, newIdempotencyKey, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import type { Bill, BillLine, ChargeItem } from '@/lib/types';
+import type { Bill, BillLine, BillPayment, ChargeItem } from '@/lib/types';
 
 /** Staff word is "Bill", never "folio" (CLAUDE.md conventions). */
 export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolean }) {
   const [addOpen, setAddOpen] = useState(false);
   const [voiding, setVoiding] = useState<BillLine | null>(null);
+  const [payOpen, setPayOpen] = useState(false);
+  const [reversing, setReversing] = useState<BillPayment | null>(null);
+  const [depositOpen, setDepositOpen] = useState(false);
 
   const bill = useQuery({ queryKey: ['bill', stayId], queryFn: () => api<Bill>(`/stays/${stayId}/bill`) });
 
@@ -32,9 +37,14 @@ export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolea
         title="Bill"
         description={`${b.number} · charges are added against the business date they belong to`}
         action={canEdit && b.status === 'open' ? (
-          <Button size="sm" variant="secondary" onClick={() => setAddOpen(true)}>
-            <Plus className="h-4 w-4" aria-hidden />Add charge
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4" aria-hidden />Add charge
+            </Button>
+            <Button size="sm" onClick={() => setPayOpen(true)}>
+              <IndianRupee className="h-4 w-4" aria-hidden />Record payment
+            </Button>
+          </div>
         ) : undefined}
       />
 
@@ -93,6 +103,39 @@ export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolea
         </div>
       )}
 
+      {b.payments.length > 0 && (
+        <div className="overflow-x-auto border-t border-border">
+          <table className="w-full text-sm">
+            <caption className="px-4 pt-3 text-left text-xs font-medium uppercase tracking-wide text-text-3">Payments</caption>
+            <tbody>
+              {b.payments.map((p) => (
+                <tr key={p.id} className={cn('border-b border-border last:border-0', p.reversed && 'text-text-3')}>
+                  <td className="whitespace-nowrap px-4 py-2 tabular-nums">{formatDate(p.businessDate, { year: false })}</td>
+                  <td className="px-4 py-2">
+                    <span className={cn(p.reversed && 'line-through')}>
+                      {p.isReversal ? 'Reversal' : PAYMENT_ENTRY_TYPE_LABELS[p.entryType]} · {PAYMENT_METHOD_LABELS[p.method]}
+                    </span>
+                    <span className="ml-2 text-xs text-text-3">{p.number}{p.accountName ? ` · ${p.accountName}` : ''}{p.reference ? ` · ${p.reference}` : ''}</span>
+                    {p.reversed && <p className="mt-0.5 text-xs">Reversed — {p.reversedReason}</p>}
+                    {p.isReversal && <p className="mt-0.5 text-xs text-text-3">{p.reversalReason}</p>}
+                  </td>
+                  <td className={cn('px-4 py-2 text-right tabular-nums', p.reversed && 'line-through')}>{formatINR(p.entryType.startsWith('deposit') && p.entryType !== 'deposit_adjustment' ? p.depositEffect : p.billEffect)}</td>
+                  {canEdit && (
+                    <td className="px-4 py-2 text-right">
+                      {!p.reversed && !p.isReversal && b.status === 'open' && (
+                        <Button size="sm" variant="ghost" onClick={() => setReversing(p)} aria-label={`Reverse ${p.number}`}>
+                          <Undo2 className="h-4 w-4" aria-hidden />Reverse
+                        </Button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <dl className="flex flex-col gap-1.5 border-t border-border p-4 text-sm">
         <Row k="Charges before GST" v={formatINR(b.charges)} />
         {b.tax.available ? (
@@ -106,6 +149,14 @@ export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolea
           <p className="text-warning">{b.tax.message}</p>
         )}
         <Row k="Paid" v={formatINR(b.paid)} muted />
+        {Number(b.depositHeld) !== 0 && (
+          <div className="flex items-center justify-between gap-4">
+            <Row k="Security deposit held (not part of the bill)" v={formatINR(b.depositHeld)} muted />
+            {canEdit && b.status === 'open' && Number(b.depositHeld) > 0 && (
+              <Button size="sm" variant="outline" onClick={() => setDepositOpen(true)}>Settle deposit</Button>
+            )}
+          </div>
+        )}
         <Row k="Balance" v={b.balance ? formatINR(b.balance) : '—'} strong />
       </dl>
 
@@ -117,6 +168,9 @@ export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolea
 
       <AddChargeDialog bill={b} stayId={stayId} open={addOpen} onClose={() => setAddOpen(false)} />
       <VoidLineDialog line={voiding} stayId={stayId} onClose={() => setVoiding(null)} />
+      <RecordPaymentDialog bill={b} stayId={stayId} open={payOpen} onClose={() => setPayOpen(false)} />
+      <ReversePaymentDialog payment={reversing} stayId={stayId} onClose={() => setReversing(null)} />
+      {depositOpen && <DepositDialog bill={b} stayId={stayId} open={depositOpen} onClose={() => setDepositOpen(false)} />}
     </Card>
   );
 }
@@ -248,9 +302,11 @@ function VoidLineDialog({ line, stayId, onClose }: { line: BillLine | null; stay
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  const approval = useOwnerApproval((authorisationId) => remove.mutate(authorisationId));
   const remove = useMutation({
-    mutationFn: () => api<Bill>(`/folio-lines/${line!.id}/void`, {
-      method: 'POST', idempotencyKey: key.current, body: { reason: reason.trim() },
+    // A line on a day night audit has closed needs the owner (spec §4.5).
+    mutationFn: (ownerAuthorisationId?: string) => api<Bill>(`/folio-lines/${line!.id}/void`, {
+      method: 'POST', idempotencyKey: key.current, body: { reason: reason.trim(), ownerAuthorisationId },
     }),
     onSuccess: (updated) => {
       queryClient.setQueryData(['bill', stayId], updated);
@@ -260,6 +316,7 @@ function VoidLineDialog({ line, stayId, onClose }: { line: BillLine | null; stay
       onClose();
     },
     onError: (err) => {
+      if (approval.handleError(err)) return;
       setError((err as Error).message);
       toast('error', (err as Error).message);
     },
@@ -274,7 +331,7 @@ function VoidLineDialog({ line, stayId, onClose }: { line: BillLine | null; stay
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Keep it</Button>
-          <Button variant="danger" loading={remove.isPending} disabled={reason.trim().length < 3} onClick={() => remove.mutate()}>
+          <Button variant="danger" loading={remove.isPending} disabled={reason.trim().length < 3} onClick={() => remove.mutate(undefined)}>
             Remove charge
           </Button>
         </>
@@ -285,6 +342,7 @@ function VoidLineDialog({ line, stayId, onClose }: { line: BillLine | null; stay
         <Field label="Why" required hint="Shown on the bill next to the removed line">
           {(id) => <Input id={id} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Added to the wrong room" maxLength={300} />}
         </Field>
+        {approval.dialog}
       </div>
     </Dialog>
   );
