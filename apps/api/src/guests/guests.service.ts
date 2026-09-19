@@ -10,6 +10,7 @@ export const mapGuest = (r: GuestRow) => ({
   id: r.id, firstName: r.first_name, lastName: r.last_name, fullName: `${r.first_name} ${r.last_name}`.trim(),
   mobile: r.mobile, email: r.email, addressLine: r.address_line, city: r.city, state: r.state, pinCode: r.pin_code,
   country: r.country, nationality: r.nationality, companyName: r.company_name, companyGstin: r.company_gstin,
+  preferredLanguage: r.preferred_language,
   preferences: r.preferences, isVip: r.is_vip, specialNote: r.special_note, version: r.version,
 });
 
@@ -128,11 +129,11 @@ export class GuestsService {
   async createInTx(q: Queryable, actor: Actor, input: GuestInput) {
     const { rows } = await q.query<GuestRow>(
       `INSERT INTO guests (property_id, first_name, last_name, mobile, email, address_line, city, state, pin_code, country,
-                           nationality, company_name, company_gstin, preferences, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+                           nationality, company_name, company_gstin, preferences, created_by, preferred_language)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
       [actor.user.propertyId, input.firstName, input.lastName, input.mobile, input.email ?? null, input.addressLine ?? null,
         input.city ?? null, input.state ?? null, input.pinCode ?? null, input.country, input.nationality, input.companyName ?? null,
-        input.companyGstin ?? null, input.preferences ?? null, actor.user.id],
+        input.companyGstin ?? null, input.preferences ?? null, actor.user.id, input.preferredLanguage],
     );
     const guest = mapGuest(rows[0]!);
     // Audit stores identifiers only — not the guest's personal details.
@@ -150,11 +151,11 @@ export class GuestsService {
       if (!before[0]) throw notFound('Guest');
       const { rows } = await q.query<GuestRow>(
         `UPDATE guests SET first_name=$4, last_name=$5, mobile=$6, email=$7, address_line=$8, city=$9, state=$10, pin_code=$11,
-                country=$12, nationality=$13, company_name=$14, company_gstin=$15, preferences=$16, updated_by=$17
+                country=$12, nationality=$13, company_name=$14, company_gstin=$15, preferences=$16, updated_by=$17, preferred_language=$18
           WHERE id=$1 AND property_id=$2 AND version=$3 RETURNING *`,
         [id, actor.user.propertyId, expectedVersion, input.firstName, input.lastName, input.mobile, input.email ?? null,
           input.addressLine ?? null, input.city ?? null, input.state ?? null, input.pinCode ?? null, input.country, input.nationality,
-          input.companyName ?? null, input.companyGstin ?? null, input.preferences ?? null, actor.user.id],
+          input.companyName ?? null, input.companyGstin ?? null, input.preferences ?? null, actor.user.id, input.preferredLanguage],
       );
       if (!rows[0]) throw staleVersion();
       const changed = Object.keys(input).filter((k) => {

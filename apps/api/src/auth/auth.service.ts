@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { ERROR_CODES, normalizeIndianMobile, type CreateUserInput, type Role } from '@resortos/shared';
+import { ERROR_CODES, normalizeIndianMobile, type CreateUserInput, type Role, type UpdateUserInput } from '@resortos/shared';
 import { APP_CONFIG, type AppConfig } from '../config';
 import { AuditService } from '../common/audit.service';
 import { AppError, forbidden, notFound } from '../common/errors';
@@ -381,8 +381,29 @@ export class AuthService {
     return rows.map((r) => ({
       id: r.id, fullName: r.full_name, username: r.username, mobile: r.mobile, role: r.role, isActive: r.is_active,
       mustChangePassword: r.must_change_password, discountLimitPercent: r.discount_limit_percent, canRunNightAudit: r.can_run_night_audit,
+      hasStaffPin: Boolean(r.staff_pin_hash),
       ownerPinLocked: !!r.owner_pin_locked_until && r.owner_pin_locked_until > new Date(), hasOwnerPin: r.has_owner_pin, createdAt: r.created_at,
     }));
+  }
+
+  /** A staff member's name, mobile and receptionist limits (spec §4.5). Owner only; audited with before and after. */
+  async updateUser(actor: Actor, id: string, input: UpdateUserInput) {
+    return this.db.tx({ userId: actor.user.id }, async (q) => {
+      const { rows } = await q.query<UserRow>(`SELECT * FROM users WHERE id = $1 AND property_id = $2 FOR UPDATE`, [id, actor.user.propertyId]);
+      const u = rows[0];
+      if (!u) throw notFound('Account');
+      const mobile = input.mobile ?? null;
+      await q.query(
+        `UPDATE users SET full_name = $2, mobile = $3, discount_limit_percent = $4, can_run_night_audit = $5 WHERE id = $1`,
+        [id, input.fullName, mobile, input.discountLimitPercent, input.canRunNightAudit],
+      );
+      await this.audit.record(q, actor, {
+        action: 'user.updated', entityType: 'user', entityId: id,
+        before: { fullName: u.full_name, discountLimitPercent: u.discount_limit_percent, canRunNightAudit: u.can_run_night_audit },
+        after: { fullName: input.fullName, discountLimitPercent: input.discountLimitPercent, canRunNightAudit: input.canRunNightAudit },
+      });
+      return { ok: true };
+    });
   }
 
   async createUser(actor: Actor, input: CreateUserInput) {

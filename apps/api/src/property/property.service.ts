@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
-  addDays, ERROR_CODES, roomDisplayState, isSellable, type HousekeepingStatus, type OccupancyStatus, type PropertySettingsInput,
+  addDays, ERROR_CODES, roomDisplayState, isSellable, type HousekeepingStatus, type OccupancyStatus, type PropertySettingsInput, type PropertyPoliciesInput,
   type RoomInput, type RoomTypeInput, type ServiceStatus,
 } from '@resortos/shared';
 import { AuditService } from '../common/audit.service';
@@ -35,7 +35,44 @@ export class PropertyService {
       city: p.city, stateCode: p.state_code, pinCode: p.pin_code, gstin: p.gstin, phone: p.phone, email: p.email,
       checkInTime: String(p.check_in_time).slice(0, 5), checkOutTime: String(p.check_out_time).slice(0, 5),
       timezone: p.timezone, businessDate: p.current_business_date, isPractice: p.is_practice, version: p.version,
+      policies: {
+        receptionistCanRunNightAudit: p.receptionist_can_run_night_audit, cashDifferenceThreshold: p.cash_difference_threshold,
+        reviewDiscountPercent: p.review_discount_percent, invoiceTerms: p.invoice_terms, invoiceBankDetails: p.invoice_bank_details,
+        printMaskMobile: p.print_mask_mobile, receiptPaper: p.receipt_paper, emailEnabled: p.email_enabled,
+        emailFromName: p.email_from_name, emailFromAddress: p.email_from_address, emailReplyTo: p.email_reply_to,
+        quietHoursStart: String(p.quiet_hours_start).slice(0, 5), quietHoursEnd: String(p.quiet_hours_end).slice(0, 5),
+        checkoutReminderTime: String(p.checkout_reminder_time).slice(0, 5), reminderSkipSameDay: p.reminder_skip_same_day,
+        receptionPhone: p.reception_phone, wifiDetails: p.wifi_details, locationLink: p.location_link, deskLockMinutes: p.desk_lock_minutes,
+      },
     };
+  }
+
+  /**
+   * Owner policies (night audit permission, review thresholds, printing, guest email, desk lock).
+   * Separate from the property's identity so a change to one never needs the other's form.
+   */
+  async updatePolicies(actor: Actor, input: PropertyPoliciesInput) {
+    await this.db.tx({ userId: actor.user.id }, async (q) => {
+      const before = (await this.getProperty(actor.user.propertyId)).policies;
+      const { rowCount } = await q.query(
+        `UPDATE properties SET receptionist_can_run_night_audit=$3, cash_difference_threshold=$4, review_discount_percent=$5,
+                invoice_terms=$6, invoice_bank_details=$7, print_mask_mobile=$8, receipt_paper=$9, email_enabled=$10,
+                email_from_name=$11, email_from_address=$12, email_reply_to=$13, quiet_hours_start=$14, quiet_hours_end=$15,
+                checkout_reminder_time=$16, reminder_skip_same_day=$17, reception_phone=$18, wifi_details=$19, location_link=$20,
+                desk_lock_minutes=$21
+          WHERE id = $1 AND version = $2`,
+        [actor.user.propertyId, input.version, input.receptionistCanRunNightAudit, input.cashDifferenceThreshold, input.reviewDiscountPercent,
+          input.invoiceTerms ?? null, input.invoiceBankDetails ?? null, input.printMaskMobile, input.receiptPaper, input.emailEnabled,
+          input.emailFromName ?? null, input.emailFromAddress ?? null, input.emailReplyTo ?? null, input.quietHoursStart, input.quietHoursEnd,
+          input.checkoutReminderTime, input.reminderSkipSameDay, input.receptionPhone ?? null, input.wifiDetails ?? null,
+          input.locationLink ?? null, input.deskLockMinutes],
+      );
+      if (!rowCount) throw staleVersion();
+      const { version: _v, ...after } = input;
+      await this.audit.record(q, actor, { action: 'property.policies_updated', entityType: 'property', entityId: actor.user.propertyId, before, after });
+    });
+    // Read after commit: getProperty uses its own connection.
+    return this.getProperty(actor.user.propertyId);
   }
 
   async updateProperty(actor: Actor, input: PropertySettingsInput, expectedVersion: number) {

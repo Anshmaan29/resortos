@@ -39,6 +39,14 @@ export function passwordProblem(password: string, context: { username?: string; 
 }
 
 /** Owner PIN must not be trivially guessable. */
+/** Staff quick-switch PIN (spec §5.3): 4–6 digits, not all the same, not a run. */
+export function staffPinProblem(pin: string): string | null {
+  if (!/^\d{4,6}$/.test(pin)) return 'PIN must be 4 to 6 digits.';
+  if (/^(\d)\1+$/.test(pin)) return 'Do not use the same digit throughout.';
+  if ('0123456789'.includes(pin) || '9876543210'.includes(pin)) return 'Do not use digits in a sequence.';
+  return null;
+}
+
 export function pinProblem(pin: string): string | null {
   if (!/^\d{6}$/.test(pin)) return 'PIN must be exactly 6 digits.';
   if (/^(\d)\1{5}$/.test(pin)) return 'Do not use the same digit six times.';

@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Re
 import type { Response } from 'express';
 import { z } from 'zod';
 import {
-  approveOwnerAuthorisationSchema, changePasswordSchema, createUserSchema, loginSchema, passwordSchema, pinSchema, recoverAccountSchema, zId,
+  approveOwnerAuthorisationSchema, changePasswordSchema, createUserSchema, updateUserSchema, loginSchema, passwordSchema, pinSchema, recoverAccountSchema, zId,
 } from '@resortos/shared';
 import { APP_CONFIG, type AppConfig } from '../config';
 import { CurrentActor, Public, Roles } from '../common/decorators';
@@ -146,6 +146,11 @@ export class UsersController {
   async unlock(@CurrentActor() actor: Actor, @Param('id') id: string) {
     await this.auth.unlockUser(actor, parse(zId, id));
     return { ok: true };
+  }
+
+  @Patch(':id')
+  update(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() body: unknown) {
+    return this.auth.updateUser(actor, parse(zId, id), parse(updateUserSchema, body));
   }
 
   @Patch(':id/active')

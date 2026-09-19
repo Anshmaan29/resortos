@@ -161,6 +161,8 @@ export const guestSchema = z.object({
   companyName: optionalText(120),
   companyGstin: zGstin.optional().or(z.literal('').transform(() => undefined)),
   preferences: optionalText(500),
+  /** The language guest messages are sent in (spec §40). */
+  preferredLanguage: z.enum(['en', 'hi']).default('en'),
 });
 export type GuestInput = z.infer<typeof guestSchema>;
 
@@ -628,3 +630,66 @@ export const otaPayoutSchema = z.object({
   reference: z.string().trim().min(2, 'Enter the payout reference').max(80),
 });
 export type OtaPayoutInput = z.infer<typeof otaPayoutSchema>;
+
+const zTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Enter a time like 19:00');
+
+/**
+ * Owner policies (spec §4.5, §34, §36, §40, §5.3): who may close the day, what a cash difference or a
+ * discount must be to reach the review list, what printouts say, and how guest email behaves.
+ */
+export const propertyPoliciesSchema = z.object({
+  receptionistCanRunNightAudit: z.boolean(),
+  cashDifferenceThreshold: zNonNegativeMoney,
+  reviewDiscountPercent: zNonNegativeMoney.refine((v) => money(v).lte(100), 'Cannot be more than 100%'),
+  invoiceTerms: optionalText(1000),
+  invoiceBankDetails: optionalText(500),
+  printMaskMobile: z.boolean(),
+  receiptPaper: z.enum(['a4', 'thermal_80']),
+  emailEnabled: z.boolean(),
+  emailFromName: optionalText(80),
+  emailFromAddress: z.string().trim().email('Enter an email address').optional().or(z.literal('').transform(() => undefined)),
+  emailReplyTo: z.string().trim().email('Enter an email address').optional().or(z.literal('').transform(() => undefined)),
+  quietHoursStart: zTime,
+  quietHoursEnd: zTime,
+  checkoutReminderTime: zTime,
+  reminderSkipSameDay: z.boolean(),
+  receptionPhone: optionalText(20),
+  wifiDetails: optionalText(120),
+  locationLink: z.string().trim().url('Enter a full link').startsWith('https://', 'Use an https:// link').optional().or(z.literal('').transform(() => undefined)),
+  deskLockMinutes: z.coerce.number().int().min(1).max(60),
+  version: z.coerce.number().int().min(1),
+}).refine((v) => !v.emailEnabled || v.emailFromAddress, { path: ['emailFromAddress'], message: 'Set the sender address before switching email on' });
+export type PropertyPoliciesInput = z.infer<typeof propertyPoliciesSchema>;
+
+/** A staff member's details and receptionist limits (spec §4.5). Owner only. */
+export const updateUserSchema = z.object({
+  fullName: z.string().trim().min(2).max(80),
+  mobile: zMobile.optional().or(z.literal('').transform(() => undefined)),
+  discountLimitPercent: zNonNegativeMoney.refine((v) => money(v).lte(100), 'Cannot be more than 100%'),
+  canRunNightAudit: z.boolean(),
+});
+export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+
+/**
+ * A dated tax rule (spec §30.1). Rules are never edited: a changed rate is the old rule closed and a
+ * new one opened, so every past invoice keeps the rule it used.
+ */
+export const taxRuleSchema = z.object({
+  taxCategory: z.enum(TAX_CATEGORIES),
+  unitValueAbove: zNonNegativeMoney.optional(),
+  unitValueUpTo: zNonNegativeMoney.optional(),
+  ratePercent: zNonNegativeMoney.refine((v) => money(v).lte(100), 'Cannot be more than 100%'),
+  sac: z.string().trim().regex(/^\d{4,8}$/, 'SAC is 4 to 8 digits'),
+  effectiveFrom: zIsoDate,
+  effectiveTo: zIsoDate.optional(),
+  note: optionalText(300),
+}).refine((v) => !v.unitValueAbove || !v.unitValueUpTo || money(v.unitValueUpTo).gt(v.unitValueAbove), { path: ['unitValueUpTo'], message: 'Must be more than the lower bound' })
+  .refine((v) => !v.effectiveTo || v.effectiveTo >= v.effectiveFrom, { path: ['effectiveTo'], message: 'Cannot end before it starts' });
+export type TaxRuleInput = z.infer<typeof taxRuleSchema>;
+
+export const ratePlanUpdateSchema = z.object({
+  name: z.string().trim().min(2).max(60),
+  kind: z.enum(['standard', 'corporate', 'travel_agent', 'package']),
+  isActive: z.boolean(),
+  isDefault: z.boolean(),
+});

@@ -15,6 +15,11 @@ export interface PropertyRow {
   state_code: string; pin_code: string; gstin: string | null; phone: string; email: string | null; logo_path: string | null;
   check_in_time: string; check_out_time: string; timezone: string; financial_year_start_month: number;
   current_business_date: IsoDate; is_practice: boolean; data_origin: 'live' | 'demo'; created_at: Date; updated_at: Date; version: number;
+  receptionist_can_run_night_audit: boolean; cash_difference_threshold: string; review_discount_percent: string;
+  invoice_terms: string | null; invoice_bank_details: string | null; print_mask_mobile: boolean; receipt_paper: 'a4' | 'thermal_80';
+  email_enabled: boolean; email_from_name: string | null; email_from_address: string | null; email_reply_to: string | null;
+  quiet_hours_start: string; quiet_hours_end: string; checkout_reminder_time: string; reminder_skip_same_day: boolean;
+  reception_phone: string | null; wifi_details: string | null; location_link: string | null; desk_lock_minutes: number;
 }
 
 export interface UserRow {
@@ -56,7 +61,7 @@ export interface TaxRuleRow {
 export interface GuestRow {
   id: string; property_id: string; first_name: string; last_name: string; mobile: string; email: string | null; address_line: string | null;
   city: string | null; state: string | null; pin_code: string | null; country: string; nationality: string; company_name: string | null;
-  company_gstin: string | null; preferences: string | null; is_vip: boolean; special_note: string | null; merged_into_id: string | null; version: number;
+  company_gstin: string | null; preferences: string | null; preferred_language: 'en' | 'hi'; is_vip: boolean; special_note: string | null; merged_into_id: string | null; version: number;
 }
 
 export interface ReservationRow {

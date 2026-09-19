@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
-import { propertySettingsSchema, roomSchema, roomStatusChangeSchema, roomTypeSchema, zId, zIsoDate } from '@resortos/shared';
+import { propertyPoliciesSchema, propertySettingsSchema, roomSchema, roomStatusChangeSchema, roomTypeSchema, zId, zIsoDate } from '@resortos/shared';
 import { CurrentActor, Roles } from '../common/decorators';
 import type { Actor } from '../common/request-context';
 import { parse } from '../common/zod';
@@ -15,6 +15,15 @@ export class PropertyController {
   @Get('property')
   get(@CurrentActor() actor: Actor) {
     return this.property.getProperty(actor.user.propertyId);
+  }
+
+  @Patch('property/policies')
+  @Roles('owner')
+  updatePolicies(@CurrentActor() actor: Actor, @Body() body: unknown) {
+    // What GET returns can be sent straight back: an unset text setting comes out as null and goes
+    // back in as "not set".
+    const cleaned = body && typeof body === 'object' ? Object.fromEntries(Object.entries(body).filter(([, v]) => v !== null)) : body;
+    return this.property.updatePolicies(actor, parse(propertyPoliciesSchema, cleaned));
   }
 
   @Patch('property')

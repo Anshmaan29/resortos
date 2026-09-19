@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   computeTax, Decimal, eachNight, ERROR_CODES, money, nightsBetween, TaxRuleError, toMoneyString,
-  type IsoDate, type MealPlanCode, type MoneyString, type TaxableLine, type TaxGroup, type TaxRule,
+  type IsoDate, type MealPlanCode, type MoneyString, type TaxableLine, type TaxGroup, type TaxRule, type TaxRuleInput,
 } from '@resortos/shared';
 import { AuditService } from '../common/audit.service';
 import { AppError, notFound } from '../common/errors';
@@ -321,5 +321,85 @@ export class RatesService {
       ratePercent: r.rate_percent, sac: r.sac, effectiveFrom: r.effective_from, effectiveTo: r.effective_to, note: r.note,
       isDemoPlaceholder: r.origin === 'demo_placeholder',
     }));
+  }
+
+  /** Rename, retype, switch off, or make the default (one default per property, by unique index). */
+  async updateRatePlan(actor: Actor, id: string, input: { name: string; kind: string; isActive: boolean; isDefault: boolean }) {
+    return this.db.tx({ userId: actor.user.id }, async (q) => {
+      const { rows: before } = await q.query<RatePlanRow>(`SELECT * FROM rate_plans WHERE id = $1 AND property_id = $2 FOR UPDATE`, [id, actor.user.propertyId]);
+      if (!before[0]) throw notFound('Rate plan');
+      if (input.isDefault && !input.isActive) throw new AppError(ERROR_CODES.VALIDATION, 'The default rate plan must be active.');
+      if (before[0].is_default && !input.isDefault) throw new AppError(ERROR_CODES.VALIDATION, 'Make another rate plan the default instead.');
+      if (input.isDefault && !before[0].is_default) {
+        await q.query(`UPDATE rate_plans SET is_default = false WHERE property_id = $1 AND is_default`, [actor.user.propertyId]);
+      }
+      await q.query(
+        `UPDATE rate_plans SET name = $3, kind = $4, is_active = $5, is_default = $6 WHERE id = $1 AND property_id = $2`,
+        [id, actor.user.propertyId, input.name, input.kind, input.isActive, input.isDefault],
+      );
+      await this.audit.record(q, actor, {
+        action: 'rate_plan.updated', entityType: 'rate_plan', entityId: id,
+        before: { name: before[0].name, kind: before[0].kind, isActive: before[0].is_active, isDefault: before[0].is_default }, after: input,
+      });
+      return { id };
+    });
+  }
+
+  /** A calendar price is switched off, not deleted: bookings already priced from it keep their rate. */
+  async deactivateCalendarEntry(actor: Actor, id: string) {
+    return this.db.tx({ userId: actor.user.id }, async (q) => {
+      const { rows } = await q.query<{ id: string; label: string }>(
+        `UPDATE rate_calendar SET is_active = false WHERE id = $1 AND property_id = $2 AND is_active RETURNING id, label`, [id, actor.user.propertyId],
+      );
+      if (!rows[0]) throw notFound('Calendar price');
+      await this.audit.record(q, actor, { action: 'rate_calendar.deactivated', entityType: 'rate_calendar', entityId: id, before: { label: rows[0].label } });
+      return { ok: true };
+    });
+  }
+
+  /**
+   * A new dated tax rule (spec §30.1). Overlapping dates and value bands are refused by the
+   * `no_overlapping_tax_rules` exclusion constraint, so two rules can never apply to one line.
+   */
+  async createTaxRule(actor: Actor, input: TaxRuleInput) {
+    return this.db.tx({ userId: actor.user.id }, async (q) => {
+      const { rows } = await q.query<IdRow>(
+        `INSERT INTO tax_rules (property_id, tax_category, unit_value_above, unit_value_up_to, rate_percent, sac, effective_from, effective_to, note, origin, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'configured',$10) RETURNING id`,
+        [actor.user.propertyId, input.taxCategory, input.unitValueAbove ?? null, input.unitValueUpTo ?? null, input.ratePercent, input.sac,
+          input.effectiveFrom, input.effectiveTo ?? null, input.note ?? null, actor.user.id],
+      );
+      await this.audit.record(q, actor, { action: 'tax_rule.created', entityType: 'tax_rule', entityId: rows[0]!.id, after: input });
+      return { id: rows[0]!.id };
+    });
+  }
+
+  /**
+   * Close a rule on a date (the only change a rule accepts, by trigger). Closing before a date some
+   * invoice used would not change that invoice — it keeps its own rates — but the rule's history
+   * would then disagree with it, so a rule cannot be closed before a night already invoiced under it.
+   */
+  async closeTaxRule(actor: Actor, id: string, effectiveTo: string) {
+    return this.db.tx({ userId: actor.user.id }, async (q) => {
+      const { rows } = await q.query<TaxRuleRow>(`SELECT * FROM tax_rules WHERE id = $1 AND property_id = $2 FOR UPDATE`, [id, actor.user.propertyId]);
+      const rule = rows[0];
+      if (!rule) throw notFound('Tax rule');
+      if (effectiveTo < rule.effective_from) throw new AppError(ERROR_CODES.VALIDATION, 'A rule cannot end before it starts.');
+      if (rule.effective_to !== null && effectiveTo > rule.effective_to) {
+        throw new AppError(ERROR_CODES.VALIDATION, 'A closed rule cannot be reopened. Add a new rule instead.');
+      }
+      const { rows: used } = await q.query<{ last: string | null }>(
+        `SELECT max(l.business_date)::text AS last FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
+          WHERE i.property_id = $1 AND l.sac = $2 AND l.gst_rate = $3 AND l.business_date > $4::date AND l.business_date >= $5::date
+            AND ($6::date IS NULL OR l.business_date <= $6::date)`,
+        [actor.user.propertyId, rule.sac, rule.rate_percent, effectiveTo, rule.effective_from, rule.effective_to],
+      );
+      if (used[0]?.last) {
+        throw new AppError(ERROR_CODES.CONFLICT, `Nights up to ${used[0].last} have already been invoiced under this rule. Close it on or after that date.`);
+      }
+      await q.query(`UPDATE tax_rules SET effective_to = $2 WHERE id = $1`, [id, effectiveTo]);
+      await this.audit.record(q, actor, { action: 'tax_rule.closed', entityType: 'tax_rule', entityId: id, before: { effectiveTo: rule.effective_to }, after: { effectiveTo } });
+      return { ok: true };
+    });
   }
 }
