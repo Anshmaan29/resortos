@@ -109,7 +109,7 @@ export default function ExpressCheckInPage() {
               <>
                 <p className="mb-2 mt-5 text-sm font-medium text-text-2">Room <span className="font-normal text-text-3">(clean and free)</span></p>
                 {rooms.length ? (
-                  <div className="flex flex-wrap gap-2">{rooms.map((r) => (
+                  <div className="flex flex-wrap gap-2" role="group" aria-label="Clean free rooms">{rooms.map((r) => (
                     <button key={r.id} type="button" onClick={() => setRoomId(r.id)} aria-pressed={roomId === r.id}
                       className={cn('min-w-16 rounded-lg border px-3 py-2 text-sm font-medium', roomId === r.id ? 'border-brand bg-brand text-brand-contrast' : 'border-border hover:border-border-strong')}>{r.number}</button>
                   ))}</div>

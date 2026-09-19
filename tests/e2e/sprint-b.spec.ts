@@ -14,8 +14,15 @@ test('express check-in: one form creates the walk-in booking and opens the whole
   await page.waitForURL('/check-in/express');
   await page.getByLabel('First name').fill('Arjun');
   await page.getByLabel('Mobile').fill('9829012345');
-  await page.getByRole('button', { name: /^Deluxe/ }).click();
-  await page.getByRole('button', { name: '205', exact: true }).click();
+  // Whichever type still has a clean, free room after the earlier specs, and the first such room.
+  const types = page.getByRole('button', { name: /free for these nights/ });
+  const rooms = page.getByRole('group', { name: 'Clean free rooms' }).getByRole('button');
+  for (let i = 0; i < await types.count(); i += 1) {
+    if (await types.nth(i).isDisabled()) continue;
+    await types.nth(i).click();
+    if (await rooms.first().isVisible().catch(() => false)) break;
+  }
+  await rooms.first().click();
   await page.getByRole('button', { name: 'Continue to IDs and signature' }).click();
   await page.waitForURL(/\/check-in\/express\/[0-9a-f-]{36}$/);
   await expect(page.getByRole('heading', { name: 'Express check-in · Arjun' })).toBeVisible();
