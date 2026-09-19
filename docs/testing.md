@@ -9,6 +9,10 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | `pnpm verify` | build + typecheck + `pnpm test` |
 | `pnpm audit` | dependency advisories; high and critical fail CI unless accepted with an expiry (`docs/dependency-security.md`) |
 
+Storage tests use plain-HTTP MinIO on `localhost:9000`, as CI does. With the LAN phone-testing setup
+running (MinIO on HTTPS), point them at it instead:
+`TEST_S3_ENDPOINT=https://localhost:9000 NODE_EXTRA_CA_CERTS="$HOME/Library/Application Support/mkcert/rootCA.pem" pnpm test` (same for `pnpm e2e`).
+
 ## Critical guarantees and where they are proven
 
 | Guarantee | Test |

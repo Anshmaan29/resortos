@@ -20,7 +20,7 @@ beforeAll(async () => {
     JOBS_ENABLED: 'true',
     SESSION_COOKIE_SECURE: 'false',
     WEB_ORIGIN: 'http://localhost:3000',
-    S3_ENDPOINT: 'http://localhost:9000',
+    S3_ENDPOINT: process.env.TEST_S3_ENDPOINT ?? 'http://localhost:9000',
     S3_BUCKET: 'resortos-documents-test',
     S3_ACCESS_KEY_ID: 'resortos',
     S3_SECRET_ACCESS_KEY: 'resortos-dev-minio-secret',
