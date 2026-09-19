@@ -208,6 +208,18 @@ export async function encodeJpeg(source: HTMLCanvasElement, maxBytes = TARGET_BY
   return toBlob(canvas, 'image/jpeg', 0.6);
 }
 
+/**
+ * A small preview of what was just captured, kept on the device.
+ *
+ * The receptionist should be able to see the photo they sent without taking anyone's word for it —
+ * and without fetching the real one back, which is private, encrypted, behind a 60-second signed
+ * URL and audit-logged as a view (spec §19.4). A local thumbnail costs none of that. It is a few
+ * kilobytes, so it survives alongside the queue entry after the full-size bytes are cleared.
+ */
+export async function makeThumbnail(source: HTMLCanvasElement, maxSide = 320): Promise<Blob> {
+  return toBlob(scaleToFit(source, maxSide), 'image/jpeg', 0.7);
+}
+
 export function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
   return new Promise((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error('Could not prepare the photo'))), type, quality));
 }

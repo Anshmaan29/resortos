@@ -54,6 +54,14 @@ export interface QueueItem {
   bytes: ArrayBuffer | null;
   /** Written by an earlier version that stored Blobs; still uploaded if one is found. */
   blob?: Blob | null;
+  /**
+   * A few-kilobyte preview, kept after `bytes` is cleared, so the screen can show what was sent.
+   *
+   * Deliberately local: the stored document is private, encrypted and behind a short-lived signed
+   * URL whose every view is audit-logged (spec §19.4). Showing a thumbnail should not cost an
+   * audit entry, and the desk should not have to trust a tick — it should see the photo.
+   */
+  thumbnail?: ArrayBuffer | null;
   contentType: 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf';
   size: number;
   sha256: string;
@@ -206,11 +214,12 @@ export class UploadQueue {
     return this.progress.get(id) ?? 0;
   }
 
-  async add(input: Omit<QueueItem, 'id' | 'scope' | 'status' | 'attempts' | 'nextAttemptAt' | 'createdAt' | 'updatedAt' | 'size' | 'bytes' | 'blob'> & { blob: Blob }) {
+  async add(input: Omit<QueueItem, 'id' | 'scope' | 'status' | 'attempts' | 'nextAttemptAt' | 'createdAt' | 'updatedAt' | 'size' | 'bytes' | 'blob' | 'thumbnail'> & { blob: Blob; thumbnail?: Blob | null }) {
     const now = Date.now();
-    const { blob, ...rest } = input;
+    const { blob, thumbnail, ...rest } = input;
     const item: QueueItem = {
       ...rest, bytes: await blob.arrayBuffer(), id: crypto.randomUUID(), scope: this.scope, size: blob.size,
+      thumbnail: thumbnail ? await thumbnail.arrayBuffer() : null,
       status: 'queued', attempts: 0, nextAttemptAt: now, createdAt: now, updatedAt: now,
     };
     // Persistence is best effort. If this device cannot write to IndexedDB at all (private
@@ -371,6 +380,7 @@ export class UploadQueue {
 
       // 3. The server re-hashes the stored object; only then is it received.
       const result = await this.call('confirmation', (signal) => this.transport.confirm(item.documentId!, signal));
+      // bytes go, the thumbnail stays: the desk keeps seeing what it sent.
       if (result.status === 'verified') return this.save(item, { status: 'done', bytes: null, blob: null, error: undefined });
       if (result.status === 'failed' || result.status === 'orphaned') return this.fail(item, 'The server could not verify this photo. Capture it again.');
       return this.retryLater(item, 'Waiting for the server to receive the photo');
