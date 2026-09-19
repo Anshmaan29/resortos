@@ -6,7 +6,7 @@ import {
   isE164, isValidGstin, isValidIndianVehicleNumber, isValidPinCode, normalizeIndianMobile, normalizeVehicleNumber,
 } from './validators';
 import {
-  ACCOUNT_KINDS_FOR_METHOD, ADDABLE_LINE_TYPES, DESK_ENTRY_TYPES, DESK_PAYMENT_METHODS, PAYMENT_ACCOUNT_KINDS,
+  ACCOUNT_KINDS_FOR_METHOD, ADDABLE_LINE_TYPES, DESK_ENTRY_TYPES, DISCOUNT_REASONS, DESK_PAYMENT_METHODS, PAYMENT_ACCOUNT_KINDS,
   PAYMENT_REFERENCE_LABEL, TAX_CATEGORIES,
   BOOKING_SOURCES, CANCELLATION_MONEY_OPTIONS, CANCELLATION_REASONS, HOUSEKEEPING_STATUSES, MEAL_PLAN_CODES,
   OTA_SOURCES, ROLES, ROOM_VIEWS, SERVICE_STATUSES, UNIT_TYPES, VISIT_PURPOSES,
@@ -515,3 +515,24 @@ export const closeShiftSchema = z.object({
   version: z.coerce.number().int().min(1),
 });
 export type CloseShiftInput = z.infer<typeof closeShiftSchema>;
+
+/**
+ * A discount (spec §28): a percentage or an amount, on one charge or on the whole bill. The server
+ * spreads a bill discount across the charges, because GST is decided per charge after discount.
+ */
+export const discountSchema = z
+  .object({
+    scope: z.enum(['line', 'bill']),
+    lineId: zId.optional(),
+    kind: z.enum(['percent', 'amount']),
+    value: zPositiveMoney,
+    reason: z.enum(DISCOUNT_REASONS),
+    note: optionalText(200),
+    ownerAuthorisationId: zId.optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.scope === 'line' && !v.lineId) ctx.addIssue({ code: 'custom', path: ['lineId'], message: 'Choose the charge to discount' });
+    if (v.kind === 'percent' && money(v.value).gt(100)) ctx.addIssue({ code: 'custom', path: ['value'], message: 'Cannot be more than 100%' });
+    if (v.reason === 'other' && !v.note) ctx.addIssue({ code: 'custom', path: ['note'], message: 'Say what the discount is for' });
+  });
+export type DiscountInput = z.infer<typeof discountSchema>;

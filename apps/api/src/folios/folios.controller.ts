@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import {
-  ERROR_CODES, addChargeSchema, chargeItemSchema, depositDecisionSchema, paymentAccountSchema, recordPaymentSchema, reversePaymentSchema,
+  ERROR_CODES, addChargeSchema, chargeItemSchema, depositDecisionSchema, discountSchema, paymentAccountSchema, recordPaymentSchema, reversePaymentSchema,
   voidLineSchema, zId,
 } from '@resortos/shared';
 import { z } from 'zod';
@@ -40,6 +40,27 @@ export class FoliosController {
     const folioId = parse(zId, id);
     const input = parse(addChargeSchema, body);
     return this.mutate(actor, req, key, body, (q) => this.folios.addCharge(q, actor, folioId, input));
+  }
+
+  /**
+   * What a discount would do, before it is given (spec §28): the amount off each charge, the share
+   * of the bill, whether it needs the owner, and any room night it moves into another GST slab.
+   * Saves nothing.
+   */
+  @Post('folios/:id/discounts/preview')
+  @HttpCode(200)
+  previewDiscount(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() body: unknown) {
+    const folioId = parse(zId, id);
+    const input = parse(discountSchema, body);
+    return this.db.tx({ userId: actor.user.id }, (q) => this.folios.previewDiscount(q, actor, folioId, input));
+  }
+
+  @Post('folios/:id/discounts')
+  @HttpCode(200)
+  applyDiscount(@CurrentActor() actor: Actor, @Req() req: AppRequest, @IdempotencyKey() key: string | undefined, @Param('id') id: string, @Body() body: unknown) {
+    const folioId = parse(zId, id);
+    const input = parse(discountSchema, body);
+    return this.mutate(actor, req, key, body, (q) => this.folios.applyDiscount(q, actor, folioId, input));
   }
 
   @Post('folio-lines/:id/void')
