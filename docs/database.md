@@ -117,6 +117,33 @@ maintenance, expenses, messages, Form C, metrics. **Do not add them ahead of the
 night audit and the business date come first, because folios, invoices and every metric depend on
 them.
 
+### The bill — `0013`
+
+`folios` (one per stay, numbered from `reference_counters`), `folio_lines`, `charge_items`.
+
+**No total is stored anywhere.** Charges, GST and balance are recalculated from the lines on every
+read, so there is no cached number that can drift (spec §49). The nightly integrity check in 2.4b
+compares and reports; it never repairs.
+
+**A line is never edited.** `guard_folio_line_update()` accepts exactly one update — the void — and
+only from not-voided to voided. Every other column change is refused, so "the amount changed and
+nobody knows when" cannot happen even if the application is wrong. Deletes are refused too.
+
+**Room nights post once per room per business date**, by partial unique index:
+
+```sql
+CREATE UNIQUE INDEX folio_lines_one_posting_per_room_night
+  ON folio_lines (folio_id, room_id, business_date, line_type)
+  WHERE source = 'night_audit' AND voided_at IS NULL;
+```
+
+Partial on `voided_at` so a wrongly posted night can be voided and re-posted. The night audit step
+inserts `ON CONFLICT DO NOTHING` against it rather than reading first: a check-then-insert is a
+race, a unique index is not.
+
+Tax is never stored on a line — only `tax_category` and the SAC it resolves to. Storing a computed
+amount would be a second place for it to be wrong when a dated rule changes.
+
 ## Invariants the database enforces itself
 
 These are deliberately not application checks, because application checks can be bypassed by the

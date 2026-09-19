@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import { formatDate, formatDateTime, formatINR, formatMobile, ID_TYPE_LABELS, MEAL_PLAN_LABELS, nightsBetween } from '@resortos/shared';
+import { BillPanel } from '@/components/stay/bill-panel';
 import { CheckoutDialog } from '@/components/stay/checkout-dialog';
 import { RegistrationCard } from '@/components/stay/registration-card';
 import { RoomShiftDialog } from '@/components/stay/room-shift-dialog';
@@ -88,6 +89,8 @@ export default function StayPage() {
               <Info k="Room rate" v={`${formatINR(s.nightlyRate)} / night`} />
             </dl>
           </Card>
+
+          <BillPanel stayId={s.id} canEdit={inHouse} />
 
           <Card>
             <CardHeader title="Guests" description={`${s.adults} adult${s.adults > 1 ? 's' : ''}${s.childAges.length ? ` · ${s.childAges.length} child${s.childAges.length > 1 ? 'ren' : ''}` : ''}`} />

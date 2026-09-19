@@ -143,7 +143,8 @@ confirm path, same validation, limits, audit and idempotency. The wizard stays t
 | Milestone | State |
 |---|---|
 | 2.1 Business date & night audit | ✅ Done — step registry (2.2 and 2.4 plug in without editing it), arrivals/departures blocking with the actions each row actually allows, room-status warnings, summary, day audit log, no-show, extend stay, and the business date moved only by a completed audit. Design and the concurrency reasoning: `docs/night-audit.md`. Open-shift check arrives with 2.4; revenue in the summary with 2.2 and 2.3. |
-| 2.2 – 2.8 | Not started |
+| 2.2 Folio | ✅ Done — the bill: charges with GST worked out from type and date, a line that can only be voided (never edited) with the reason kept, saved charge items as owner settings, and **room-night posting registered as a night audit step** that posts once per room per business date. Design: `docs/folio.md`. |
+| 2.3 – 2.8 | Not started |
 ### Milestone 2G — minimum viable Gate 0 — in progress
 
 | | |

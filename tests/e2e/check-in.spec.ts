@@ -216,6 +216,28 @@ test('the whole stay: desk check-in with phone scanner, registration card, room 
   expect((await pdf.body()).subarray(0, 5).toString('ascii')).toBe('%PDF-');
   await expect(page.getByText(grc.current.sha256)).toBeVisible();
 
+  // The bill (spec §23, §24): add a charge, see it, remove it, and see it stay.
+  await page.getByRole('button', { name: 'Add charge' }).click();
+  const add = page.getByRole('dialog', { name: 'Add charge' });
+  await add.getByLabel('What it is for').fill('Paneer Tikka');
+  await add.getByLabel('Quantity').fill('2');
+  await add.getByLabel('Rate').fill('280');
+  await add.getByRole('button', { name: /Add .* to bill/ }).click();
+  await expect(page.getByText('Paneer Tikka added to the bill')).toBeVisible();
+
+  const billRow = page.getByRole('row').filter({ hasText: 'Paneer Tikka' });
+  await expect(billRow).toContainText('₹560');
+  // GST is worked out for the desk — the receptionist never picks a rate (§24.3).
+  await expect(page.getByText(/GST at \d+% \(estimated\)/)).toBeVisible();
+
+  // Removing a charge keeps it on the bill with the reason, rather than deleting it (§23).
+  await billRow.getByRole('button', { name: 'Remove Paneer Tikka' }).click();
+  await page.getByRole('dialog', { name: /Remove Paneer Tikka/ }).getByLabel('Why').fill('Added to the wrong room');
+  await page.getByRole('dialog', { name: /Remove Paneer Tikka/ }).getByRole('button', { name: 'Remove charge' }).click();
+  await expect(page.getByText('Charge removed from the bill')).toBeVisible();
+  await expect(billRow).toContainText('Removed by');
+  await expect(billRow).toContainText('Added to the wrong room');
+
   // Room change: the desk picks from what is actually free, and the reason is kept on the stay.
   await page.getByRole('button', { name: 'Change room' }).click();
   const shift = page.getByRole('dialog', { name: /Move .* out of room 205/ });
