@@ -33,6 +33,13 @@ PASS here; after that it is weekly.
 - [ ] Deployment artefact does not contain `apps/api/scripts/` (seed/migrate libs are not in `dist/`); seeding is additionally blocked by `assertSeedAllowed` (production, remote hosts, missing `RESORTOS_ENV`)
 - [ ] `.env` files, keys and certificates are not in the repository or the image
 
+## Guest email
+
+- [ ] Sending domain verified in Resend (SPF, DKIM, DMARC)
+- [ ] `RESEND_API_KEY` (sending access only) and `RESEND_WEBHOOK_SECRET` set in production; `MESSAGING_PROVIDER` is not `dev` (boot refuses it)
+- [ ] Test email received from Settings → Guest messages, in English and Hindi
+- [ ] Owner has reviewed the wording of all five messages
+
 ## Security
 
 - [ ] Owner has printed recovery codes and stored them offline; recovery tested once

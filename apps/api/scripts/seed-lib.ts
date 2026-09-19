@@ -24,7 +24,12 @@ export function assertSeedAllowed(connectionString: string, env: NodeJS.ProcessE
 }
 
 /** Fake demo data only — never real guests (spec §77.1). Idempotent: skips if a property exists. */
-export async function seed(connectionString: string, opts: { businessDate?: string; log?: (m: string) => void; withBookings?: boolean } = {}) {
+/**
+ * `demoStays` (the development seed only): the bookings already in house also get their check-in and
+ * stay rows, and the demo guests get example email addresses, so a fresh demo can open a bill, take
+ * a payment and show a message straight away. Tests leave it off: their fixtures assert exact counts.
+ */
+export async function seed(connectionString: string, opts: { businessDate?: string; log?: (m: string) => void; withBookings?: boolean; demoStays?: boolean } = {}) {
   assertSeedAllowed(connectionString);
   const log = opts.log ?? console.log;
   const today = opts.businessDate ?? todayIn();
@@ -199,6 +204,24 @@ export async function seed(connectionString: string, opts: { businessDate?: stri
           `INSERT INTO room_allocations (property_id, reservation_room_id, room_id, start_date, end_date, status, created_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7)`,
           [propertyId, rr[0].id, roomIds[b.room], arrival, departure, rrStatus, ownerId],
+        );
+        if (opts.demoStays && b.status === 'checked_in') {
+          const { rows: draft } = await client.query(
+            `INSERT INTO check_in_drafts (property_id, reservation_id, reservation_room_ids, status, confirmed_at, created_by)
+             VALUES ($1,$2,$3,'confirmed',now(),$4) RETURNING id`,
+            [propertyId, res[0].id, [rr[0].id], ownerId],
+          );
+          await client.query(
+            `INSERT INTO stays (property_id, reservation_id, reservation_room_id, room_id, primary_guest_id, check_in_draft_id,
+                                business_date_in, expected_departure, checked_in_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [propertyId, res[0].id, rr[0].id, roomIds[b.room], guestIds[b.guest], draft[0].id, arrival, departure, ownerId],
+          );
+        }
+      }
+      if (opts.demoStays) {
+        await client.query(
+          `UPDATE guests SET email = lower(first_name || '.' || last_name) || '@example.com' WHERE property_id = $1`, [propertyId],
         );
       }
       await client.query(`INSERT INTO reference_counters (property_id, name, last_number) VALUES ($1, 'reservation', $2)`, [propertyId, n]);

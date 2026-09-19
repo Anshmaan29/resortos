@@ -5,7 +5,7 @@ if (!url) {
   console.error('MIGRATION_DATABASE_URL is not set');
   process.exit(1);
 }
-seed(url)
+seed(url, { demoStays: true })
   .then(() => {
     console.log('\nDemo logins (development only):');
     console.log(`  Owner         ${DEMO_CREDENTIALS.owner.username} / ${DEMO_CREDENTIALS.owner.password}   Owner PIN ${DEMO_CREDENTIALS.owner.pin}`);

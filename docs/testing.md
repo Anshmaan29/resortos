@@ -79,6 +79,19 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | Company accounts: GSTIN checked, invoice in the company's name, credit limit on Owner PIN, oldest-first ageing, receipts in the account ledger | `apps/api/test/receivables.test.ts` |
 | OTA terms only on OTA bookings; payouts into a bank; receivables show pending and missing terms; availability changed today | `apps/api/test/receivables.test.ts` |
 | A stay with food and an activity, paid card + UPI, checks out with a tax invoice and a printable PDF | `tests/e2e/billing.spec.ts` |
+| A guest message is queued once per cause however often its event is delivered, and sent once | `apps/api/test/messaging.test.ts` |
+| No guest mobile, address or unlisted variable can reach a message; a template using one is refused | `apps/api/test/messaging.test.ts` |
+| A message that cannot go is recorded as skipped with the reason (no email, email off) | `apps/api/test/messaging.test.ts` |
+| Provider hiccups retry with backoff; a rejection fails with the reason; Resend is a new row; a sent message is never rewritten | `apps/api/test/messaging.test.ts` |
+| A provider that always fails never touches the booking | `apps/api/test/messaging.test.ts` |
+| Resend webhooks: signed and fresh only, status only moves forward, every report kept | `apps/api/test/messaging.test.ts` |
+| Checkout reminders go once per stay after the reminder time; a same-afternoon one-nighter is skipped; quiet hours by the database clock | `apps/api/test/messaging.test.ts` |
+| Receipts carry the PDF; Hindi guests get Hindi; the owner's wording replaces the built-in | `apps/api/test/messaging.test.ts` |
+| Staff PIN: password to set, no easy PINs; shared desk is the owner's to mark; PIN only after today's password login; five wrong PINs lock; lock and revoke end sessions | `apps/api/test/desk.test.ts` |
+| Owner policies versioned and audited; one default rate plan; tax rules added, closed, never reopened; receptionist limit used by the server | `apps/api/test/settings.test.ts` |
+| Express check-in creates the walk-in booking and opens the whole check-in on one page | `tests/e2e/sprint-b.spec.ts` |
+| Settings: owner saves a policy; a receptionist sees only their own PIN | `tests/e2e/sprint-b.spec.ts` |
+| Shared desk: lock, then switch in by PIN | `tests/e2e/sprint-b.spec.ts` |
 | Edit / rebook use the same validation, limits and audit | `apps/api/test/booking-changes.test.ts` |
 | No SQL interpolation; demo data blocked from production | `apps/api/test/guards.test.ts` |
 | A backup really restores: dump → encrypt → upload → download → decrypt → hash check → restore → integrity checks | `apps/api/test/backup-restore.test.ts` |

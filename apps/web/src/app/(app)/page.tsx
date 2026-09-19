@@ -1,6 +1,6 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, BedDouble, CalendarPlus, Crown, DoorOpen, LogIn, LogOut, UserPlus } from 'lucide-react';
+import { ArrowRight, BedDouble, CalendarPlus, Crown, DoorOpen, LogIn, LogOut, UserPlus, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { formatDate, formatINR } from '@resortos/shared';
 import { RoomBoard, RoomLegend } from '@/components/front-desk/room-board';
@@ -38,6 +38,7 @@ export default function HomePage() {
         <div className="flex flex-wrap gap-2">
           <Link href="/reservations/new"><Button><CalendarPlus className="h-4 w-4" />New booking</Button></Link>
           <Link href="/reservations/new?walkIn=1"><Button variant="outline"><UserPlus className="h-4 w-4" />Walk-in</Button></Link>
+          <Link href="/check-in/express"><Button variant="outline"><Zap className="h-4 w-4" />Express check-in</Button></Link>
         </div>
       </div>
 

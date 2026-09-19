@@ -1,25 +1,21 @@
 'use client';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, CloudCheck, Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useParams } from 'next/navigation';
 import { formatDate } from '@resortos/shared';
 import { ConfirmStep } from '@/components/check-in/confirm-step';
-import { DocumentsStep, useDeskQueue } from '@/components/check-in/documents-step';
+import { DocumentsStep } from '@/components/check-in/documents-step';
 import { GuestsStep } from '@/components/check-in/guests-step';
 import { RegistrationStep } from '@/components/check-in/registration-step';
 import { RoomStep } from '@/components/check-in/room-step';
-import { STEPS, type CheckInDraft } from '@/components/check-in/types';
+import { STEPS } from '@/components/check-in/types';
+import { useCheckIn } from '@/components/check-in/use-check-in';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner, Skeleton } from '@/components/ui/surface';
-import { useToast } from '@/components/ui/toast';
-import { api, ApiError, newIdempotencyKey } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { stepIn } from '@/lib/motion';
 import { useProperty } from '@/lib/session';
-import type { ReservationDetail } from '@/lib/types';
 
 /**
  * Desk check-in (spec §18). Every change is saved to the server-side draft, so a refresh,
@@ -27,73 +23,9 @@ import type { ReservationDetail } from '@/lib/types';
  */
 export default function CheckInPage() {
   const { draftId } = useParams<{ draftId: string }>();
-  const router = useRouter();
-  const qc = useQueryClient();
-  const toast = useToast();
   const property = useProperty();
-
-  const draft = useQuery({ queryKey: ['check-in', draftId], queryFn: () => api<CheckInDraft>(`/check-in-drafts/${draftId}`), refetchOnWindowFocus: false });
-  const reservation = useQuery({
-    queryKey: ['reservation', draft.data?.reservationId], enabled: !!draft.data,
-    queryFn: () => api<ReservationDetail>(`/reservations/${draft.data!.reservationId}`),
-  });
-  const queue = useDeskQueue(draftId);
-
-  const [data, setData] = useState<CheckInDraft['data'] | null>(null);
-  const [step, setStep] = useState(1);
-  const [saveState, setSaveState] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
-  const version = useRef(0);
-  const dirty = useRef(false);
-  const [confirmed, setConfirmed] = useState(false);
-
-  // Adopt server state on first load, and whenever it moved on and we have nothing unsaved.
-  useEffect(() => {
-    if (!draft.data) return;
-    if (draft.data.status !== 'active') return;
-    if (data === null || (!dirty.current && draft.data.version > version.current)) {
-      setData(draft.data.data);
-      version.current = draft.data.version;
-      if (data === null) setStep(Math.min(Math.max(draft.data.step, 1), 5));
-    }
-  }, [draft.data, data]);
-
-  const save = useCallback(async (next: CheckInDraft['data'], nextStep: number) => {
-    setSaveState('saving');
-    try {
-      const saved = await api<CheckInDraft>(`/check-in-drafts/${draftId}`, { method: 'PATCH', body: { version: version.current, step: nextStep, data: next } });
-      version.current = saved.version;
-      dirty.current = false;
-      qc.setQueryData(['check-in', draftId], saved);
-      setSaveState('saved');
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'STALE_VERSION') {
-        dirty.current = false;
-        setData(null);
-        await draft.refetch();
-        toast('error', 'This check-in was changed on another screen. Showing the latest version.');
-      } else {
-        setSaveState('error');
-      }
-    }
-  }, [draftId, qc, draft, toast]);
-
-  // Debounced autosave while typing.
-  useEffect(() => {
-    if (!data || !dirty.current) return;
-    setSaveState('unsaved');
-    const t = setTimeout(() => void save(data, step), 700);
-    return () => clearTimeout(t);
-  }, [data, step, save]);
-
-  const change = useCallback((next: CheckInDraft['data']) => { dirty.current = true; setData(next); }, []);
-  const refresh = useCallback(() => { void draft.refetch(); }, [draft]);
-
-  // Keep document status live on the documents, signature and confirm steps.
-  useEffect(() => {
-    if (step < 3) return;
-    const t = setInterval(() => { if (!dirty.current) void draft.refetch(); }, 2000);
-    return () => clearInterval(t);
-  }, [step, draft]);
+  const c = useCheckIn(draftId, { pollDocuments: false });
+  const { draft, reservation, queue, data, change, refresh, save, step, setStep, saveState, dirty, confirm, confirmed, uploading } = c;
 
   async function go(to: number) {
     if (!data) return;
@@ -101,17 +33,6 @@ export default function CheckInPage() {
     await save(data, to);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
-
-  const confirmKey = useRef(newIdempotencyKey());
-  const confirm = useMutation({
-    mutationFn: () => api<{ reservationId: string; stays: { id: string }[] }>(`/check-in-drafts/${draftId}/confirm`, { method: 'POST', body: {}, idempotencyKey: confirmKey.current }),
-    onSuccess: async (res) => {
-      setConfirmed(true);
-      await Promise.all(['front-desk', 'rooms', 'reservations', 'reservation', 'calendar'].map((k) => qc.invalidateQueries({ queryKey: [k] })));
-      setTimeout(() => router.push(`/reservations/${res.reservationId}`), 1100);
-    },
-    onError: () => { confirmKey.current = newIdempotencyKey(); void draft.refetch(); },
-  });
 
   if (draft.isError) return <ErrorBanner message={(draft.error as Error).message} onRetry={() => draft.refetch()} />;
   if (!draft.data || !data || !property.data) {
@@ -121,7 +42,6 @@ export default function CheckInPage() {
     return <div className="flex flex-col gap-4"><Skeleton className="h-10 w-80" /><Skeleton className="h-12" /><Skeleton className="h-96" /></div>;
   }
   const d = draft.data;
-  const uploading = queue.items.some((i) => ['queued', 'uploading', 'verifying', 'waiting_network'].includes(i.status));
 
   return (
     <div className="flex flex-col gap-6 pb-24">
