@@ -128,15 +128,16 @@ operations and stays compliant; the system is hardened for a pilot.
 
 Test suite (all against real PostgreSQL, no database mocks): see `docs/testing.md`.
 
-### Before the pilot (after 1.8, before Phase 2 is finished) — in this order
+### Before the pilot — Sprint B
 
-1. Owner settings screens: rooms, room types, rate plans, meal plans, minimum rates, receptionist limits
-2. Quick PIN switching between staff on shared desk computers
-3. Authenticator-app 2FA for owner accounts
-4. Calendar drag-to-move (lowest priority)
-
-Then: **express check-in** — one screen for a walk-in by experienced staff, over the same draft and
-confirm path, same validation, limits, audit and idempotency. The wizard stays the default.
+| Item | State |
+|---|---|
+| Owner settings screens | ✅ Done — property, policies & printing, rooms & room types (minimum rates), rate plans, seasonal prices, meal plans, GST rules (add / close, never edit), staff & receptionist limits, charge items, payment accounts, guest message wording, desk computers. |
+| Quick PIN switching on shared desks | ✅ Done — owner-trusted computers only; PIN works only after a password login that day; five wrong PINs stop it for 15 minutes; auto-lock after the owner's idle time ends the session. Design: `docs/security.md` → Shared desks. |
+| Express check-in | ✅ Done — one screen for a walk-in: the booking form, then guests, room, IDs, registration card and confirm on one page, over the same draft and confirm path as the wizard (`useCheckIn`). |
+| Guest email end to end | ✅ Done — Resend, on the outbox; booking confirmation, welcome, checkout reminder, invoice, receipt; English and Hindi; every message recorded with status and reason; delivery webhooks. Design: `docs/messaging.md`. |
+| Authenticator-app 2FA for owners | ⬜ Not started |
+| Calendar drag-to-move | ⬜ Not started (lowest priority) |
 
 ### Phase 2 — billing complete (Sprint A)
 

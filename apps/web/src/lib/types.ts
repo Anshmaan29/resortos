@@ -2,7 +2,18 @@ import type {
   AddableLineType, FolioLineType, PaymentAccountKind, PaymentEntryType, PaymentMethod, HousekeepingStatus, IdType, MealPlanCode, OccupancyStatus, ReservationStatus, Role, RoomDisplayState, ServiceStatus, VisitPurpose } from '@resortos/shared';
 
 export interface Me { id: string; propertyId: string; fullName: string; username: string; role: Role; discountLimitPercent: string; mustChangePassword: boolean; canRunNightAudit: boolean }
-export interface Property { id: string; name: string; legalName: string; city: string; stateCode: string; gstin: string | null; businessDate: string; checkInTime: string; checkOutTime: string; isPractice: boolean; version: number }
+export interface PropertyPolicies {
+  receptionistCanRunNightAudit: boolean; cashDifferenceThreshold: string; reviewDiscountPercent: string;
+  invoiceTerms: string | null; invoiceBankDetails: string | null; printMaskMobile: boolean; receiptPaper: 'a4' | 'thermal_80';
+  emailEnabled: boolean; emailFromName: string | null; emailFromAddress: string | null; emailReplyTo: string | null;
+  quietHoursStart: string; quietHoursEnd: string; checkoutReminderTime: string; reminderSkipSameDay: boolean;
+  receptionPhone: string | null; wifiDetails: string | null; locationLink: string | null; deskLockMinutes: number;
+}
+export interface Property {
+  id: string; name: string; legalName: string; addressLine1: string; addressLine2: string | null; city: string; stateCode: string;
+  pinCode: string; gstin: string | null; phone: string; email: string | null; businessDate: string; checkInTime: string; checkOutTime: string;
+  timezone: string; isPractice: boolean; version: number; policies: PropertyPolicies;
+}
 export interface RoomType { id: string; code: string; name: string; baseOccupancy: number; maxOccupancy: number; baseRate: string; minRate: string; extraAdultRate: string; extraChildRate: string; isActive: boolean; version: number }
 export interface Room {
   id: string; number: string; roomTypeId: string; roomTypeName: string; roomTypeCode: string; unitType: string; view: string | null;

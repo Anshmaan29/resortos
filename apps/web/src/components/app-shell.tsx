@@ -1,10 +1,10 @@
 'use client';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { BedDouble, Building2, CalendarDays, ChevronDown, ClipboardCheck, ClipboardList, FileText, Globe, Home, Landmark, LogOut, MoonStar, Palmtree, Plus, Search, UserRound, Wallet, WifiOff } from 'lucide-react';
+import { BedDouble, Building2, Lock, CalendarDays, ChevronDown, ClipboardCheck, ClipboardList, FileText, Globe, Home, Landmark, LogOut, MoonStar, Palmtree, Plus, Search, Settings, UserRound, Wallet, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { formatDate } from '@resortos/shared';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -26,6 +26,7 @@ const NAV = [
   { href: '/invoices', label: 'Invoices', icon: FileText, phone: false, owner: true },
   { href: '/companies', label: 'Companies', icon: Building2, phone: false, owner: true },
   { href: '/ota', label: 'OTA payouts', icon: Globe, phone: false, owner: true },
+  { href: '/settings', label: 'Settings', icon: Settings, phone: false },
 ];
 
 /** Four fit around the new-booking button; the rest live in the sidebar on bigger screens. */
@@ -73,6 +74,23 @@ export function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [router]);
+
+  // Shared desk (spec §5.3): lock after the owner's idle time, or on demand. Locking ends the session;
+  // the lock screen switches people in by PIN.
+  const desk = useQuery({ queryKey: ['desk'], queryFn: () => api<{ trusted: boolean; lockMinutes?: number }>('/desk'), staleTime: 300_000 });
+  const lockDesk = useCallback(async () => {
+    await api('/desk/lock', { method: 'POST', body: {} }).catch(() => undefined);
+    qc.clear();
+    router.replace('/desk');
+  }, [qc, router]);
+  useEffect(() => {
+    if (!desk.data?.trusted || !desk.data.lockMinutes) return;
+    let timer = setTimeout(lockDesk, desk.data.lockMinutes * 60_000);
+    const reset = () => { clearTimeout(timer); timer = setTimeout(lockDesk, desk.data!.lockMinutes! * 60_000); };
+    const events = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
+    for (const e of events) window.addEventListener(e, reset, { passive: true });
+    return () => { clearTimeout(timer); for (const e of events) window.removeEventListener(e, reset); };
+  }, [desk.data, lockDesk]);
 
   async function logout() {
     await api('/auth/logout', { method: 'POST', body: {} }).catch(() => undefined);
@@ -151,6 +169,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.15 }}
                 role="menu" className="absolute right-4 mt-2 w-52 rounded-lg border border-border bg-surface p-1 shadow-lg sm:right-6">
                 <Link href="/change-password" role="menuitem" className="flex h-10 items-center rounded-md px-3 text-sm hover:bg-surface-2">Change password</Link>
+                {desk.data?.trusted && (
+                  <button onClick={lockDesk} role="menuitem" className="flex h-10 w-full items-center gap-2 rounded-md px-3 text-sm hover:bg-surface-2"><Lock className="h-4 w-4" />Lock desk</button>
+                )}
                 <button onClick={logout} role="menuitem" className="flex h-10 w-full items-center gap-2 rounded-md px-3 text-sm text-danger hover:bg-danger-soft"><LogOut className="h-4 w-4" />Log out</button>
               </motion.div>
             )}

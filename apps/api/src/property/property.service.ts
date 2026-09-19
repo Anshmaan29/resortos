@@ -191,6 +191,19 @@ export class PropertyService {
     });
   }
 
+  /** Every room, including those switched off, for the owner's settings screen. */
+  async listRoomsForSetup(propertyId: string) {
+    const { rows } = await this.db.query<{ id: string; number: string; room_type_id: string; unit_type: string; view: string | null; building: string | null; floor: string | null; notes: string | null; is_active: boolean; version: number }>(
+      `SELECT id, number, room_type_id, unit_type, view, building, floor, notes, is_active, version
+         FROM rooms WHERE property_id = $1 ORDER BY is_active DESC, sort_order, number`,
+      [propertyId],
+    );
+    return rows.map((r) => ({
+      id: r.id, number: r.number, roomTypeId: r.room_type_id, unitType: r.unit_type, view: r.view, building: r.building,
+      floor: r.floor, notes: r.notes, isActive: r.is_active, version: r.version,
+    }));
+  }
+
   async createRoom(actor: Actor, input: RoomInput) {
     return this.db.tx({ userId: actor.user.id }, async (q) => {
       const { rows } = await q.query<{ id: string; number: string }>(

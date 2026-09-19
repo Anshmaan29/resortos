@@ -37,6 +37,20 @@ A *known device* is a browser that has logged in successfully before (`rsos_devi
 
 While locked, the owner can still perform the action directly from their own login.
 
+## Shared desks and staff PINs (spec §5.3)
+
+- **Only the owner marks a computer as a shared desk.** It then carries an HttpOnly, SameSite=strict
+  device cookie scoped to `/api/v1`; only a SHA-256 of it is stored (`trusted_devices`).
+- **A PIN never starts someone's day.** On a shared desk a person can switch in with their 4–6 digit
+  PIN only if they logged in with their password earlier *that day* (property timezone). A PIN is set
+  by its owner after re-entering their password, hashed with Argon2id, and easy PINs are refused.
+- **One person's access at a time.** Switching ends the session the browser had before; the new one
+  is tied to the desk (`sessions.trusted_device_id`) and lasts at most `SESSION_HOURS_TRUSTED`.
+- **Five wrong PINs** for a person stop their PIN for 15 minutes (their password still works).
+- **Locking ends the session**, on demand or after the owner's idle time (default 5 minutes) — a
+  locked desk holds nobody's access. Removing a desk ends every session it started.
+- Every switch, lock, trust and removal is in the audit log.
+
 ## Data handling
 
 - All SQL uses `$n` parameters; a test fails the build if any query text is built by interpolation.

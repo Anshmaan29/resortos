@@ -3,6 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { Eye, EyeOff, Palmtree } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import { Suspense, useState, type FormEvent } from 'react';
 import { loginSchema } from '@resortos/shared';
 import { Button } from '@/components/ui/button';
@@ -20,6 +22,7 @@ function LoginForm() {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const desk = useQuery({ queryKey: ['desk'], queryFn: () => api<{ trusted: boolean; people?: unknown[] }>('/desk'), retry: false });
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -63,6 +66,9 @@ function LoginForm() {
         </Field>
         {error && <p role="alert" className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
         <Button type="submit" size="lg" loading={busy} className="mt-1 w-full">Log in</Button>
+        {desk.data?.trusted && Boolean(desk.data.people?.length) && (
+          <Link href="/desk" className="text-center text-sm font-medium text-brand underline-offset-2 hover:underline">Switch in with your PIN</Link>
+        )}
         <p className="text-center text-xs text-text-3">Forgot your password? Ask the owner to reset it.</p>
       </div>
     </motion.form>

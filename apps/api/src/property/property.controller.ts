@@ -51,6 +51,12 @@ export class PropertyController {
     return this.property.updateRoomType(actor, parse(zId, id), { ...parse(roomTypeSchema, body), isActive }, version);
   }
 
+  @Get('rooms/setup')
+  @Roles('owner')
+  roomsForSetup(@CurrentActor() actor: Actor) {
+    return this.property.listRoomsForSetup(actor.user.propertyId);
+  }
+
   @Get('rooms')
   rooms(@CurrentActor() actor: Actor, @Query('date') date?: string) {
     return this.property.listRooms(actor.user.propertyId, date ? parse(zIsoDate, date) : undefined);

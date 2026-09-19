@@ -7,6 +7,7 @@ import { useRef, useState } from 'react';
 import { CANCELLATION_REASONS, formatDate, formatDateTime, formatINR, formatMobile, money, VISIT_PURPOSE_LABELS, type CancellationReason } from '@resortos/shared';
 import { EstimateBreakdown } from '@/components/booking/booking-form';
 import { AdvanceDialog, OtaPanel } from '@/components/booking/booking-money';
+import { MessagesPanel } from '@/components/messages-panel';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Select, Textarea } from '@/components/ui/field';
@@ -167,6 +168,7 @@ export default function ReservationPage() {
             </div>
           </Card>
           <OtaPanel reservationId={r.id} source={r.source} />
+          <MessagesPanel reservationId={r.id} />
         </div>
       </div>
 

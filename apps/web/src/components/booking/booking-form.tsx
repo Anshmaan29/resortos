@@ -55,7 +55,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
 
   // ---------- state (prefilled for edit / rebook) ----------
   const [guest, setGuest] = useState<GuestChoice | null>(initial ? { ...initial.guest } : null);
-  const [newGuest, setNewGuest] = useState({ firstName: '', lastName: '', mobile: '', email: '', city: '' });
+  const [newGuest, setNewGuest] = useState({ firstName: '', lastName: '', mobile: '', email: '', city: '', preferredLanguage: 'en' as 'en' | 'hi' });
   const [search, setSearch] = useState('');
   const [arrival, setArrival] = useState('');
   const [departure, setDeparture] = useState('');
@@ -248,7 +248,11 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
                     <Field label="Last name">{(id) => <Input id={id} value={newGuest.lastName} onChange={(e) => setNewGuest({ ...newGuest, lastName: e.target.value })} autoComplete="off" />}</Field>
                     <Field label="Mobile" required error={errors['guest.mobile']} hint="10-digit Indian mobile, or +country code">{(id, d) => <Input id={id} aria-describedby={d} inputMode="tel" value={newGuest.mobile} onChange={(e) => setNewGuest({ ...newGuest, mobile: e.target.value })} invalid={!!errors['guest.mobile']} />}</Field>
                     <Field label="City">{(id) => <Input id={id} value={newGuest.city} onChange={(e) => setNewGuest({ ...newGuest, city: e.target.value })} />}</Field>
-                    <Field label="Email" className="sm:col-span-2" error={errors['guest.email']}>{(id) => <Input id={id} type="email" inputMode="email" value={newGuest.email} onChange={(e) => setNewGuest({ ...newGuest, email: e.target.value })} />}</Field>
+                    <Field label="Email" error={errors['guest.email']}>{(id) => <Input id={id} type="email" inputMode="email" value={newGuest.email} onChange={(e) => setNewGuest({ ...newGuest, email: e.target.value })} />}</Field>
+                    <Field label="Messages in">{(id) => (
+                      <Select id={id} value={newGuest.preferredLanguage} onChange={(e) => setNewGuest({ ...newGuest, preferredLanguage: e.target.value as 'en' | 'hi' })}>
+                        <option value="en">English</option><option value="hi">हिन्दी</option>
+                      </Select>)}</Field>
                   </div>
                 </div>
               )}
