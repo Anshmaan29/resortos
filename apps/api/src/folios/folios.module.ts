@@ -2,7 +2,9 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { PropertyModule } from '../property/property.module';
 import { RatesModule } from '../rates/rates.module';
+import { DepositCheckoutStep, InvoiceCheckoutStep, SettlementCheckoutStep } from './checkout.steps';
 import { FolioService } from './folio.service';
+import { InvoicesService } from './invoices.service';
 import { BalanceIntegrityStep } from './integrity.step';
 import { PaymentsService } from './payments.service';
 import { FoliosController } from './folios.controller';
@@ -17,7 +19,13 @@ import { RoomNightPostingStep } from './room-night.step';
 @Module({
   imports: [PropertyModule, RatesModule, AuthModule],
   controllers: [FoliosController],
-  providers: [FolioService, PaymentsService, RoomNightPostingStep, BalanceIntegrityStep],
-  exports: [FolioService, PaymentsService, RoomNightPostingStep, BalanceIntegrityStep],
+  providers: [
+    FolioService, PaymentsService, InvoicesService, RoomNightPostingStep, BalanceIntegrityStep,
+    DepositCheckoutStep, SettlementCheckoutStep, InvoiceCheckoutStep,
+  ],
+  exports: [
+    FolioService, PaymentsService, InvoicesService, RoomNightPostingStep, BalanceIntegrityStep,
+    DepositCheckoutStep, SettlementCheckoutStep, InvoiceCheckoutStep,
+  ],
 })
 export class FoliosModule {}

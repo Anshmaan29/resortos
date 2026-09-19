@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import {
-  ERROR_CODES, addChargeSchema, chargeItemSchema, depositDecisionSchema, discountSchema, paymentAccountSchema, recordPaymentSchema, reversePaymentSchema,
+  ERROR_CODES, addChargeSchema, chargeItemSchema, creditNoteSchema, debitNoteSchema, depositDecisionSchema, discountSchema,
+  invoiceBuyerSchema, zIsoDate, paymentAccountSchema, recordPaymentSchema, reversePaymentSchema,
   voidLineSchema, zId,
 } from '@resortos/shared';
 import { z } from 'zod';
@@ -11,6 +12,7 @@ import type { Actor, AppRequest } from '../common/request-context';
 import { parse } from '../common/zod';
 import { DbService, type Queryable } from '../db/db.service';
 import { FolioService } from './folio.service';
+import { InvoicesService } from './invoices.service';
 import { PaymentsService } from './payments.service';
 
 @Controller()
@@ -18,6 +20,7 @@ export class FoliosController {
   constructor(
     private readonly folios: FolioService,
     private readonly payments: PaymentsService,
+    private readonly invoices: InvoicesService,
     private readonly db: DbService,
     private readonly idempotency: IdempotencyService,
   ) {}
@@ -114,6 +117,57 @@ export class FoliosController {
     const paymentId = parse(zId, id);
     const input = parse(reversePaymentSchema, body);
     return this.mutate(actor, req, key, body, (q) => this.payments.reverse(q, actor, paymentId, input));
+  }
+
+  // ---------------- invoices (spec §29–§31) ----------------
+
+  /** Exactly what checkout would issue, without a number. Saves nothing. */
+  @Post('folios/:id/invoice/preview')
+  @HttpCode(200)
+  previewInvoice(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() body: unknown) {
+    const folioId = parse(zId, id);
+    const { buyer } = parse(z.object({ buyer: invoiceBuyerSchema.optional() }), body ?? {});
+    return this.db.tx({ userId: actor.user.id }, (q) => this.invoices.preview(q, actor, folioId, buyer));
+  }
+
+  @Get('folios/:id/invoices')
+  folioInvoices(@CurrentActor() actor: Actor, @Param('id') id: string) {
+    const folioId = parse(zId, id);
+    return this.db.tx({ userId: actor.user.id }, (q) => this.invoices.forFolio(q, actor.user.propertyId, folioId));
+  }
+
+  /** The invoice register (owner): every document in a period, in number order. */
+  @Get('invoices')
+  @Roles('owner')
+  register(@CurrentActor() actor: Actor, @Query() query: unknown) {
+    const range = parse(z.object({ from: zIsoDate.optional(), to: zIsoDate.optional() }), query);
+    return this.invoices.register(actor.user.propertyId, range);
+  }
+
+  @Get('invoices/:id')
+  invoice(@CurrentActor() actor: Actor, @Param('id') id: string) {
+    const invoiceId = parse(zId, id);
+    return this.db.tx({ userId: actor.user.id }, (q) => this.invoices.detail(q, actor.user.propertyId, invoiceId));
+  }
+
+  /** Credit note (§29.4): owner only, reason required. The whole invoice cancels it. */
+  @Post('invoices/:id/credit-note')
+  @Roles('owner')
+  @HttpCode(200)
+  creditNote(@CurrentActor() actor: Actor, @Req() req: AppRequest, @IdempotencyKey() key: string | undefined, @Param('id') id: string, @Body() body: unknown) {
+    const invoiceId = parse(zId, id);
+    const input = parse(creditNoteSchema, body);
+    return this.mutate(actor, req, key, body, (q) => this.invoices.creditNote(q, actor, invoiceId, input));
+  }
+
+  /** Charges added after the invoice go on a debit note against it (§22). Owner only. */
+  @Post('folios/:id/debit-note')
+  @Roles('owner')
+  @HttpCode(200)
+  debitNote(@CurrentActor() actor: Actor, @Req() req: AppRequest, @IdempotencyKey() key: string | undefined, @Param('id') id: string, @Body() body: unknown) {
+    const folioId = parse(zId, id);
+    const { reason } = parse(debitNoteSchema, body);
+    return this.mutate(actor, req, key, body, (q) => this.invoices.debitNote(q, actor, folioId, reason));
   }
 
   // ---------------- payment accounts (owner settings, spec §25.1) ----------------

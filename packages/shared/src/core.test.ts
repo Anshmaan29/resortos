@@ -167,3 +167,9 @@ describe('reservation schema rules', () => {
     expect(updateReservationSchema.safeParse({ ...base, rooms: [room], version: 3 }).success).toBe(true);
   });
 });
+
+describe('document numbers (spec §31)', () => {
+  it('fit the 16-character limit in every series', () => {
+    for (const s of ['INV', 'BOS', 'CN', 'DN', 'RV'] as const) expect(formatDocumentNumber(s, '26-27', 99999).length).toBeLessThanOrEqual(16);
+  });
+});

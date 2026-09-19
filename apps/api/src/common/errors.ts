@@ -73,6 +73,21 @@ export function fromPgError(err: unknown): AppError | null {
         // the real one, and the business date moved exactly once.
         return new AppError(ERROR_CODES.CONFLICT, 'Night audit for this date has already been completed. Reload to see the day audit log.');
       }
+      if (e.constraint === 'payments_one_reversal') {
+        return new AppError(ERROR_CODES.INVALID_TRANSITION, 'This payment has already been reversed.');
+      }
+      if (e.constraint === 'cashier_shifts_one_open_per_user') {
+        return new AppError(ERROR_CODES.CONFLICT, 'You already have a shift open. Close it before opening another.');
+      }
+      if (e.constraint === 'invoices_one_per_bill') {
+        return new AppError(ERROR_CODES.CONFLICT, 'This bill has just been invoiced by someone else. Reload to see the invoice.');
+      }
+      if (e.constraint === 'invoice_lines_sold_once') {
+        return new AppError(ERROR_CODES.CONFLICT, 'Some of these charges were just invoiced by someone else. Reload and try again.');
+      }
+      if (e.constraint === 'payment_accounts_unique_name' || e.constraint === 'charge_items_unique_name') {
+        return new AppError(ERROR_CODES.CONFLICT, 'Something with this name already exists.');
+      }
       if (e.constraint === 'users_username_key' || e.constraint === 'users_mobile_key') {
         return new AppError(ERROR_CODES.CONFLICT, 'This username or mobile number is already used by another account.');
       }
@@ -84,12 +99,25 @@ export function fromPgError(err: unknown): AppError | null {
       if (e.message?.includes('business date cannot move backwards')) {
         return new AppError(ERROR_CODES.CONFLICT, 'The business date cannot move backwards. Corrections belong on the current date.');
       }
+      // Guards written for staff to read ("that shift is closed", "more would be credited than was
+      // invoiced") say what went wrong better than a generic sentence would.
+      if (e.message?.startsWith('resortos: ')) return new AppError(ERROR_CODES.VALIDATION, staffSentence(e.message));
       return new AppError(ERROR_CODES.VALIDATION, 'Some values are not allowed. Please check the form.');
     case '23503': // foreign_key_violation
       return new AppError(ERROR_CODES.VALIDATION, 'A linked record does not exist or belongs to another property.');
     case '23000': // integrity_constraint_violation (protection triggers)
+      if (e.message?.startsWith('resortos: ')) return new AppError(ERROR_CODES.FORBIDDEN, staffSentence(e.message));
       return new AppError(ERROR_CODES.FORBIDDEN, 'This record is protected and cannot be changed this way.');
     default:
       return null;
   }
+}
+
+/** 'resortos: that shift is closed' → 'That shift is closed.' */
+function staffSentence(message: string): string {
+  // forbid_change(): 'resortos: UPDATE on payments is not allowed (payments are kept)' → its reason.
+  const protectedRow = /^resortos: \w+ on \w+ is not allowed \((.*)\)$/s.exec(message);
+  const text = (protectedRow ? protectedRow[1]! : message.slice('resortos: '.length)).trim();
+  const sentence = text.charAt(0).toUpperCase() + text.slice(1);
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
 }

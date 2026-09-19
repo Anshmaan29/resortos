@@ -161,6 +161,9 @@ export interface Bill {
   payments: BillPayment[];
   paid: string;
   depositHeld: string;
+  total: string | null;
+  documents: { id: string; number: string; documentType: DocumentType; grandTotal: string; invoiceDate: string }[];
+  pendingInvoice: boolean;
   balance: string | null;
 }
 export interface ChargeItem {
@@ -210,4 +213,33 @@ export interface AccountLedger {
   account: { id: string; name: string; kind: PaymentAccountKind };
   from: string | null; to: string | null; openingBalance: string; closingBalance: string;
   lines: { source: string; sourceId: string; reference: string; businessDate: string; at: string; by: string; description: string; amount: string; balance: string }[];
+}
+
+export type DocumentType = 'tax_invoice' | 'bill_of_supply' | 'credit_note' | 'debit_note';
+export interface TaxGroup { ratePercent: string; taxableValue: string; cgst: string; sgst: string; igst: string }
+export interface InvoiceLine {
+  businessDate: string; description: string; sac: string; quantity: string; rate: string;
+  gross: string; discount: string; taxable: string; gstRate: string;
+}
+export interface InvoicePreview {
+  documentType: DocumentType; invoiced: { id: string; number: string } | null;
+  seller: { legalName: string; address: string; gstin: string | null; stateCode: string };
+  buyer: { name: string; gstin: string | null; address: string | null; stateCode: string | null };
+  lines: InvoiceLine[]; groups: TaxGroup[];
+  taxableTotal: string; cgstTotal: string; sgstTotal: string; igstTotal: string; roundOff: string; grandTotal: string;
+}
+export interface Invoice {
+  id: string; folioId: string; documentType: DocumentType; number: string; invoiceDate: string;
+  original: { id: string; number: string } | null; reason: string | null;
+  seller: InvoicePreview['seller']; buyer: InvoicePreview['buyer'] & { mobile: string | null };
+  placeOfSupply: string; stay: { from: string | null; to: string | null; rooms: string | null; reservationNumber: string | null };
+  lines: (InvoiceLine & { id: string; lineNo: number; creditsLineId: string | null })[]; groups: TaxGroup[];
+  taxableTotal: string; cgstTotal: string; sgstTotal: string; igstTotal: string; roundOff: string; grandTotal: string;
+  paidAtIssue: string; balanceAtIssue: string; paid: { method: string; amount: string }[];
+  corrections: { id: string; number: string; documentType: DocumentType; grandTotal: string; invoiceDate: string }[];
+  finalizedAt: string; finalizedBy: string;
+}
+export interface InvoiceRegisterRow {
+  id: string; number: string; documentType: DocumentType; invoiceDate: string; buyerName: string; buyerGstin: string | null;
+  taxable: string; cgst: string; sgst: string; igst: string; total: string; originalNumber: string | null;
 }

@@ -536,3 +536,39 @@ export const discountSchema = z
     if (v.reason === 'other' && !v.note) ctx.addIssue({ code: 'custom', path: ['note'], message: 'Say what the discount is for' });
   });
 export type DiscountInput = z.infer<typeof discountSchema>;
+
+/**
+ * Who the invoice is made out to (spec §29.2). Left out, it is the guest. A business guest's GSTIN
+ * makes it a B2B invoice; the GSTIN is checked here and again by the database.
+ */
+export const invoiceBuyerSchema = z.object({
+  name: z.string().trim().min(2, 'Enter the name to bill').max(120),
+  gstin: z.string().trim().toUpperCase().refine(isValidGstin, 'This GSTIN is not valid').optional()
+    .or(z.literal('').transform(() => undefined)),
+  address: optionalText(300),
+});
+export type InvoiceBuyerInput = z.infer<typeof invoiceBuyerSchema>;
+
+/** A credit note (spec §29.4): the whole invoice, or chosen lines by amount. Owner only. */
+export const creditNoteSchema = z.object({
+  reason: z.string().trim().min(3, 'Say why this invoice is being credited').max(300),
+  lines: z.array(z.object({ invoiceLineId: zId, amount: zPositiveMoney.optional() })).min(1).max(200).optional(),
+});
+export type CreditNoteInput = z.infer<typeof creditNoteSchema>;
+
+/** A debit note for charges added after the invoice (spec §22). */
+export const debitNoteSchema = z.object({
+  reason: z.string().trim().min(3, 'Say what the late charges are for').max(300),
+});
+export type DebitNoteInput = z.infer<typeof debitNoteSchema>;
+
+/** Checkout step input: leave with a balance still owed, which only the owner can allow (§22). */
+export const checkoutSettlementSchema = z.object({
+  pendingBalance: z.boolean().default(false),
+  ownerAuthorisationId: zId.optional(),
+}).default({ pendingBalance: false });
+
+/** Checkout step input: who the invoice is made out to, when it is not simply the guest. */
+export const checkoutInvoiceSchema = z.object({
+  buyer: invoiceBuyerSchema.optional(),
+}).default({});

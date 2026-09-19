@@ -149,7 +149,28 @@ export class FolioService {
       () => this.payments.depositHeld(q, folioId),
     ]);
     const paid = money(paidTotal);
-    const balance = tax.grandTotal ? money(tax.grandTotal).minus(paid) : null;
+
+    // Once invoiced, what the guest owes is what the documents say — the invoice keeps the rates it
+    // was issued at even if a rule changes later — plus an estimate for anything added since, which
+    // is waiting for a debit note.
+    const { rows: docs } = await q.query<{ id: string; number: string; document_type: string; grand_total: string; invoice_date: string }>(
+      `SELECT id, number, document_type, grand_total, invoice_date FROM invoices WHERE folio_id = $1 ORDER BY finalized_at`, [folioId],
+    );
+    let total: ReturnType<typeof money> | null = tax.grandTotal ? money(tax.grandTotal) : null;
+    let pendingInvoice = false;
+    if (docs.length) {
+      const invoiced = docs.reduce((t, d) => (d.document_type === 'credit_note' ? t.minus(d.grand_total) : t.plus(d.grand_total)), money(0));
+      const { rows: onInvoice } = await q.query<{ id: string }>(
+        `SELECT folio_line_id AS id FROM invoice_lines il JOIN invoices i ON i.id = il.invoice_id
+          WHERE i.folio_id = $1 AND il.folio_line_id IS NOT NULL`, [folioId],
+      );
+      const invoicedIds = new Set(onInvoice.map((r) => r.id));
+      const later = live.filter((l) => !invoicedIds.has(l.applies_to_line_id ?? l.id));
+      pendingInvoice = later.some((l) => l.line_type !== 'discount');
+      const laterTax = later.length ? await this.billTax(q, propertyId, later) : null;
+      total = laterTax && !laterTax.available ? null : invoiced.plus(laterTax?.grandTotal ?? 0);
+    }
+    const balance = total ? total.minus(paid) : null;
 
     return {
       id: folio.id, number: folio.number, stayId: folio.stay_id, reservationId: folio.reservation_id,
@@ -170,6 +191,10 @@ export class FolioService {
       })),
       charges: toMoneyString(charges),
       tax: { ...tax, lines: undefined },
+      total: total ? toMoneyString(total) : null,
+      documents: docs.map((d) => ({ id: d.id, number: d.number, documentType: d.document_type, grandTotal: d.grand_total, invoiceDate: d.invoice_date })),
+      // Charges added after the invoice, waiting for a debit note (§22).
+      pendingInvoice,
       payments,
       paid: toMoneyString(paid),
       // Held for the guest, not income and not part of "paid" (§27).
@@ -192,8 +217,10 @@ export class FolioService {
    */
   async addCharge(q: Queryable, actor: Actor, folioId: string, input: AddChargeInput) {
     const folio = await this.load(q, actor.user.propertyId, folioId);
-    if (folio.status === 'closed') {
-      throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This bill is closed. Charges cannot be added to it.');
+    // A closed bill has been invoiced. A charge found afterwards — the minibar, a damage — is the
+    // owner's to add, and goes on a debit note; the invoice itself is never touched (§22).
+    if (folio.status === 'closed' && actor.user.role !== 'owner') {
+      throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This bill is closed. Only the owner can add a late charge, which goes on a debit note.');
     }
     const businessDate = await this.property.businessDate(q, actor.user.propertyId);
     const on = input.businessDate ?? businessDate;
