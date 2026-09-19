@@ -19,9 +19,23 @@ const envSchema = z.object({
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+  /**
+   * Who delivers guest email (spec §40). `resend` needs RESEND_API_KEY. `dev` records messages as
+   * sent without sending anything (development and tests). `off` sends nothing and marks each
+   * message skipped. Defaults: resend when a key is set, otherwise dev outside production and off in it.
+   */
+  MESSAGING_PROVIDER: z.enum(['resend', 'dev', 'off']).optional(),
+  RESEND_API_KEY: z.string().min(10).optional(),
+  /** Svix signing secret for Resend delivery webhooks ("whsec_…"). Without it the webhook refuses everything. */
+  RESEND_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
+  RESEND_API_URL: z.string().url().default('https://api.resend.com'),
   /** Background job runner. Off in tests, which drive the dispatcher directly and deterministically. */
   JOBS_ENABLED: z.enum(['true', 'false']).optional().transform((v) => v === undefined ? undefined : v === 'true'),
-}).transform((c) => ({ ...c, JOBS_ENABLED: c.JOBS_ENABLED ?? c.NODE_ENV !== 'test' }));
+}).transform((c) => ({
+  ...c,
+  JOBS_ENABLED: c.JOBS_ENABLED ?? c.NODE_ENV !== 'test',
+  MESSAGING_PROVIDER: c.MESSAGING_PROVIDER ?? (c.RESEND_API_KEY ? 'resend' : c.NODE_ENV === 'production' ? 'off' : 'dev'),
+}));
 
 export type AppConfig = z.infer<typeof envSchema>;
 
@@ -34,6 +48,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
   if (parsed.data.NODE_ENV === 'production' && !parsed.data.SESSION_COOKIE_SECURE) {
     throw new Error('SESSION_COOKIE_SECURE must be true in production');
+  }
+  if (parsed.data.MESSAGING_PROVIDER === 'resend' && !parsed.data.RESEND_API_KEY) {
+    throw new Error('MESSAGING_PROVIDER=resend needs RESEND_API_KEY');
+  }
+  if (parsed.data.NODE_ENV === 'production' && parsed.data.MESSAGING_PROVIDER === 'dev') {
+    throw new Error('The dev message provider never sends; production must use resend or off');
   }
   if (parsed.data.NODE_ENV === 'production' && (parsed.data.S3_BUCKET.includes('-dev') || parsed.data.S3_BUCKET.includes('-test'))) {
     throw new Error('Production must use the production document bucket');

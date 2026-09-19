@@ -9,5 +9,6 @@ import { PrintingService } from './printing.service';
   imports: [FoliosModule, CashierModule],
   controllers: [PrintingController],
   providers: [PrintingService],
+  exports: [PrintingService],
 })
 export class PrintingModule {}
