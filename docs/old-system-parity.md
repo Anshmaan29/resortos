@@ -13,7 +13,7 @@ has now been placed.
 | Old menu item | Where it lives here | Status | New table? |
 |---|---|---|---|
 | Dashboard | Reception home: arrivals, departures, in-house count, room board, needs-attention | **Done** (1.7) | — |
-| Room Service Items | Saved charge items — the quick-pick list behind "Add charge" (spec §24.2). Not a restaurant system | **Planned** 2.2 | `charge_items` |
+| Room Service Items | Saved charge items — the quick-pick list behind "Add charge" (spec §24.2). Not a restaurant system | **Done** (2.2) | `charge_items` |
 | Reservations | Bookings list, calendar, availability search | **Done** (1.6, 1.7) | — |
 | Create Check In | Check-in wizard with server-side drafts | **Done** (1.8) | — |
 | Check In List | A list of in-house stays. Home shows only a *count* and the room board | **Gap** → 1.9 | — (view over `stays`) |
@@ -26,7 +26,7 @@ has now been placed.
 | Payment Transactions | Payments list with method, reference, account, shift | **Planned** 2.3 | `payments` |
 | Room Status Log | `room_status_history` is written on every change; no screen yet | **Gap (screen)** → 3.3 | — (table exists) |
 | Room Shift Log | `room_shifts` is written and shown on the stay; no property-wide list | **Gap (screen)** → 1.9 | — (table exists) |
-| Day Audit Log | Night audit run history and its summary | **Planned** 2.1 | `night_audits` |
+| Day Audit Log | Night audit run history and its summary | **Done** (2.1) | `night_audits` |
 | Rooms Inventory | Owner settings: rooms, room types | **Planned** pre-pilot #1 | — (tables exist) |
 
 **Nothing in the old menu is unaccounted for.** Four items were genuinely missing and now have a
@@ -62,10 +62,10 @@ home; three of those are screens over data we already store correctly.
 | Room type | `reservation_rooms.room_type_id` | **Done** |
 | Room | `reservation_rooms.room_id` + `room_allocations` | **Done** |
 | Tariff | `reservation_rooms.nightly_rate` + per-night `reservation_room_nights` | **Done** |
-| Grand total | Live GST estimate now; the real bill is the folio | **Planned** 2.2 |
+| Grand total | The bill, with GST worked out per line from the dated rules | **Done** (2.2) |
 | **Payment account** | — nowhere | **Gap** → 2.3 |
 | Amount | Advance at check-in | **Planned** 2.3 |
-| Balance | Folio balance, recalculated from lines | **Planned** 2.2 |
+| Balance | Recalculated from the lines, never stored | **Done** (2.2) — payments join it in 2.3 |
 | Guest photo | `guest_documents`, checksum-verified | **Done** |
 | ID proof front | `guest_documents` | **Done** |
 | ID proof back | `guest_documents` | **Done** |

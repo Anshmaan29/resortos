@@ -137,3 +137,31 @@ export interface ApiError {
   details?: unknown;
   requestId?: string;
 }
+
+/** Bill line types (spec §23). Staff see the labels, never these codes. */
+export const FOLIO_LINE_TYPES = [
+  'room_night', 'extra_person', 'meal', 'food', 'beverage', 'activity',
+  'laundry', 'transport', 'early_checkin', 'late_checkout', 'damage', 'other', 'discount',
+] as const;
+export type FolioLineType = (typeof FOLIO_LINE_TYPES)[number];
+
+export const FOLIO_LINE_TYPE_LABELS: Record<FolioLineType, string> = {
+  room_night: 'Room', extra_person: 'Extra person', meal: 'Meal plan', food: 'Food',
+  beverage: 'Beverage', activity: 'Activity', laundry: 'Laundry', transport: 'Transport',
+  early_checkin: 'Early check-in', late_checkout: 'Late checkout', damage: 'Damage',
+  other: 'Other', discount: 'Discount',
+};
+
+/** The types a receptionist can add by hand. Room nights are posted by night audit (§35.1). */
+export const ADDABLE_LINE_TYPES = [
+  'food', 'beverage', 'activity', 'laundry', 'transport', 'early_checkin', 'late_checkout', 'damage', 'other',
+] as const;
+export type AddableLineType = (typeof ADDABLE_LINE_TYPES)[number];
+
+export const TAX_CATEGORIES = ['accommodation', 'food', 'activity', 'laundry', 'transport', 'other'] as const;
+
+/** The tax category a charge type falls into unless the saved item says otherwise (§24.3). */
+export const DEFAULT_TAX_CATEGORY: Record<AddableLineType, (typeof TAX_CATEGORIES)[number]> = {
+  food: 'food', beverage: 'food', activity: 'activity', laundry: 'laundry', transport: 'transport',
+  early_checkin: 'accommodation', late_checkout: 'accommodation', damage: 'other', other: 'other',
+};

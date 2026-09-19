@@ -6,6 +6,7 @@ import {
   isE164, isValidGstin, isValidIndianVehicleNumber, isValidPinCode, normalizeIndianMobile, normalizeVehicleNumber,
 } from './validators';
 import {
+  ADDABLE_LINE_TYPES, TAX_CATEGORIES,
   BOOKING_SOURCES, CANCELLATION_MONEY_OPTIONS, CANCELLATION_REASONS, HOUSEKEEPING_STATUSES, MEAL_PLAN_CODES,
   OTA_SOURCES, ROLES, ROOM_VIEWS, SERVICE_STATUSES, UNIT_TYPES, VISIT_PURPOSES,
 } from './domain';
@@ -267,6 +268,40 @@ export type ExtendStayInput = z.infer<typeof extendStaySchema>;
  */
 export const completeNightAuditSchema = z.object({ businessDate: zIsoDate });
 export type CompleteNightAuditInput = z.infer<typeof completeNightAuditSchema>;
+
+/**
+ * Adding a charge to a bill (spec §24.1). The item name is what appears on the invoice, so it is
+ * taken as typed rather than looked up — a saved item only fills the form in.
+ */
+export const addChargeSchema = z.object({
+  lineType: z.enum(ADDABLE_LINE_TYPES),
+  name: z.string().trim().min(1, 'Enter what the charge is for').max(120),
+  quantity: z.coerce.number().positive('Quantity must be more than zero').max(9999).default(1),
+  unitRate: zNonNegativeMoney,
+  chargeItemId: zId.optional(),
+  /** Defaults to the current business date; a past date needs the date to still be open. */
+  businessDate: zIsoDate.optional(),
+  note: optionalText(300),
+});
+export type AddChargeInput = z.infer<typeof addChargeSchema>;
+
+/** Voiding a line (spec §23, §4.5). A reason is always required; there is no silent removal. */
+export const voidLineSchema = z.object({
+  reason: z.string().trim().min(3, 'Say why this line is being removed').max(300),
+  ownerAuthorisationId: zId.optional(),
+});
+export type VoidLineInput = z.infer<typeof voidLineSchema>;
+
+/** A saved charge item — the quick-pick list, not a menu system (spec §24.2). */
+export const chargeItemSchema = z.object({
+  name: z.string().trim().min(1, 'Enter a name').max(80),
+  lineType: z.enum(ADDABLE_LINE_TYPES),
+  defaultRate: zNonNegativeMoney,
+  taxCategory: z.enum(TAX_CATEGORIES).optional(),
+  sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
+  isActive: z.boolean().optional(),
+});
+export type ChargeItemInput = z.infer<typeof chargeItemSchema>;
 
 export const rateQuoteQuerySchema = z
   .object({

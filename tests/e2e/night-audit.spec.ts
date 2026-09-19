@@ -22,7 +22,7 @@ test('night audit lists the steps and will not close a day with anything outstan
   await expect(page.getByText(/Closing \w{3} 16 Sep 2026 · next day 17 Sep 2026/)).toBeVisible();
 
   // Every registered step is shown, in spec order, whether or not it has anything to report.
-  for (const title of ['Arrivals not checked in', 'Departures not checked out', 'Room status check', 'Summary']) {
+  for (const title of ['Arrivals not checked in', 'Departures not checked out', 'Room charges', 'Room status check', 'Summary']) {
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
   }
 

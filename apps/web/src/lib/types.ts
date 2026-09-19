@@ -1,4 +1,5 @@
-import type { HousekeepingStatus, IdType, MealPlanCode, OccupancyStatus, ReservationStatus, Role, RoomDisplayState, ServiceStatus, VisitPurpose } from '@resortos/shared';
+import type {
+  AddableLineType, FolioLineType, HousekeepingStatus, IdType, MealPlanCode, OccupancyStatus, ReservationStatus, Role, RoomDisplayState, ServiceStatus, VisitPurpose } from '@resortos/shared';
 
 export interface Me { id: string; propertyId: string; fullName: string; username: string; role: Role; discountLimitPercent: string; mustChangePassword: boolean; canRunNightAudit: boolean }
 export interface Property { id: string; name: string; legalName: string; city: string; stateCode: string; gstin: string | null; businessDate: string; checkInTime: string; checkOutTime: string; isPractice: boolean; version: number }
@@ -128,4 +129,30 @@ export interface NightAuditPreview {
   businessDate: string; nextBusinessDate: string; alreadyCompleted: NightAuditRun | null;
   canComplete: boolean; blocked: boolean; mayRun: boolean;
   steps: NightAuditStepView[]; summary: Record<string, number>;
+}
+
+export interface BillLine {
+  id: string; businessDate: string; lineType: FolioLineType; name: string;
+  quantity: number; unitRate: string; amount: string; taxCategory: string;
+  source: 'manual' | 'night_audit' | 'import'; note: string | null;
+  at: string; by: string;
+  voided: boolean; voidedAt: string | null; voidReason: string | null; voidedBy: string | null;
+}
+export interface Bill {
+  id: string; number: string; stayId: string | null; reservationId: string; reservationNumber: string;
+  status: 'open' | 'closed'; kind: string; version: number; businessDate: string;
+  guestName: string; roomNumber: string | null;
+  lines: BillLine[];
+  charges: string;
+  tax: {
+    available: boolean; message: string | null; taxTotal: string | null; roundOff: string | null;
+    grandTotal: string | null; groups: { ratePercent: string; taxableValue: string; cgst: string; sgst: string; igst: string }[];
+    usesPlaceholderRates: boolean;
+  };
+  paid: string;
+  balance: string | null;
+}
+export interface ChargeItem {
+  id: string; name: string; lineType: AddableLineType; defaultRate: string;
+  taxCategory: string; isActive: boolean; sortOrder: number; version: number;
 }

@@ -29,6 +29,9 @@ REVOKE UPDATE ON grc_documents FROM resortos_app;
 -- A completed night audit run is never edited (spec §35).
 REVOKE UPDATE ON night_audits FROM resortos_app;
 
+-- Bill lines accept exactly one update, the void, and a trigger enforces which columns (spec §23).
+-- UPDATE stays granted because voiding is an update; the trigger is what makes it safe.
+
 -- Job queue (pg-boss). Its schema is created and upgraded by the migration role; the API only
 -- reads and writes jobs. DELETE is granted here because jobs genuinely are disposable — pg-boss
 -- archives and prunes completed work — which is the exception the rule above describes.

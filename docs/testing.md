@@ -42,6 +42,15 @@ All tests that touch data run against **real PostgreSQL 16** (`resortos_test`, r
 | No-show is recorded separately from cancellation, frees the room, and is refused before the arrival date | `apps/api/test/night-audit.test.ts` |
 | Extending a stay prices the new nights and is refused when the room is already sold | `apps/api/test/night-audit.test.ts` |
 | The night audit screen shows every step and never offers a button the server would refuse | `tests/e2e/night-audit.spec.ts` |
+| A bill opens once per stay, even with three requests racing for it | `apps/api/test/folio.test.ts` |
+| A charge stores the name exactly as typed, and its GST comes from the type and date, never from the receptionist | `apps/api/test/folio.test.ts` |
+| A bill line can never be edited or deleted in the database — only voided, once, with a reason | `apps/api/test/folio.test.ts` |
+| A voided line stays on the bill, shows who removed it and why, and stops counting | `apps/api/test/folio.test.ts` |
+| Night audit posts room, meal and extra-person as separate lines (their GST differs) at the agreed rate | `apps/api/test/folio.test.ts` |
+| Replaying the posting step against a closed date posts nothing twice | `apps/api/test/folio.test.ts` |
+| A day night audit has closed refuses new charges, and voiding on it needs Owner PIN | `apps/api/test/folio.test.ts` |
+| Saved charge items are owner-only and are deactivated, never deleted | `apps/api/test/folio.test.ts` |
+| Adding and removing a charge on the stay screen, with the removed line kept and the reason shown | `tests/e2e/check-in.spec.ts` |
 | Edit / rebook use the same validation, limits and audit | `apps/api/test/booking-changes.test.ts` |
 | No SQL interpolation; demo data blocked from production | `apps/api/test/guards.test.ts` |
 | A backup really restores: dump → encrypt → upload → download → decrypt → hash check → restore → integrity checks | `apps/api/test/backup-restore.test.ts` |
