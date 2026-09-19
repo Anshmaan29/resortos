@@ -75,7 +75,7 @@ test('a stay with food and an activity, paid card + UPI, checks out with a tax i
   // ₹560 food at 5% and ₹3,000 activity at 18% (demo rates): ₹588 + ₹3,540 = ₹4,128.
   await expect(page.getByRole('definition').filter({ hasText: '₹4,128' })).toBeVisible();
 
-  const pay = async (method: string, account: string, amount: string, reference: string) => {
+  const pay = async (method: string, account: string, amount: string, shown: string, reference: string) => {
     await page.getByRole('button', { name: 'Record payment' }).first().click();
     const dialog = page.getByRole('dialog', { name: 'Record a payment' });
     await dialog.getByLabel('How was it paid').selectOption({ label: method });
@@ -83,10 +83,11 @@ test('a stay with food and an activity, paid card + UPI, checks out with a tax i
     await dialog.getByLabel('Amount').fill(amount);
     await dialog.getByLabel(/Approval code|UTR/).fill(reference);
     await dialog.getByRole('button', { name: /^Record ₹/ }).click();
-    await expect(page.getByText(/Payment of .* recorded/)).toBeVisible();
+    // By amount: the previous payment's toast can still be on screen.
+    await expect(page.getByText(`Payment of ${shown} recorded`)).toBeVisible();
   };
-  await pay('Card (POS machine)', 'Card machine (POS)', '2000', '4417');
-  await pay('UPI', 'UPI QR at desk', '2128', 'UTR-771203');
+  await pay('Card (POS machine)', 'Card machine (POS)', '2000', '₹2,000', '4417');
+  await pay('UPI', 'UPI QR at desk', '2128', '₹2,128', 'UTR-771203');
 
   await expect(page.getByRole('definition').filter({ hasText: /^₹0$/ })).toBeVisible();
 
