@@ -1,17 +1,23 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req } from '@nestjs/common';
-import { addChargeSchema, chargeItemSchema, voidLineSchema, zId } from '@resortos/shared';
+import {
+  ERROR_CODES, addChargeSchema, chargeItemSchema, depositDecisionSchema, paymentAccountSchema, recordPaymentSchema, reversePaymentSchema,
+  voidLineSchema, zId,
+} from '@resortos/shared';
 import { z } from 'zod';
+import { AppError } from '../common/errors';
 import { CurrentActor, IdempotencyKey, Roles } from '../common/decorators';
 import { IdempotencyService } from '../common/idempotency.service';
 import type { Actor, AppRequest } from '../common/request-context';
 import { parse } from '../common/zod';
 import { DbService, type Queryable } from '../db/db.service';
 import { FolioService } from './folio.service';
+import { PaymentsService } from './payments.service';
 
 @Controller()
 export class FoliosController {
   constructor(
     private readonly folios: FolioService,
+    private readonly payments: PaymentsService,
     private readonly db: DbService,
     private readonly idempotency: IdempotencyService,
   ) {}
@@ -42,6 +48,80 @@ export class FoliosController {
     const lineId = parse(zId, id);
     const input = parse(voidLineSchema, body);
     return this.mutate(actor, req, key, body, (q) => this.folios.voidLine(q, actor, lineId, input));
+  }
+
+  // ---------------- payments (spec §25, §26) ----------------
+
+  @Post('folios/:id/payments')
+  @HttpCode(200)
+  recordOnFolio(@CurrentActor() actor: Actor, @Req() req: AppRequest, @IdempotencyKey() key: string | undefined, @Param('id') id: string, @Body() body: unknown) {
+    const folioId = parse(zId, id);
+    const input = parse(recordPaymentSchema, body);
+    return this.mutate(actor, req, key, body, async (q) => {
+      await this.payments.record(q, actor, { folioId }, input);
+      return this.folios.detail(q, actor.user.propertyId, folioId);
+    });
+  }
+
+  /** The security deposit decision (spec §27): apply some to the bill, give the rest back. */
+  @Post('folios/:id/deposit/settle')
+  @HttpCode(200)
+  settleDeposit(@CurrentActor() actor: Actor, @Req() req: AppRequest, @IdempotencyKey() key: string | undefined, @Param('id') id: string, @Body() body: unknown) {
+    const folioId = parse(zId, id);
+    const input = parse(depositDecisionSchema, body);
+    return this.mutate(actor, req, key, body, async (q) => {
+      const before = await this.folios.detail(q, actor.user.propertyId, folioId);
+      if (!before.balance) throw new AppError(ERROR_CODES.CONFLICT, 'GST cannot be worked out for this bill yet, so what it owes is not known.');
+      await this.payments.settleDeposit(q, actor, folioId, input, before.balance);
+      return this.folios.detail(q, actor.user.propertyId, folioId);
+    });
+  }
+
+  /** An advance taken before the guest arrives, when there is no bill yet (spec §26). */
+  @Post('reservations/:id/advance')
+  @HttpCode(200)
+  recordAdvance(@CurrentActor() actor: Actor, @Req() req: AppRequest, @IdempotencyKey() key: string | undefined, @Param('id') id: string, @Body() body: unknown) {
+    const reservationId = parse(zId, id);
+    const input = parse(recordPaymentSchema, body);
+    return this.mutate(actor, req, key, body, (q) =>
+      this.payments.record(q, actor, { reservationId }, { ...input, entryType: input.entryType === 'payment' ? 'advance' : input.entryType }));
+  }
+
+  @Post('payments/:id/reverse')
+  @HttpCode(200)
+  reversePayment(@CurrentActor() actor: Actor, @Req() req: AppRequest, @IdempotencyKey() key: string | undefined, @Param('id') id: string, @Body() body: unknown) {
+    const paymentId = parse(zId, id);
+    const input = parse(reversePaymentSchema, body);
+    return this.mutate(actor, req, key, body, (q) => this.payments.reverse(q, actor, paymentId, input));
+  }
+
+  // ---------------- payment accounts (owner settings, spec §25.1) ----------------
+
+  @Get('payment-accounts')
+  listAccounts(@CurrentActor() actor: Actor, @Query('includeInactive') includeInactive?: string) {
+    return this.payments.listAccounts(actor.user.propertyId, includeInactive === 'true');
+  }
+
+  /** Account-wise totals — the old software's Ledger Entries, recalculated from rows. */
+  @Get('payment-accounts/balances')
+  @Roles('owner')
+  accountBalances(@CurrentActor() actor: Actor, @Query('from') from?: string, @Query('to') to?: string) {
+    return this.payments.accountBalances(actor.user.propertyId, { from, to });
+  }
+
+  @Post('payment-accounts')
+  @Roles('owner')
+  createAccount(@CurrentActor() actor: Actor, @Body() body: unknown) {
+    const input = parse(paymentAccountSchema, body);
+    return this.db.tx({ userId: actor.user.id }, (q) => this.payments.createAccount(q, actor, input));
+  }
+
+  @Patch('payment-accounts/:id')
+  @Roles('owner')
+  updateAccount(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() body: unknown) {
+    const accountId = parse(zId, id);
+    const { version, ...rest } = parse(paymentAccountSchema.extend({ version: z.coerce.number().int().min(1) }), body);
+    return this.db.tx({ userId: actor.user.id }, (q) => this.payments.updateAccount(q, actor, accountId, rest, version));
   }
 
   // ---------------- saved charge items (spec §24.2) ----------------

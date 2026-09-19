@@ -61,3 +61,8 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
   }
   return data as T;
 }
+
+/** A same-origin API URL for things the browser opens itself — a printable PDF in a new tab. */
+export function apiUrl(path: string): string {
+  return `/api/v1${path}`;
+}

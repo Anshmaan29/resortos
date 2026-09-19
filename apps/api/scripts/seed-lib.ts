@@ -123,6 +123,25 @@ export async function seed(connectionString: string, opts: { businessDate?: stri
     );
     await client.query(`INSERT INTO settings (property_id, key, value) VALUES ($1, 'child_policy', '{"freeBelowAge":6,"childMaxAge":12}')`, [propertyId]);
 
+    // Where money lands (spec §25.1) and the desk's quick-pick charges (§24.2), so a fresh demo can
+    // take a payment and add dinner without a trip to settings first.
+    await client.query(
+      `INSERT INTO payment_accounts (property_id, name, kind, bank_name, account_last4, upi_handle, pos_terminal, sort_order, created_by) VALUES
+         ($1,'Front desk cash','cash',NULL,NULL,NULL,NULL,1,$2),
+         ($1,'UPI QR at desk','upi',NULL,NULL,'aravalihills@okbank',NULL,2,$2),
+         ($1,'Card machine (POS)','card_pos',NULL,NULL,NULL,'POS-01',3,$2),
+         ($1,'Current account','bank','Demo Bank','4821',NULL,NULL,4,$2)`,
+      [propertyId, ownerId],
+    );
+    await client.query(
+      `INSERT INTO charge_items (property_id, name, line_type, default_rate, tax_category, sort_order, created_by) VALUES
+         ($1,'Paneer Tikka','food',280.00,'food',1,$2),
+         ($1,'Masala Chai','beverage',60.00,'food',2,$2),
+         ($1,'Bonfire','activity',800.00,'activity',3,$2),
+         ($1,'Laundry (per piece)','laundry',60.00,'laundry',4,$2)`,
+      [propertyId, ownerId],
+    );
+
     if (opts.withBookings !== false) {
       const guests = [
         ['Rahul', 'Sharma', '+919876543210', 'Jaipur'], ['Amit', 'Kulkarni', '+919820011223', 'Pune'],
