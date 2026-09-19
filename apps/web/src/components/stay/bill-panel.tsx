@@ -1,6 +1,7 @@
 'use client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { IndianRupee, Percent, Plus, Receipt, Undo2 } from 'lucide-react';
+import { FileText, IndianRupee, Percent, Plus, Printer, Receipt, Undo2 } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import {
   ADDABLE_LINE_TYPES, DISCOUNT_REASON_LABELS, DISCOUNT_REASONS, FOLIO_LINE_TYPE_LABELS, formatDate,
@@ -14,9 +15,12 @@ import { Card, CardHeader, EmptyState, ErrorBanner, Skeleton } from '@/component
 import { useOwnerApproval } from '@/components/ui/owner-pin';
 import { useToast } from '@/components/ui/toast';
 import { DepositDialog, RecordPaymentDialog, ReversePaymentDialog } from './payment-dialogs';
-import { api, newIdempotencyKey, ApiError } from '@/lib/api';
+import { api, apiUrl, newIdempotencyKey, ApiError } from '@/lib/api';
+import { useMe } from '@/lib/session';
 import { cn } from '@/lib/cn';
 import type { Bill, BillLine, BillPayment, ChargeItem, DiscountPreview } from '@/lib/types';
+
+const DOC_LABELS = { tax_invoice: 'Tax invoice', bill_of_supply: 'Bill of supply', credit_note: 'Credit note', debit_note: 'Debit note' } as const;
 
 /** Staff word is "Bill", never "folio" (CLAUDE.md conventions). */
 export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolean }) {
@@ -26,6 +30,10 @@ export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolea
   const [reversing, setReversing] = useState<BillPayment | null>(null);
   const [depositOpen, setDepositOpen] = useState(false);
   const [discounting, setDiscounting] = useState<{ line: BillLine | null } | null>(null);
+
+  const [debitOpen, setDebitOpen] = useState(false);
+  const me = useMe();
+  const isOwner = me.data?.role === 'owner';
 
   const bill = useQuery({ queryKey: ['bill', stayId], queryFn: () => api<Bill>(`/stays/${stayId}/bill`) });
 
@@ -38,8 +46,23 @@ export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolea
       <CardHeader
         title="Bill"
         description={`${b.number} · charges are added against the business date they belong to`}
-        action={canEdit && b.status === 'open' ? (
-          <div className="flex gap-2">
+        action={canEdit && b.status === 'closed' ? (
+          // A closed bill has been invoiced: money owed can still be paid, and the owner can add a
+          // late charge, which goes on a debit note (§22).
+          <div className="flex flex-wrap gap-2">
+            {isOwner && (
+              <Button size="sm" variant="secondary" onClick={() => setAddOpen(true)}>
+                <Plus className="h-4 w-4" aria-hidden />Late charge
+              </Button>
+            )}
+            {b.balance && Number(b.balance) !== 0 && (
+              <Button size="sm" onClick={() => setPayOpen(true)}>
+                <IndianRupee className="h-4 w-4" aria-hidden />Record payment
+              </Button>
+            )}
+          </div>
+        ) : canEdit && b.status === 'open' ? (
+          <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="secondary" onClick={() => setAddOpen(true)}>
               <Plus className="h-4 w-4" aria-hidden />Add charge
             </Button>
@@ -138,17 +161,49 @@ export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolea
                   <td className={cn('px-4 py-2 text-right tabular-nums', p.reversed && 'line-through')}>{formatINR(p.entryType.startsWith('deposit') && p.entryType !== 'deposit_adjustment' ? p.depositEffect : p.billEffect)}</td>
                   {canEdit && (
                     <td className="px-4 py-2 text-right">
-                      {!p.reversed && !p.isReversal && b.status === 'open' && (
-                        <Button size="sm" variant="ghost" onClick={() => setReversing(p)} aria-label={`Reverse ${p.number}`}>
-                          <Undo2 className="h-4 w-4" aria-hidden />Reverse
+                      <div className="flex justify-end gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => window.open(apiUrl(`/payments/${p.id}/receipt.pdf`), '_blank')} aria-label={`Print receipt ${p.number}`}>
+                          <Printer className="h-4 w-4" aria-hidden />
                         </Button>
-                      )}
+                        {!p.reversed && !p.isReversal && (b.status === 'open' || isOwner) && (
+                          <Button size="sm" variant="ghost" onClick={() => setReversing(p)} aria-label={`Reverse ${p.number}`}>
+                            <Undo2 className="h-4 w-4" aria-hidden />Reverse
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   )}
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {(b.documents.length > 0 || b.pendingInvoice) && (
+        <div className="flex flex-col gap-2 border-t border-border px-4 py-3 text-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-text-3">Invoices</p>
+          {b.documents.map((d) => (
+            <div key={d.id} className="flex flex-wrap items-center justify-between gap-2">
+              <Link href={`/invoices/${d.id}`} className="flex items-center gap-2 underline-offset-2 hover:underline">
+                <FileText className="h-4 w-4 text-text-3" aria-hidden />
+                {d.number}
+                <span className="text-text-3">{DOC_LABELS[d.documentType]} · {formatDate(d.invoiceDate, { year: false })}</span>
+              </Link>
+              <div className="flex items-center gap-2">
+                <span className="tabular-nums">{d.documentType === 'credit_note' ? '−' : ''}{formatINR(d.grandTotal)}</span>
+                <Button size="sm" variant="outline" onClick={() => window.open(apiUrl(`/invoices/${d.id}/pdf`), '_blank')}>
+                  <Printer className="h-4 w-4" aria-hidden />Print
+                </Button>
+              </div>
+            </div>
+          ))}
+          {b.pendingInvoice && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-warning-soft px-3 py-2 text-warning">
+              <span>Charges added after the invoice are waiting for a debit note.</span>
+              {isOwner && <Button size="sm" onClick={() => setDebitOpen(true)}>Issue debit note</Button>}
+            </div>
+          )}
         </div>
       )}
 
@@ -186,6 +241,7 @@ export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolea
       <VoidLineDialog line={voiding} stayId={stayId} onClose={() => setVoiding(null)} />
       <RecordPaymentDialog bill={b} stayId={stayId} open={payOpen} onClose={() => setPayOpen(false)} />
       <ReversePaymentDialog payment={reversing} stayId={stayId} onClose={() => setReversing(null)} />
+      {debitOpen && <DebitNoteDialog bill={b} stayId={stayId} onClose={() => setDebitOpen(false)} />}
       {discounting && <DiscountDialog bill={b} line={discounting.line} stayId={stayId} onClose={() => setDiscounting(null)} />}
       {depositOpen && <DepositDialog bill={b} stayId={stayId} open={depositOpen} onClose={() => setDepositOpen(false)} />}
     </Card>
@@ -468,6 +524,36 @@ function DiscountDialog({ bill, line, stayId, onClose }: { bill: Bill; line: Bil
           </div>
         )}
         {approval.dialog}
+      </div>
+    </Dialog>
+  );
+}
+
+/** Late charges go on a debit note against the invoice, which itself is never touched (§22). Owner only. */
+function DebitNoteDialog({ bill, stayId, onClose }: { bill: Bill; stayId: string; onClose: () => void }) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const key = useRef(newIdempotencyKey());
+  const [reason, setReason] = useState('');
+  const issue = useMutation({
+    mutationFn: () => api<{ id: string; number: string }>(`/folios/${bill.id}/debit-note`, { method: 'POST', idempotencyKey: key.current, body: { reason: reason.trim() } }),
+    onSuccess: (doc) => {
+      void queryClient.invalidateQueries({ queryKey: ['bill', stayId] });
+      toast('success', `${doc.number} issued`);
+      onClose();
+    },
+  });
+  return (
+    <Dialog open onClose={onClose} title="Issue debit note" description="For the charges added after the invoice. The invoice itself stays exactly as it was."
+      footer={<>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button loading={issue.isPending} disabled={reason.trim().length < 3} onClick={() => issue.mutate()}>Issue debit note</Button>
+      </>}>
+      <div className="flex flex-col gap-4">
+        {issue.error && <ErrorBanner message={(issue.error as Error).message} />}
+        <Field label="What for" required hint="Printed on the debit note">
+          {(id) => <Input id={id} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Minibar found after checkout" maxLength={300} />}
+        </Field>
       </div>
     </Dialog>
   );

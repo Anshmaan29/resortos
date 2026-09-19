@@ -243,3 +243,25 @@ export interface InvoiceRegisterRow {
   id: string; number: string; documentType: DocumentType; invoiceDate: string; buyerName: string; buyerGstin: string | null;
   taxable: string; cgst: string; sgst: string; igst: string; total: string; originalNumber: string | null;
 }
+export interface Company {
+  id: string; name: string; gstin: string | null; billingAddress: string | null; contactPerson: string | null;
+  phone: string | null; email: string | null; creditLimit: string | null; paymentTermsDays: number;
+  isActive: boolean; version: number; outstanding: string | null;
+}
+export interface CompanyStatement {
+  company: Company; outstanding: string; asOf: string; pastTermsGross: string;
+  ageing: { label: string; amount: string }[];
+  lines: { kind: 'bill' | 'receipt'; id: string; reference: string; businessDate: string; description: string; debit: string; credit: string; balance: string }[];
+}
+export interface OtaReceivables {
+  items: {
+    reservationId: string; number: string; source: string; otaReference: string; arrival: string; departure: string; status: string;
+    guestName: string; paymentMode: string | null; grossAmount: string | null; commissionAmount: string | null; taxWithheld: string | null;
+    expectedPayout: string | null; received: string; pending: string | null; difference: string | null; termsMissing: boolean;
+  }[];
+  totals: { booked: string; expected: string; received: string; pending: string };
+}
+export interface OtaTerms {
+  reservationId: string; paymentMode: 'prepaid_to_ota' | 'pay_at_resort'; grossAmount: string; commissionAmount: string;
+  taxWithheld: string; expectedPayout: string; note: string | null; version: number; received: string;
+}

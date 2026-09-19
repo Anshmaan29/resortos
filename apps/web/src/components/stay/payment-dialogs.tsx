@@ -38,6 +38,11 @@ export function RecordPaymentDialog({ bill, stayId, open, onClose }: { bill: Bil
   const methods = DESK_PAYMENT_METHODS.filter((m) => kind !== 'deposit' || ACCOUNT_KINDS_FOR_METHOD[m]);
 
   const accounts = useQuery({ queryKey: ['payment-accounts'], enabled: open, queryFn: () => api<PaymentAccount[]>('/payment-accounts') });
+  const [companyId, setCompanyId] = useState('');
+  const companies = useQuery({
+    queryKey: ['companies'], enabled: open && method === 'company_account',
+    queryFn: () => api<{ id: string; name: string; outstanding: string | null; creditLimit: string | null }[]>('/companies'),
+  });
 
   // Only the accounts this method can legitimately land in — the same rule the database enforces,
   // so the desk is never offered something that will be refused.
@@ -56,6 +61,7 @@ export function RecordPaymentDialog({ bill, stayId, open, onClose }: { bill: Bil
       body: {
         entryType: kind, method, amount,
         paymentAccountId: allowedKinds ? accountId || undefined : undefined,
+        companyId: method === 'company_account' ? companyId || undefined : undefined,
         reference: reference || undefined, note: note || undefined, ownerAuthorisationId,
       },
     }),
@@ -86,7 +92,7 @@ export function RecordPaymentDialog({ bill, stayId, open, onClose }: { bill: Bil
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button loading={record.isPending} disabled={!amount || (Boolean(allowedKinds) && !accountId)} onClick={() => record.mutate(undefined)}>
+          <Button loading={record.isPending} disabled={!amount || (Boolean(allowedKinds) && !accountId) || (method === 'company_account' && !companyId)} onClick={() => record.mutate(undefined)}>
             {refund ? 'Record refund' : `Record ${amount ? formatINR(amount) : kind === 'deposit' ? 'deposit' : 'payment'}`}
           </Button>
         </>
@@ -127,9 +133,20 @@ export function RecordPaymentDialog({ bill, stayId, open, onClose }: { bill: Bil
               </Select>
             )}
           </Field>
+        ) : method === 'company_account' ? (
+          <Field label="Which company" required hint="The invoice is made out to the company, and it owes this amount" error={fields.companyId}>
+            {(id) => (
+              <Select id={id} value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
+                <option value="">Choose…</option>
+                {(companies.data ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}{c.outstanding && Number(c.outstanding) > 0 ? ` — owes ${formatINR(c.outstanding)}` : ''}</option>
+                ))}
+              </Select>
+            )}
+          </Field>
         ) : (
           <p className="rounded-md bg-surface-2 px-3 py-2 text-sm text-text-2">
-            No money changes hands here — this settles the bill against {method === 'company_account' ? 'the company' : method === 'ota_prepaid' ? 'what the OTA will pay out' : "the guest's credit"}.
+            No money changes hands here — this settles the bill against {method === 'ota_prepaid' ? 'what the OTA will pay out' : "the guest's credit"}.
           </p>
         )}
 

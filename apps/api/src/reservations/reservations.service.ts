@@ -451,11 +451,29 @@ export class ReservationsService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Money already received on the booking. Payments are recorded by the billing module;
-   * until it exists no payment can be stored, so this is truthfully zero.
+   * Money received on the booking and not given back: advances, and any payment or refund against
+   * it, recalculated from the payment rows (2.3). A security deposit is not included — it is held,
+   * not paid (§27).
    */
-  private async advancePaid(_q: Queryable, _reservationId: string): Promise<Decimal> {
-    return new Decimal(0);
+  private async advancePaid(q: Queryable, reservationId: string): Promise<Decimal> {
+    const { rows } = await q.query<{ paid: string }>(
+      `SELECT COALESCE(sum(bill_effect), 0)::numeric(14,2) AS paid FROM payments WHERE reservation_id = $1`, [reservationId],
+    );
+    return new Decimal(rows[0]!.paid);
+  }
+
+  /**
+   * "Keep it as guest credit" (§15.1) is a real entry in the guest's credit ledger, usable on a
+   * later stay through the guest_credit payment method. Any other choice is recorded on the booking;
+   * a refund is then recorded as a refund payment, which needs Owner PIN like every refund.
+   */
+  private async applyMoneyOption(q: Queryable, actor: Actor, res: ReservationRow, option: string, paid: Decimal) {
+    if (option !== 'guest_credit' || !paid.gt(0)) return;
+    await q.query(
+      `INSERT INTO guest_credit_entries (property_id, guest_id, reservation_id, amount, note, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [actor.user.propertyId, res.primary_guest_id, res.id, toMoneyString(paid), `Advance kept as credit from ${res.number}`, actor.user.id],
+    );
   }
 
   async cancel(q: Queryable, actor: Actor, id: string, input: CancelReservationInput) {
@@ -485,6 +503,7 @@ export class ReservationsService {
         WHERE id = $1`,
       [id, actor.user.id, input.reason, input.note ?? null, moneyOption],
     );
+    await this.applyMoneyOption(q, actor, res, moneyOption, paid);
     await q.query(`UPDATE reservation_rooms SET status = 'cancelled' WHERE reservation_id = $1 AND status = 'reserved'`, [id]);
     await q.query(
       `UPDATE room_allocations SET status = 'released', release_reason = 'cancelled'
@@ -545,6 +564,7 @@ export class ReservationsService {
         WHERE id = $1`,
       [id, actor.user.id, input.note ?? null, moneyOption],
     );
+    await this.applyMoneyOption(q, actor, res, moneyOption, paid);
     await q.query(`UPDATE reservation_rooms SET status = 'no_show' WHERE reservation_id = $1 AND status = 'reserved'`, [id]);
     // The room is free again from tonight: nobody is coming.
     await q.query(
@@ -651,7 +671,7 @@ export class ReservationsService {
       guest: { id: r.primary_guest_id, firstName: r.first_name, lastName: r.last_name, fullName: `${r.first_name} ${r.last_name}`.trim(), mobile: r.mobile, email: r.email, isVip: r.is_vip, city: r.city },
       rooms,
       estimate,
-      advancePaid: '0.00',
+      advancePaid: toMoneyString(await this.advancePaid(q, r.id)),
       overrides: overrides.rows.map((o) => ({
         action: o.action, description: o.description, at: o.created_at, performedBy: o.performed_by,
         authorisedBy: o.authorised_by, authorisedByRole: o.authorised_by_role,

@@ -1,7 +1,7 @@
 'use client';
 import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { BedDouble, CalendarDays, ChevronDown, ClipboardList, Home, Landmark, LogOut, MoonStar, Palmtree, Plus, Search, UserRound, Wallet, WifiOff } from 'lucide-react';
+import { BedDouble, Building2, CalendarDays, ChevronDown, ClipboardCheck, ClipboardList, FileText, Globe, Home, Landmark, LogOut, MoonStar, Palmtree, Plus, Search, UserRound, Wallet, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -21,7 +21,11 @@ const NAV = [
   { href: '/rooms', label: 'Rooms', icon: BedDouble, phone: false },
   { href: '/shifts', label: 'Shift', icon: Wallet, phone: false },
   { href: '/night-audit', label: 'Night audit', icon: MoonStar, phone: false },
+  { href: '/review', label: 'To review', icon: ClipboardCheck, phone: false, owner: true },
   { href: '/accounts', label: 'Accounts', icon: Landmark, phone: false, owner: true },
+  { href: '/invoices', label: 'Invoices', icon: FileText, phone: false, owner: true },
+  { href: '/companies', label: 'Companies', icon: Building2, phone: false, owner: true },
+  { href: '/ota', label: 'OTA payouts', icon: Globe, phone: false, owner: true },
 ];
 
 /** Four fit around the new-booking button; the rest live in the sidebar on bigger screens. */
