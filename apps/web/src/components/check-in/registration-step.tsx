@@ -1,6 +1,7 @@
 'use client';
 import { formatDate, formatMobile } from '@resortos/shared';
-import { SlotStatus, slotState } from '@/components/capture/capture-slot';
+import { SlotStatus } from '@/components/capture/capture-slot';
+import { slotState } from '@/lib/capture/slot-state';
 import { Card, CardHeader } from '@/components/ui/surface';
 import type { Property } from '@/lib/types';
 import type { useDeskQueue } from './documents-step';

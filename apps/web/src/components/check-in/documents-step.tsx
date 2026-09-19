@@ -1,7 +1,8 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ID_TYPES_WITH_BACK, type DocumentType, type IdType } from '@resortos/shared';
-import { CaptureSlot, slotState } from '@/components/capture/capture-slot';
+import { CaptureSlot } from '@/components/capture/capture-slot';
+import { slotState } from '@/lib/capture/slot-state';
 import { Field, Input, Select } from '@/components/ui/field';
 import { Card, CardHeader } from '@/components/ui/surface';
 import { api } from '@/lib/api';

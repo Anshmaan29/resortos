@@ -27,6 +27,13 @@ export class UploadTimeoutError extends Error {
 
 export type QueueStatus = 'queued' | 'uploading' | 'verifying' | 'waiting_network' | 'done' | 'failed';
 
+/** Shown when the photo cannot reach storage even though the phone believes it is online. */
+export const BLOCKED_MESSAGE = 'Cannot reach the photo store from this phone — the desk can help';
+
+/** True once an item has been trying and getting nowhere, so the screen can stop saying 0%. */
+export const isBlocked = (item: { attempts: number; error?: string }): boolean =>
+  item.error === BLOCKED_MESSAGE && item.attempts >= BLOCKED_AFTER_ATTEMPTS;
+
 export interface QueueItem {
   id: string;
   scope: string; // capture token or check-in draft id
@@ -87,6 +94,19 @@ const NETWORK_RETRY_MS = 1500;
  * "Checking…" for ever, and the guest's other documents never upload at all.
  */
 const REQUEST_TIMEOUT_MS = 20_000;
+/**
+ * How many times an upload may fail to leave the device, while the browser insists it is online,
+ * before the screen stops saying "Uploading" and says what is actually happening.
+ *
+ * Found on a real phone: the page worked, documents were created, and every photo sat at
+ * "Uploading 0%" for ever. Uploads go straight to object storage on a *different* origin, and that
+ * origin was unreachable from the phone — so not one byte ever left, and the queue, seeing what
+ * looks exactly like a flaky network, retried silently until somebody thought to read the database.
+ * Whatever the cause — an untrusted certificate in testing, a proxy or firewall in a real resort —
+ * a photo that cannot be sent must say so rather than show a progress bar that never moves.
+ */
+const BLOCKED_AFTER_ATTEMPTS = 3;
+const BLOCKED_RETRY_MS = 5_000;
 
 function backoff(attempts: number) {
   const base = Math.min(30_000, 1000 * 2 ** Math.min(attempts, 5));
@@ -281,11 +301,24 @@ export class UploadQueue {
    * Attempts still climb, so the count in job status stays honest, but the delay stays flat.
    */
   private async deferForNetwork(item: QueueItem, message: string) {
+    if (!navigator.onLine) {
+      await this.save(item, {
+        status: 'waiting_network',
+        attempts: item.attempts + 1,
+        nextAttemptAt: Date.now() + NETWORK_RETRY_MS,
+        error: message,
+      });
+      return;
+    }
+    // The browser says we are online and the request still could not leave. That is not a network
+    // drop-out, and pretending it is hides a problem nobody can see from the screen.
+    const attempts = item.attempts + 1;
+    const blocked = attempts >= BLOCKED_AFTER_ATTEMPTS;
     await this.save(item, {
-      status: navigator.onLine ? 'queued' : 'waiting_network',
-      attempts: item.attempts + 1,
-      nextAttemptAt: Date.now() + NETWORK_RETRY_MS,
-      error: message,
+      status: 'queued',
+      attempts,
+      nextAttemptAt: Date.now() + (blocked ? BLOCKED_RETRY_MS : NETWORK_RETRY_MS),
+      error: blocked ? BLOCKED_MESSAGE : message,
     });
   }
 

@@ -4,7 +4,8 @@ import { CheckCircle2, CloudOff, Palmtree, ScanLine, ShieldCheck, TimerOff } fro
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ID_TYPES_WITH_BACK, type DocumentType, type IdType } from '@resortos/shared';
-import { CaptureSlot, slotState } from '@/components/capture/capture-slot';
+import { CaptureSlot } from '@/components/capture/capture-slot';
+import { slotState } from '@/lib/capture/slot-state';
 import { Select } from '@/components/ui/field';
 import { api, ApiError } from '@/lib/api';
 import { preloadOpenCv } from '@/lib/capture/opencv';
