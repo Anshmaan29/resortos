@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@resortos/shared": "workspace:*",
-    "@tanstack/react-query": "5.103.0",
+    "@tanstack/react-query": "5.103.1",
     "clsx": "2.1.1",
     "idb": "8.0.3",
     "lucide-react": "1.46.0",
