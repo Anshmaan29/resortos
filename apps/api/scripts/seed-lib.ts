@@ -1,5 +1,5 @@
 import { Client } from 'pg';
-import { addDays, eachNight, gstinCheckChar, todayIn } from '@resortos/shared';
+import { addDays, DEFAULT_EXPENSE_CATEGORIES, eachNight, gstinCheckChar, todayIn } from '@resortos/shared';
 import { hashSecret } from '../src/auth/password';
 
 export const DEMO_CREDENTIALS = {
@@ -142,6 +142,12 @@ export async function seed(connectionString: string, opts: { businessDate?: stri
       `INSERT INTO companies (property_id, name, billing_address, contact_person, credit_limit, payment_terms_days, created_by)
        VALUES ($1,'Demo Corporate Travels','Tonk Road, Jaipur','Accounts desk',50000,30,$2)`,
       [propertyId, ownerId],
+    );
+    // The expense categories every property starts with (spec §39); the owner edits them in settings.
+    await client.query(
+      `INSERT INTO expense_categories (property_id, name, sort_order)
+       SELECT $1, name, ord FROM unnest($2::text[]) WITH ORDINALITY AS c(name, ord)`,
+      [propertyId, [...DEFAULT_EXPENSE_CATEGORIES]],
     );
     await client.query(
       `INSERT INTO charge_items (property_id, name, line_type, default_rate, tax_category, sort_order, created_by) VALUES

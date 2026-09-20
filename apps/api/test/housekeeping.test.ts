@@ -188,12 +188,12 @@ describe('the daily clean of occupied rooms', () => {
     expect(await roomStatus(staying.number)).toBe('dirty');
 
     // Replaying the closed date posts nothing twice (the rule every night audit step follows).
-    const [{ replay }] = await sql<{ replay: string }>(
+    const replayed = await sql<{ replay: string }>(
       `INSERT INTO housekeeping_tasks (property_id, room_id, kind, business_date)
        SELECT property_id, id, 'stayover', $2::date FROM rooms WHERE id = $1
        ON CONFLICT DO NOTHING RETURNING id AS replay`, [f.room(staying.number), tasks[0]!.business_date],
-    ).then((r) => (r.length ? r : [{ replay: '' }]));
-    expect(replay).toBe('');
+    );
+    expect(replayed).toEqual([]);
 
     // A daily clean can be skipped with a reason; a checkout clean cannot.
     const stayover = (await roomOnBoard(staying.number)).task;
