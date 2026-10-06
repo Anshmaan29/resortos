@@ -1,6 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { approve, bootAppOnOwnDatabase, booking, fixtures, login, post, type Agent } from './helpers';
+import { approve, bootAppOnOwnDatabase, booking, fixtures, key, login, post, type Agent } from './helpers';
 import { TEST_BUSINESS_DATE } from './global-setup';
 
 /**
@@ -103,6 +103,20 @@ describe('opening a bill', () => {
 });
 
 describe('adding charges', () => {
+  it('lets reception price extra beds, adults and children manually as accommodation, without duplicate retry charges', async () => {
+    const [other] = await sql<{ id: string }>(`SELECT s.id FROM stays s JOIN guests g ON g.id=s.primary_guest_id WHERE g.first_name='Race'`);
+    const { body: b } = await bill(desk, other!.id);
+    for (const name of ['Extra bed', 'Extra adult', 'Child charge']) {
+      const idempotencyKey = key();
+      const input = { lineType: 'extra_person', name, quantity: 1, unitRate: '375.50' };
+      await post(desk, `/folios/${b.id}/charges`, input, idempotencyKey).expect(200);
+      const replay = await post(desk, `/folios/${b.id}/charges`, input, idempotencyKey).expect(200);
+      const lines = replay.body.lines.filter((l: any) => l.name === name);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({ amount: '375.50', taxCategory: 'accommodation', source: 'manual' });
+    }
+  });
+
   it('stores the name exactly as typed, because that is what the invoice shows', async () => {
     const { body: b } = await bill(desk);
     const after = await post(desk, `/folios/${b.id}/charges`, {

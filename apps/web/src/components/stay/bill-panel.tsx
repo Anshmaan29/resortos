@@ -337,6 +337,11 @@ function AddChargeDialog({ bill, stayId, open, onClose }: { bill: Bill; stayId: 
           </Field>
         )}
 
+        <div className="flex flex-wrap gap-2" aria-label="Common extra charges">
+          {['Extra bed', 'Extra adult', 'Child charge'].map((label) => (
+            <Button key={label} variant="secondary" size="sm" onClick={() => { setLineType('extra_person'); setName(label); setChargeItemId(undefined); setUnitRate(''); }}>{label}</Button>
+          ))}
+        </div>
         <Field label="Type" required>
           {(id) => (
             <Select id={id} value={lineType} onChange={(e) => setLineType(e.target.value as AddableLineType)}>

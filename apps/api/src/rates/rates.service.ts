@@ -28,6 +28,7 @@ export interface QuoteInput {
   ratePlanId?: string;
   mealPlan: MealPlanCode;
   manualRate?: MoneyString;
+  extraPersonRate?: MoneyString;
 }
 
 export interface NightQuote {
@@ -199,7 +200,9 @@ export class RatesService {
     const mealPerNight = meal
       ? money(meal.adult_rate).times(chargeableAdults).plus(money(meal.child_rate).times(payingChildren))
       : new Decimal(0);
-    const extraPerNight = money(rt.extra_adult_rate).times(extraAdults).plus(money(rt.extra_child_rate).times(extraChildren));
+    const extraPerNight = input.extraPersonRate !== undefined
+      ? money(input.extraPersonRate)
+      : money(rt.extra_adult_rate).times(extraAdults).plus(money(rt.extra_child_rate).times(extraChildren));
 
     const nights = eachNight(input.arrival, input.departure);
     const calendar = ratePlanId

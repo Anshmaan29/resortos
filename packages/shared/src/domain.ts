@@ -154,7 +154,7 @@ export const FOLIO_LINE_TYPE_LABELS: Record<FolioLineType, string> = {
 
 /** The types a receptionist can add by hand. Room nights are posted by night audit (§35.1). */
 export const ADDABLE_LINE_TYPES = [
-  'food', 'beverage', 'activity', 'laundry', 'transport', 'early_checkin', 'late_checkout', 'damage', 'other',
+  'extra_person', 'food', 'beverage', 'activity', 'laundry', 'transport', 'early_checkin', 'late_checkout', 'damage', 'other',
 ] as const;
 export type AddableLineType = (typeof ADDABLE_LINE_TYPES)[number];
 
@@ -162,7 +162,7 @@ export const TAX_CATEGORIES = ['accommodation', 'food', 'activity', 'laundry', '
 
 /** The tax category a charge type falls into unless the saved item says otherwise (§24.3). */
 export const DEFAULT_TAX_CATEGORY: Record<AddableLineType, (typeof TAX_CATEGORIES)[number]> = {
-  food: 'food', beverage: 'food', activity: 'activity', laundry: 'laundry', transport: 'transport',
+  extra_person: 'accommodation', food: 'food', beverage: 'food', activity: 'activity', laundry: 'laundry', transport: 'transport',
   early_checkin: 'accommodation', late_checkout: 'accommodation', damage: 'other', other: 'other',
 };
 

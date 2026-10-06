@@ -176,6 +176,8 @@ export const reservationRoomSchema = z.object({
   childAges: z.array(z.number().int().min(0).max(17)).max(10).default([]),
   /** Manual room rate applied to every night. Omit to use rate plan / calendar prices. */
   nightlyRate: zNonNegativeMoney.optional(),
+  /** Total extra adult/child charge per night; omit for configured prices, zero to waive. */
+  extraPersonRate: zNonNegativeMoney.optional(),
   ratePlanId: zId.optional(),
   mealPlan: z.enum(MEAL_PLAN_CODES).default('EP'),
 });

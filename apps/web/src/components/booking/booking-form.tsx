@@ -31,11 +31,12 @@ interface RoomLine {
   childAges: number[];
   mealPlan: MealPlanCode;
   manualRate: string;
+  manualExtras: string;
 }
 
 type GuestChoice = Pick<Guest, 'id' | 'fullName' | 'mobile' | 'city' | 'isVip'> & { stays?: number };
 
-const newLine = (roomTypeId = ''): RoomLine => ({ key: crypto.randomUUID(), roomTypeId, roomId: '', adults: 2, childAges: [], mealPlan: 'EP', manualRate: '' });
+const newLine = (roomTypeId = ''): RoomLine => ({ key: crypto.randomUUID(), roomTypeId, roomId: '', adults: 2, childAges: [], mealPlan: 'EP', manualRate: '', manualExtras: '' });
 const validRate = (v: string) => (/^\d+(\.\d{1,2})?$/.test(v) ? v : undefined);
 
 function useDebounced<T>(value: T, ms = 300) {
@@ -68,7 +69,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
   const [lines, setLines] = useState<RoomLine[]>(() => initial
     ? initial.rooms.filter((r) => mode === 'rebook' || r.status === 'reserved').map((r) => ({
         key: crypto.randomUUID(), reservationRoomId: mode === 'edit' ? r.id : undefined, roomTypeId: r.roomTypeId,
-        roomId: mode === 'edit' ? r.roomId ?? '' : '', adults: r.adults, childAges: r.childAges, mealPlan: mode === 'edit' ? r.mealPlan : 'EP', manualRate: '',
+        roomId: mode === 'edit' ? r.roomId ?? '' : '', adults: r.adults, childAges: r.childAges, mealPlan: mode === 'edit' ? r.mealPlan : 'EP', manualRate: '', manualExtras: '',
       }))
     : [newLine()]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -99,7 +100,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
   // Debounce the serialised input: a new object every render would never settle.
   const estimateJson = useDebounced(JSON.stringify({
     reservationId: mode === 'edit' ? initial?.id : undefined, arrival, departure,
-    rooms: lines.map((l) => ({ reservationRoomId: l.reservationRoomId, roomTypeId: l.roomTypeId, adults: l.adults, childAges: l.childAges, mealPlan: l.mealPlan, nightlyRate: validRate(l.manualRate) })),
+    rooms: lines.map((l) => ({ reservationRoomId: l.reservationRoomId, roomTypeId: l.roomTypeId, adults: l.adults, childAges: l.childAges, mealPlan: l.mealPlan, nightlyRate: validRate(l.manualRate), extraPersonRate: validRate(l.manualExtras) })),
   }));
   const estimateInput = JSON.parse(estimateJson) as { reservationId?: string; arrival: string; departure: string; rooms: { roomTypeId: string }[] };
   const estimate = useQuery({
@@ -138,7 +139,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
     specialRequests: specialRequests || undefined,
     rooms: lines.map((l) => ({
       reservationRoomId: l.reservationRoomId, roomTypeId: l.roomTypeId, roomId: l.roomId || undefined, adults: l.adults,
-      childAges: l.childAges, mealPlan: l.mealPlan, nightlyRate: validRate(l.manualRate),
+      childAges: l.childAges, mealPlan: l.mealPlan, nightlyRate: validRate(l.manualRate), extraPersonRate: validRate(l.manualExtras),
     })),
     ownerAuthorisationId,
     ...(mode === 'edit' ? { version: initial!.version } : {}),
@@ -180,6 +181,10 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
     }
     const parsed = (mode === 'edit' ? updateReservationSchema : createReservationSchema).safeParse(body);
     if (!parsed.success) for (const i of parsed.error.issues) clientErrors[i.path.join('.')] ??= i.message;
+    lines.forEach((line, i) => {
+      if (line.manualRate && validRate(line.manualRate) === undefined) clientErrors[`rooms.${i}.nightlyRate`] = 'Enter a valid price with up to two decimals';
+      if (line.manualExtras && validRate(line.manualExtras) === undefined) clientErrors[`rooms.${i}.extraPersonRate`] = 'Enter a valid price with up to two decimals';
+    });
     setErrors(clientErrors);
     if (Object.keys(clientErrors).length) return;
     save.mutate(body);
@@ -438,12 +443,16 @@ function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short
           </div>
         </div>
         {line.mealPlan !== 'EP' && <p className="text-sm text-text-3">Existing booking includes {MEAL_LABEL[line.mealPlan]}. Its agreed meal charges are kept.</p>}
-        <Field label="Room rate per night" hint={line.reservationRoomId ? 'Leave empty to keep the agreed rate' : 'Leave empty to use the rate calendar'}>{(id, d) => (
+        <Field label="Base room price per night" hint={line.reservationRoomId ? 'Leave empty to keep the agreed room price. Extra guest charges are added below.' : 'Leave empty for the configured room price. Extra guest charges are added below.'}>{(id, d) => (
           <div className="relative">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-2">₹</span>
             <Input id={id} aria-describedby={d} inputMode="decimal" className="pl-7 num" placeholder={type ? money(type.baseRate).toFixed(0) : ''} value={line.manualRate}
               onChange={(e) => onChange({ manualRate: e.target.value.replace(/[^\d.]/g, '') })} />
           </div>
+        )}</Field>
+        <Field label="Extra adult / child charges per night" hint="Total for all extra guests. Leave empty for configured prices; enter 0 to waive. Add extra beds separately on the bill.">{(id, d) => (
+          <Input id={id} aria-describedby={d} inputMode="decimal" value={line.manualExtras}
+            onChange={(e) => onChange({ manualExtras: e.target.value.replace(/[^\d.]/g, '') })} placeholder="Use configured prices" />
         )}</Field>
       </div>
       {datesValid && line.roomTypeId && (

@@ -151,12 +151,13 @@ export class ReservationsService {
         && sameAges(ex.row.child_ages, room.childAges) && ex.row.meal_plan === room.mealPlan
         && (room.ratePlanId ?? ex.row.rate_plan_id) === ex.row.rate_plan_id && ex.row.arrival === arrival && ex.row.departure === departure;
       if (unchanged) {
-        quotes.push(await this.rates.quoteFromStoredNights(q, propertyId, room.roomTypeId, ex.row.rate_plan_id, ex.nights));
+        const nights = room.extraPersonRate === undefined ? ex.nights : ex.nights.map((night) => ({ ...night, extra_person_amount: room.extraPersonRate! }));
+        quotes.push(await this.rates.quoteFromStoredNights(q, propertyId, room.roomTypeId, ex.row.rate_plan_id, nights));
         reused.push(true);
       } else {
         quotes.push(await this.rates.quote(q, propertyId, {
           roomTypeId: room.roomTypeId, arrival, departure, adults: room.adults, childAges: room.childAges,
-          ratePlanId: room.ratePlanId, mealPlan: room.mealPlan, manualRate: room.nightlyRate,
+          ratePlanId: room.ratePlanId, mealPlan: room.mealPlan, manualRate: room.nightlyRate, extraPersonRate: room.extraPersonRate,
         }));
         reused.push(false);
       }
@@ -191,7 +192,7 @@ export class ReservationsService {
       departure: input.departure,
       rooms: input.rooms.map((r) => ({
         reservationRoomId: r.reservationRoomId ?? null, roomTypeId: r.roomTypeId, roomId: r.roomId ?? null, adults: r.adults,
-        childAges: r.childAges, mealPlan: r.mealPlan, ratePlanId: r.ratePlanId ?? null, nightlyRate: r.nightlyRate ?? null,
+        childAges: r.childAges, mealPlan: r.mealPlan, ratePlanId: r.ratePlanId ?? null, nightlyRate: r.nightlyRate ?? null, extraPersonRate: r.extraPersonRate ?? null,
       })),
       exceptions: reasons.map((r) => r.description),
     };

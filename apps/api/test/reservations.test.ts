@@ -139,3 +139,24 @@ describe('audit log integrity (spec §50)', () => {
     }
   });
 });
+
+
+describe('manual extra guest prices', () => {
+  it('quotes and saves a manual total for adults and children, preserves it on unrelated edits, and can waive it', async () => {
+    const body = booking({ roomTypeId: f.type('DLX'), arrival: '2035-04-01', departure: '2035-04-03', nightlyRate: '4500' });
+    const room = { ...body.rooms[0]!, adults: 2, childAges: [8], extraPersonRate: '375.50' };
+    const estimate = await post(desk, '/reservations/estimate', { arrival: body.arrival, departure: body.departure, rooms: [room] }, null).expect(200);
+    expect(estimate.body.rooms[0].extrasTotal).toBe('751.00');
+    const created = await post(desk, '/reservations', { ...body, rooms: [room] }).expect(201);
+    expect(created.body.rooms[0].extrasTotal).toBe('751.00');
+    const agreed = { ...room, reservationRoomId: created.body.rooms[0].id, nightlyRate: undefined, extraPersonRate: undefined };
+    const updated = await desk.patch(`/api/v1/reservations/${created.body.id}`).set('x-resortos', '1').set('idempotency-key', key())
+      .send({ ...body, rooms: [agreed], specialRequests: 'Extra pillows', version: created.body.version }).expect(200);
+    expect(updated.body.rooms[0].extrasTotal).toBe('751.00');
+    const waived = await desk.patch(`/api/v1/reservations/${created.body.id}`).set('x-resortos', '1').set('idempotency-key', key())
+      .send({ ...body, rooms: [{ ...agreed, reservationRoomId: updated.body.rooms[0].id, extraPersonRate: '0' }], version: updated.body.version }).expect(200);
+    expect(waived.body.rooms[0].extrasTotal).toBe('0.00');
+    expect(waived.body.rooms[0].roomTotal).toBe('9000.00');
+    await post(desk, '/reservations/estimate', { arrival: body.arrival, departure: body.departure, rooms: [{ ...room, extraPersonRate: '-1' }] }, null).expect(400);
+  });
+});
