@@ -30,7 +30,7 @@ Official setup references: [Google service accounts](https://developers.google.c
 
 ## Phone upload access
 
-The private Railway bucket needs a browser CORS rule for the hotel's exact HTTPS origin. An authenticated owner/operator can call `POST /api/v1/storage/phone-access` with the normal ResortOS security header to configure it. This keeps existing unrelated rules, permits only GET/HEAD/PUT for the app origin with the required checksum/content headers, and does not make guest files public. Changing the app domain requires applying the rule again. A successful storage health ping alone does not prove browser uploads work; verify a synthetic upload reaches **Received**.
+The private Railway bucket needs a browser CORS rule for the hotel's exact HTTPS origin. An authenticated owner/operator can call `POST /api/v1/storage/phone-access` with the normal ResortOS security header to configure it. This keeps existing unrelated rules, permits only GET/HEAD/PUT for the app origin with the required checksum/content headers, and does not make guest files public. Changing the app domain requires applying the rule again. The owner may supply `{ "origin": "https://pms.voittoventures.com" }` to authorize that exact additional HTTPS origin. Previously approved app origins are retained during the transition; wildcards are not added. Also update Railway PUBLIC_WEB_URL and WEB_ORIGIN to the new address so generated scanner links use it. A successful storage health ping alone does not prove browser uploads work; verify a synthetic upload reaches **Received**.
 
 ## Before taking real bookings
 

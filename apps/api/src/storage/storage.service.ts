@@ -124,19 +124,22 @@ export class StorageService implements OnModuleDestroy {
   }
 
   /** Explicit owner setup for direct browser uploads; it never makes the bucket public. */
-  async configurePhoneAccess() {
+  async configurePhoneAccess(additionalOrigin?: string) {
     let rules: CORSRule[];
     try { rules = (await this.internal.send(new GetBucketCorsCommand({ Bucket: this.bucket }))).CORSRules ?? []; }
     catch (err) {
       if (!(err instanceof S3ServiceException) || err.$metadata.httpStatusCode !== 404) throw err;
       rules = [];
     }
+    // Keep previously approved app origins during a domain transition. Only an authenticated
+    // owner can add a new exact HTTPS origin through the setup endpoint.
+    const origins = [...new Set([this.webOrigin, ...rules.filter(r => r.ID === 'ResortOSPhoneAccess').flatMap(r => r.AllowedOrigins ?? []).filter(o => o !== '*'), ...(additionalOrigin ? [additionalOrigin] : [])])];
     await this.internal.send(new PutBucketCorsCommand({ Bucket: this.bucket, CORSConfiguration: { CORSRules: [
       ...rules.filter((r) => r.ID !== 'ResortOSPhoneAccess'),
-      { ID: 'ResortOSPhoneAccess', AllowedOrigins: [this.webOrigin], AllowedMethods: ['GET', 'HEAD', 'PUT'],
+      { ID: 'ResortOSPhoneAccess', AllowedOrigins: origins, AllowedMethods: ['GET', 'HEAD', 'PUT'],
         AllowedHeaders: ['content-type', 'x-amz-checksum-sha256', 'if-none-match'], ExposeHeaders: ['ETag'], MaxAgeSeconds: 600 },
     ] } }));
-    return { origin: this.webOrigin };
+    return { origin: this.webOrigin, origins };
   }
 
   /** Readiness check for /health/storage. */

@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { bootAppOnOwnDatabase, key, login, post, type Agent } from './helpers';
+import { StorageService } from '../src/storage/storage.service';
 import { TEST_BUSINESS_DATE } from './global-setup';
 
 /** Owner settings added in Sprint B (spec §4.5, §9–§11, §30, §34, §36, §40, §5.3). */
@@ -21,6 +22,20 @@ beforeAll(async () => {
 afterAll(async () => { await app.close(); });
 
 describe('setup checks', () => {
+  it('allows only owners to approve an exact HTTPS upload origin and audits it', async () => {
+    const configure = vi.spyOn(app.get(StorageService), 'configurePhoneAccess').mockResolvedValue({ origin: 'https://old.example', origins: ['https://old.example', 'https://pms.example'] });
+    try {
+      await post(desk, '/storage/phone-access', { origin: 'https://pms.example' }, null).expect(403);
+      for (const origin of ['not-a-url', 'http://pms.example', 'https://*.example', 'https://pms.example/path', 'https://user:pass@pms.example']) {
+        await post(owner, '/storage/phone-access', { origin }, null).expect(400);
+      }
+      expect(configure).not.toHaveBeenCalled();
+      await post(owner, '/storage/phone-access', { origin: 'https://pms.example' }, null).expect(201);
+      expect(configure).toHaveBeenCalledWith('https://pms.example');
+      const [audit] = await sql("SELECT action FROM audit_logs WHERE action='storage.phone_access_configured'");
+      expect(audit).toBeTruthy();
+    } finally { configure.mockRestore(); }
+  });
   it('shows effective tax/payment/staff setup and protects paid storage health probes', async () => {
     const res = await owner.get('/api/v1/property/setup-status').expect(200);
     expect(res.body).toMatchObject({ cashConfigured: true, upiConfigured: true, receptionistConfigured: true });
