@@ -100,6 +100,10 @@ export class GuestsService {
         `SELECT d.id, d.doc_type, d.id_type, d.created_at, s.status AS stay_status, rm.number AS room_number
            FROM guest_documents d JOIN stays s ON s.id = d.stay_id JOIN rooms rm ON rm.id = s.room_id
           WHERE s.primary_guest_id = $1 AND d.status = 'verified'
+            AND (d.doc_type NOT IN ('guest_photo', 'id_front', 'id_back', 'id_extra', 'signature')
+              OR NOT EXISTS (SELECT 1 FROM guest_documents newer
+                WHERE newer.stay_id = d.stay_id AND newer.occupant_key IS NOT DISTINCT FROM d.occupant_key
+                  AND newer.doc_type = d.doc_type AND (newer.created_at, newer.id) > (d.created_at, d.id)))
             AND ($2::text = 'owner' OR s.status = 'in_house')
           ORDER BY d.created_at DESC LIMIT 60`,
         [id, role],

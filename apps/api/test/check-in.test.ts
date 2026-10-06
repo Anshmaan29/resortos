@@ -243,6 +243,18 @@ describe('confirm check-in (spec §18.3, §19.6)', () => {
     draft.stayId = stay.body.id;
   });
 
+  it('hides historical duplicate captures in stay and guest history without mixing guests', async () => {
+    // Simulate a stay confirmed by the older app, which attached every verified retake.
+    await sql(`UPDATE guest_documents SET stay_id = $1 WHERE id = $2`, [draft.stayId, draft.oldDocumentId]);
+    const stay = await desk.get(`/api/v1/stays/${draft.stayId}`).expect(200);
+    expect(stay.body.documents.filter((d: any) => d.docType === 'id_front' && d.occupantKey === 'r0a0').map((d: any) => d.id)).toEqual([draft.replacementId]);
+    expect(stay.body.documents.filter((d: any) => d.docType === 'id_front' && d.occupantKey === 'r0a1')).toHaveLength(1);
+    const [row] = await sql(`SELECT primary_guest_id FROM stays WHERE id = $1`, [draft.stayId]);
+    const guest = await desk.get(`/api/v1/guests/${row.primary_guest_id}`).expect(200);
+    expect(guest.body.documents.some((d: any) => d.id === draft.oldDocumentId)).toBe(false);
+    expect(guest.body.documents.some((d: any) => d.id === draft.replacementId)).toBe(true);
+  });
+
   it('document images open only through a short-lived signed link, and every view is logged', async () => {
     const stay = await desk.get(`/api/v1/stays/${draft.stayId}`).expect(200);
     const doc = stay.body.documents.find((d: any) => d.docType === 'guest_photo');
