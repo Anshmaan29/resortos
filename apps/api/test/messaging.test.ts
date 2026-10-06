@@ -157,7 +157,7 @@ describe('delivery', () => {
     const [failed] = await messagesFor(id);
     expect(failed).toMatchObject({ status: 'failed', last_error: 'Resend 422: invalid recipient' });
 
-    const again = await post(desk, `/messages/${failed!.id}/resend`, {}, null).expect(200);
+    const again = await post(desk, `/messages/${failed!.id}/resend`, {}).expect(200);
     expect(again.body.resendOf).toBe(failed!.id);
     await messaging.sendDue();
     const all = await messagesFor(id);
@@ -295,5 +295,71 @@ describe('receipts and the invoice', () => {
     expect(test.body.subject).toMatch(/^\[Test\] Welcome to/);
     await messaging.sendDue();
     expect(dev.sent.some((s) => s.to === 'owner@example.com')).toBe(true);
+  });
+});
+
+
+describe('email setup and safe retries', () => {
+  it('lets only the owner edit sender details and recipients, rejects stale settings, and replays a save', async () => {
+    await desk.get('/api/v1/email-settings').expect(403);
+    const initial = (await owner.get('/api/v1/email-settings').expect(200)).body;
+    expect(initial.provider).toBe('dev');
+    expect(initial.readyToSend).toBe(false);
+    expect(JSON.stringify(initial)).not.toContain('RESEND_API_KEY');
+    const input = { ...initial, dailySummaryRecipients: ['owner@example.com', 'OWNER@example.com'] };
+    const requestKey = `email-setup-${randomBytes(8).toString('hex')}`;
+    const save = () => owner.put('/api/v1/email-settings').set('x-resortos','1').set('idempotency-key',requestKey).send(input);
+    await save().expect(200);
+    await save().expect(200);
+    const after = (await owner.get('/api/v1/email-settings').expect(200)).body;
+    expect(after.dailySummaryRecipients).toEqual(['owner@example.com']);
+    await owner.put('/api/v1/email-settings').set('x-resortos','1').set('idempotency-key',`other-${requestKey}`).send(input).expect(409);
+  });
+
+  it('keeps the exact sender, body and attachments on a retry even when settings change', async () => {
+    const row = (await post(owner, '/message-templates/check_in_welcome/en/test', { to: 'owner@example.com' }, null).expect(200)).body;
+    dev.failNext = { message: 'Temporary provider failure', retryable: true, times: 1 };
+    expect((await messaging.sendDue(1)).retrying).toBe(1);
+    const [snapshot] = await sql<{ outgoing_payload: any }>(`SELECT outgoing_payload FROM messages WHERE id=$1`, [row.id]);
+    expect(snapshot!.outgoing_payload.from.address).toBe('stay@aravali.example');
+    await sql(`UPDATE properties SET email_from_address='new@aravali.example'`);
+    await sql(`UPDATE messages SET send_after=now() WHERE id=$1`, [row.id]);
+    expect((await messaging.sendDue(1)).sent).toBe(1);
+    expect(dev.sent[0]!.from!.address).toBe('stay@aravali.example');
+    await sql(`UPDATE properties SET email_from_address='stay@aravali.example'`);
+  });
+
+  it('holds sends interrupted beyond the provider deduplication window for review', async () => {
+    const row = (await post(owner, '/message-templates/check_in_welcome/en/test', { to: 'owner@example.com' }, null).expect(200)).body;
+    await sql(`UPDATE messages SET status='sending', first_attempt_at=now()-interval '25 hours', send_after=now() WHERE id=$1`, [row.id]);
+    expect((await messaging.sendDue()).claimed).toBe(0);
+    const [held] = await sql<{ status: string; last_error: string }>(`SELECT status,last_error FROM messages WHERE id=$1`, [row.id]);
+    expect(held!.status).toBe('failed');
+    expect(held!.last_error).toMatch(/Check Resend/);
+    expect(dev.sent).toHaveLength(0);
+  });
+
+  it('records a daily summary as skipped when email is disabled', async () => {
+    const propertyId = (await sql<{ id: string }>('SELECT id FROM properties LIMIT 1'))[0]!.id;
+    await sql(`UPDATE properties SET email_enabled=false`);
+    const db = app.get((await import('../src/db/db.service')).DbService);
+    const id = await db.tx({}, (q) => messaging.queueDailySummary(q, { propertyId, recipient: 'owner@example.com', businessDate: '2026-09-16', subject: 'Summary', body: 'Daily totals' }));
+    const [row] = await sql<{ status: string; skip_reason: string }>(`SELECT status,skip_reason FROM messages WHERE id=$1`, [id]);
+    expect(row!.status).toBe('skipped');
+    expect(row!.skip_reason).toMatch(/switched off/);
+    await sql(`UPDATE properties SET email_enabled=true`);
+  });
+});
+
+
+describe('manual guest sends',()=>{
+  it('a replayed request queues only one guest message',async()=>{
+    const reservationId=await book();
+    const requestKey=`manual-email-${randomBytes(8).toString('hex')}`;
+    const send=()=>desk.post('/api/v1/messages/send').set('x-resortos','1').set('idempotency-key',requestKey).send({templateKey:'booking_confirmation',reservationId});
+    const first=await send().expect(200);
+    const replay=await send().expect(200);
+    expect(replay.body.id).toBe(first.body.id);
+    expect((await messagesFor(reservationId)).filter((m)=>m.id===first.body.id)).toHaveLength(1);
   });
 });

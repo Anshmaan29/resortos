@@ -23,7 +23,7 @@ const billOf = async (stayId: string, agent: Agent = desk) => (await agent.get(`
 async function stay(room: string, type: string, nights: { date: string; rate: string }[] = [{ date: '2026-09-16', rate: '4000.00' }]) {
   mobile += 1;
   const created = await post(owner, '/reservations', {
-    ...booking({ roomTypeId: f.type(type), roomId: f.room(room), arrival: '2026-09-16', departure: '2026-09-18' }),
+    ...booking({ roomTypeId: f.type(type), roomId: f.room(room), arrival: '2026-09-16', departure: '2026-09-18', adults: 1 }),
     guest: { firstName: 'Inv', lastName: `Guest${mobile}`, mobile: String(mobile) },
   }).expect(201);
   const [draft] = await sql<{ id: string }>(
@@ -58,6 +58,7 @@ async function stay(room: string, type: string, nights: { date: string; rate: st
 }
 
 async function payInFull(folioId: string, stayId: string) {
+  await desk.get(`/api/v1/stays/${stayId}/checkout-preview`).expect(200);
   const bill = await billOf(stayId);
   if (Number(bill.balance) > 0) {
     await post(desk, `/folios/${folioId}/payments`, { method: 'cash', paymentAccountId: cash, amount: bill.balance }).expect(200);

@@ -1,5 +1,7 @@
 # ResortOS market-readiness audit — 6 October 2026
 
+> Follow-up: see [IMPLEMENTATION_PROGRESS.md](IMPLEMENTATION_PROGRESS.md) for fixes and current remaining work. This document preserves the initial audit snapshot.
+
 ## Decision
 
 Continue in **`/Users/anshmaansingh/aachho/resortos zcode`**. Keep the original `resortos` folder as a reference. Both copies start from commit `2585b76` on `sprint-c`; the continued copy includes additional maintenance, compliance, records/export, daily-summary and web work. Rebuilding from the original would discard useful progress without removing the underlying billing defects.

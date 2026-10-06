@@ -45,6 +45,10 @@ export class MessagingModule implements OnModuleInit {
         handle: async (event) => { await h.handle(event); await this.jobs.nudge(MESSAGES_SEND_QUEUE); },
       });
     }
+    this.handlers.push({
+      name: 'messages-wakeup', topics: ['message.queued'],
+      handle: async () => { await this.jobs.nudge(MESSAGES_SEND_QUEUE); },
+    });
     this.scheduled.push(
       { queue: MESSAGES_SEND_QUEUE, cron: '* * * * *', run: async () => {
         // Keep going while batches come back full, as the outbox drain does.

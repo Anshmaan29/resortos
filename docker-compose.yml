@@ -25,7 +25,10 @@ services:
   # For phone testing on the LAN, ops/dev-https/setup-lan.sh places mkcert certificates in
   # ops/dev-https/certs/minio so MinIO serves HTTPS.
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: resortos-minio-source:2025-10-15
+    build:
+      context: ./ops/storage
+      target: minio
     container_name: resortos-minio
     command: server /data --console-address :9001
     environment:
@@ -38,14 +41,17 @@ services:
       - resortos_minio:/data
       - ./ops/dev-https/certs/minio:/root/.minio/certs:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -skf https://localhost:9000/minio/health/ready || curl -sf http://localhost:9000/minio/health/ready"]
+      test: ["CMD-SHELL", "wget --no-check-certificate -q -O- https://localhost:9000/minio/health/ready || wget -q -O- http://localhost:9000/minio/health/ready"]
       interval: 2s
       timeout: 3s
       retries: 30
 
   # One-shot: private, versioned buckets for development and tests.
   minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: resortos-mc-source:2025-08-13
+    build:
+      context: ./ops/storage
+      target: mc
     depends_on:
       minio:
         condition: service_healthy

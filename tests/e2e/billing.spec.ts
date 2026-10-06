@@ -94,6 +94,18 @@ test('a stay with food and an activity, paid card + UPI, checks out with a tax i
   await page.getByRole('button', { name: 'Check out' }).click();
   const checkout = page.getByRole('dialog', { name: 'Check out room 201?' });
   await expect(checkout.getByText('Tax invoice to be issued')).toBeVisible();
+  // Checkout completes elapsed agreed room charges before settlement. The earlier
+  // card/UPI payments covered the incidental charges only.
+  await expect(checkout.getByText(/is still to pay\./)).toBeVisible();
+  await checkout.getByRole('button', { name: 'Record payment', exact: true }).click();
+  const finalPayment = page.getByRole('dialog', { name: 'Record a payment' });
+  await finalPayment.getByLabel('How was it paid').selectOption({ label: 'UPI' });
+  await finalPayment.getByLabel('Where did it go').selectOption({ label: 'UPI QR at desk' });
+  const completeBill = await (await page.request.get(`/api/v1/stays/${stayId}/bill`)).json();
+  await finalPayment.getByLabel('Amount').fill(completeBill.balance);
+  await finalPayment.getByLabel(/Approval code|UTR/).fill('UTR-ROOM-SETTLEMENT');
+  await finalPayment.getByRole('button', { name: /^Record ₹/ }).click();
+  await expect(finalPayment).not.toBeVisible();
   await expect(checkout.getByText('Nothing is blocking this checkout.')).toBeVisible();
   await checkout.getByRole('button', { name: 'Issue invoice and check out' }).click();
 

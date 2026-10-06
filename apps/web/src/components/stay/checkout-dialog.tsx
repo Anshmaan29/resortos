@@ -40,16 +40,23 @@ export function CheckoutDialog({ stay, open, onClose, onDone }: {
   const preview = useQuery({
     queryKey: ['checkout-preview', stay.id],
     enabled: open,
-    queryFn: () => api<CheckoutPreview>(`/stays/${stay.id}/checkout-preview`),
+    queryFn: async () => {
+      const result = await api<CheckoutPreview>(`/stays/${stay.id}/checkout-preview`);
+      // The server has now completed any missing elapsed room charges. Refresh the same bill
+      // used by payment and invoice preview before allowing the guest's final settlement.
+      const updated = await api<Bill>(`/stays/${stay.id}/bill`);
+      qc.setQueryData(['bill', stay.id], updated);
+      return result;
+    },
   });
-  const bill = useQuery({ queryKey: ['bill', stay.id], enabled: open, queryFn: () => api<Bill>(`/stays/${stay.id}/bill`) });
+  const bill = useQuery({ queryKey: ['bill', stay.id], enabled: open && preview.isSuccess && !preview.isFetching, queryFn: () => api<Bill>(`/stays/${stay.id}/bill`) });
   const gstinOk = !buyerGstin || isValidGstin(buyerGstin.trim().toUpperCase());
   const buyer = business && buyerName.trim().length >= 2 && gstinOk
     ? { name: buyerName.trim(), gstin: buyerGstin.trim().toUpperCase() || undefined, address: buyerAddress.trim() || undefined }
     : undefined;
   const invoice = useQuery({
     queryKey: ['invoice-preview', bill.data?.id, buyer],
-    enabled: open && Boolean(bill.data?.id),
+    enabled: open && preview.isSuccess && !preview.isFetching && Boolean(bill.data?.id),
     queryFn: () => api<InvoicePreview>(`/folios/${bill.data!.id}/invoice/preview`, { method: 'POST', body: { buyer } }),
   });
 
@@ -94,7 +101,7 @@ export function CheckoutDialog({ stay, open, onClose, onDone }: {
       description={`${stay.guestName} · booking ${stay.reservationNumber}`}
       footer={<>
         <Button variant="outline" onClick={onClose}>Not yet</Button>
-        <Button disabled={preview.isLoading || blockers.length > 0 || (business && !buyer)} loading={checkout.isPending}
+        <Button disabled={!preview.isSuccess || preview.isFetching || invoice.isFetching || bill.isFetching || !invoice.isSuccess || blockers.length > 0 || (business && !buyer)} loading={checkout.isPending}
           onClick={() => { setFormError(null); checkout.mutate(undefined); }}>
           {invoice.data?.lines.length ? 'Issue invoice and check out' : 'Check out'}
         </Button>
@@ -112,12 +119,14 @@ export function CheckoutDialog({ stay, open, onClose, onDone }: {
             <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <span>
               The guest is leaving early — {formatDate(stay.expectedDeparture)} was the expected departure. Only the nights
-              actually stayed are on the bill, because night audit posts a room night only for a night the guest was in house.
+              actually stayed are on the bill, with a minimum of one night for same-day checkout. Unused future nights are not charged automatically.
             </span>
           </p>
         )}
 
-        {blockers.length > 0 ? (
+        {!preview.isSuccess || preview.isFetching || bill.isFetching ? (
+          <p role="status" className="text-text-2">Checking the complete bill before checkout…</p>
+        ) : blockers.length > 0 ? (
           <div className="rounded-md border border-border bg-surface-2 px-3 py-2.5">
             <p className="font-medium text-text">Before checkout</p>
             <ul className="mt-1 flex flex-col gap-2 text-text-2">
@@ -191,7 +200,7 @@ export function CheckoutDialog({ stay, open, onClose, onDone }: {
           </span>
         </p>
 
-        {formError && <p role="alert" className="text-danger">{formError}</p>}
+        {(formError || preview.error || bill.error || invoice.error) && <p role="alert" className="text-danger">{formError ?? (preview.error || bill.error || invoice.error)?.message}</p>}
         {approval.dialog}
       </div>
 

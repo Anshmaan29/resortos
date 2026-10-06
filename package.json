@@ -29,7 +29,8 @@
   },
   "pnpm": {
     "overrides": {
-      "multer": "2.3.0"
+      "multer": "2.3.0",
+      "source-map-js": "1.2.2"
     }
   }
 }

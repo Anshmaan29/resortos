@@ -1,8 +1,8 @@
 import { defineConfig } from 'vitest/config';
 import base from './vitest.config.mts';
 
-// Opt-in launch audit. These assertions express required behaviour and intentionally
-// expose unresolved defects; they are separate from the existing green regression suite.
+// Operational regression checks first added by the launch audit. Kept separate
+// for isolated database setup and generated PDF evidence; required by CI.
 export default defineConfig({
   ...base,
   test: {

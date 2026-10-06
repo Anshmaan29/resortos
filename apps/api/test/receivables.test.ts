@@ -74,6 +74,7 @@ describe('company accounts', () => {
 
   it('a bill moved to the company is invoiced in the company’s name, and the company then owes it', async () => {
     const s = await stayWithCharge('202', 'DLX', '5000');
+    await desk.get(`/api/v1/stays/${s.stayId}/checkout-preview`).expect(200);
     const bill = (await desk.get(`/api/v1/stays/${s.stayId}/bill`).expect(200)).body;
     await post(desk, `/folios/${s.folioId}/payments`, { method: 'company_account', companyId, amount: bill.balance }).expect(200);
     await post(desk, `/stays/${s.stayId}/checkout`, {}).expect(200);

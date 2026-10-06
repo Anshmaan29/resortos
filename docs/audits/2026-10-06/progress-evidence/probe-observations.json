@@ -1,0 +1,77 @@
+{
+  "unposted_room_checkout": {
+    "status": 400,
+    "invoiceTotals": [],
+    "agreedNightRates": [
+      "2500.00",
+      "2500.00"
+    ]
+  },
+  "complete_early_checkout": {
+    "chargedNights": [
+      "2026-09-16"
+    ],
+    "agreedRate": "2500.00",
+    "invoice": "INV/26-27/00001"
+  },
+  "returned_deposit_collections_delta": 0,
+  "reversed_payment_collections_delta": 0,
+  "voided_food_revenue_delta": 0,
+  "maintenance_ticket_replay": {
+    "firstId": "c51e3242-3dfc-4847-ab4c-8a126f613247",
+    "replayId": "c51e3242-3dfc-4847-ab4c-8a126f613247"
+  },
+  "maintenance_schedule_replay": {
+    "firstId": "41087065-bb81-4d71-afeb-dce983e47eae",
+    "replayId": "41087065-bb81-4d71-afeb-dce983e47eae"
+  },
+  "room_preventive_schedule": {
+    "result": {
+      "opened": 1,
+      "skipped": 0
+    },
+    "error": null
+  },
+  "schedule_room_edit": {
+    "expectedRoomId": "b65acaed-1c4b-4b61-beae-7b562d8ecb80",
+    "actualRoomId": "b65acaed-1c4b-4b61-beae-7b562d8ecb80"
+  },
+  "inactive_maintenance_assignee_status": 404,
+  "gstr_cgst_reconciliation": {
+    "invoiceLedger": "132.51",
+    "exported": 132.51
+  },
+  "tally_dates": [
+    "20260916",
+    "20260916",
+    "20260916",
+    "20260916",
+    "20260916",
+    "20260916",
+    "20260916"
+  ],
+  "tally_keeps_reversed_payment": false,
+  "future_bookings_export_rows": 0,
+  "future_stays_export_rows": 0,
+  "payments_csv_marks_reversals": true,
+  "corrected_expense_csv_sum": 550,
+  "police_register_100_rows_pages": 4,
+  "police_midnight_arrival": "17 Sep 2026",
+  "local_read_burst": {
+    "requests": 50,
+    "elapsedMs": 66,
+    "p95Ms": 62,
+    "statuses": {
+      "200": 50
+    }
+  },
+  "other_property_assignee": {
+    "status": 404,
+    "exposedName": null
+  },
+  "elapsed_and_late_checkout": {
+    "normalNights": 2,
+    "lateArrivalNights": 1,
+    "unusedNightsCharged": 0
+  }
+}

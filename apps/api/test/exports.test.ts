@@ -16,7 +16,6 @@ let owner: Agent;
 let f: { type: (code: string) => string; room: (number: string) => string; ownerId: string };
 let bookingNumber: string;
 let invoiceNumber: string;
-let paymentAmount = '2100.00'; // ₹2,000 food + 5% GST
 let propertyGstin = '';
 
 beforeAll(async () => {
@@ -79,7 +78,9 @@ async function stayWithInvoice(room: string, lastName: string, buyer: { name: st
   );
   const bill = (await desk.get(`/api/v1/stays/${stay!.id}/bill`).expect(200)).body;
   await post(desk, `/folios/${bill.id}/charges`, { lineType: 'food', name: 'Dinner', quantity: 1, unitRate: '2000' }).expect(200);
-  await post(desk, `/folios/${bill.id}/payments`, { method: 'upi', paymentAccountId: (await accounts()).upi, amount: paymentAmount, reference: `UTR-${lastName}` }).expect(200);
+  await desk.get(`/api/v1/stays/${stay!.id}/checkout-preview`).expect(200);
+  const prepared = (await desk.get(`/api/v1/stays/${stay!.id}/bill`).expect(200)).body;
+  await post(desk, `/folios/${bill.id}/payments`, { method: 'upi', paymentAccountId: (await accounts()).upi, amount: prepared.balance, reference: `UTR-${lastName}` }).expect(200);
   await post(desk, `/stays/${stay!.id}/checkout`, { steps: { invoice: buyer ? { buyer } : {} } }).expect(200);
   const closedBill = (await desk.get(`/api/v1/stays/${stay!.id}/bill`).expect(200)).body;
   return closedBill.documents[0].number as string;

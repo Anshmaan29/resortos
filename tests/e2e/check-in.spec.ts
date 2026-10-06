@@ -252,11 +252,16 @@ test('the whole stay: desk check-in with phone scanner, registration card, room 
   await expect(shiftRow).toContainText('205');
   await expect(shiftRow).toContainText('203');
 
-  // Checkout is a status change in Phase 1; the screen is built around the server's blocker list.
+  // The agreed room charge must be settled or explicitly authorised by the owner.
   await page.getByRole('button', { name: 'Check out' }).click();
   const checkout = page.getByRole('dialog', { name: 'Check out room 203?' });
-  await expect(checkout.getByText('Nothing is blocking this checkout.')).toBeVisible();
-  await checkout.getByRole('button', { name: 'Check out' }).click();
+  await expect(checkout.getByText(/is still to pay\./)).toBeVisible();
+  await checkout.getByRole('checkbox', { name: /Let the guest leave/ }).check();
+  await checkout.getByRole('button', { name: 'Issue invoice and check out' }).click();
+  const permission = page.getByRole('dialog', { name: 'Owner authorisation' });
+  await expect(permission).toBeVisible();
+  await page.keyboard.type('482916');
+  await page.keyboard.press('Enter');
   await expect(page.getByText('Room 203 checked out')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText('Checked out').first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Check out' })).toHaveCount(0);

@@ -13,7 +13,7 @@ import { ExportsService, EXPORT_KINDS, type ExportKind } from './exports.service
 const querySchema = z.object({
   from: zIsoDate.optional(),
   to: zIsoDate.optional(),
-});
+}).refine((v) => !v.from || !v.to || v.from <= v.to, { message: 'End date must be on or after start date', path: ['to'] });
 
 /**
  * The owner's downloads (spec §43, §46): /exports/bookings.xlsx, /exports/police-register.pdf,

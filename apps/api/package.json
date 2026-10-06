@@ -9,7 +9,8 @@
     "migrate": "node --env-file-if-exists=../../.env -r ./scripts/swc-register.cjs scripts/migrate.ts",
     "seed": "node --env-file-if-exists=../../.env -r ./scripts/swc-register.cjs scripts/seed.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "provision": "node --env-file-if-exists=../../.env -r ./scripts/swc-register.cjs scripts/provision.ts"
   },
   "devDependencies": {
     "@nestjs/testing": "11.2.5",

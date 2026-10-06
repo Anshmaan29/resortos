@@ -72,7 +72,7 @@ describe('a room that needs cleaning', () => {
   it('gets a task at checkout, which a cleaner starts and finishes', async () => {
     const room = take();
     const stayId = await checkInBySql(room.number, room.code, 'Clean', '9820077001');
-    await post(desk, `/stays/${stayId}/checkout`, { steps: { settlement: { pendingBalance: true } } }).expect(200);
+    await post(owner, `/stays/${stayId}/checkout`, { steps: { settlement: { pendingBalance: true } } }).expect(200);
 
     const dirty = await roomOnBoard(room.number);
     expect(dirty).toMatchObject({ housekeeping: 'dirty', occupied: false });
@@ -108,7 +108,7 @@ describe('a room that needs cleaning', () => {
   it('closes the same task when the desk marks the room clean from the room board', async () => {
     const room = take();
     const stayId = await checkInBySql(room.number, room.code, 'Board', '9820077002');
-    await post(desk, `/stays/${stayId}/checkout`, { steps: { settlement: { pendingBalance: true } } }).expect(200);
+    await post(owner, `/stays/${stayId}/checkout`, { steps: { settlement: { pendingBalance: true } } }).expect(200);
     const task = (await roomOnBoard(room.number)).task;
     expect(task.status).toBe('open');
 

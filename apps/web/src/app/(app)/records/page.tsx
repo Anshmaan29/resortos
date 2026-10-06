@@ -18,9 +18,9 @@ import { PoliceRegisterTable } from '@/components/records/police-register-table'
 interface Range { from: string; to: string; label: string }
 
 const RECORDS: { kind: string; title: string; description: string; icon: typeof Users; range: boolean }[] = [
-  { kind: 'bookings', title: 'Bookings', description: 'Every booking, cancelled ones included', icon: CalendarDays, range: false },
+  { kind: 'bookings', title: 'Bookings', description: 'Bookings arriving in the selected range, cancelled ones included', icon: CalendarDays, range: true },
   { kind: 'guests', title: 'Guests', description: 'Guest directory with contacts', icon: Users, range: false },
-  { kind: 'in-house', title: 'Stays', description: 'Every check-in and check-out, room by room', icon: Building2, range: false },
+  { kind: 'in-house', title: 'Stays', description: 'Stays arriving in the selected range, room by room', icon: Building2, range: true },
   { kind: 'payments', title: 'Payments', description: 'Money taken, refund by refund', icon: Wallet, range: true },
   { kind: 'invoices', title: 'Bills & invoices', description: 'Tax invoices, bills of supply, credit and debit notes', icon: FileText, range: true },
   { kind: 'expenses', title: 'Expenses', description: 'Money paid out, category by category', icon: Landmark, range: true },
@@ -91,7 +91,7 @@ export default function RecordsPage() {
       </div>
 
       <Card>
-        <CardHeader title="For the accountant" description="The formats the CA and Tally import. The accountant confirms the ledger mapping once (spec §46)." />
+        <CardHeader title="For the accountant" description="Tax summaries for your accountant. Confirm the ledger mapping and a sample import before using Tally vouchers." />
         <div className="flex flex-wrap gap-2 px-4 pb-4">
           <DownloadLink kind="secondary" href={`/api/v1/exports/gstr-1.csv?from=${range.from}&to=${range.to}`}>GSTR-1 ready (CSV)</DownloadLink>
           <DownloadLink kind="secondary" href={`/api/v1/exports/tally.xml?from=${range.from}&to=${range.to}`}>Tally vouchers (XML)</DownloadLink>

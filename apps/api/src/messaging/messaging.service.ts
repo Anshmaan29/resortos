@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { ERROR_CODES, formatDate, formatINR, money, nightsBetween, PAYMENT_METHOD_LABELS, toMoneyString, type PaymentMethod } from '@resortos/shared';
+import { ERROR_CODES, formatDate, formatINR, money, nightsBetween, PAYMENT_METHOD_LABELS, toMoneyString, type PaymentMethod, type EmailSettingsInput } from '@resortos/shared';
 import { AuditService } from '../common/audit.service';
-import { AppError, notFound } from '../common/errors';
+import { AppError, notFound, staleVersion } from '../common/errors';
 import type { Actor } from '../common/request-context';
 import { DbService, type Queryable } from '../db/db.service';
+import { APP_CONFIG, type AppConfig } from '../config';
+import { OutboxService } from '../common/outbox.service';
+import { IdempotencyService } from '../common/idempotency.service';
 import { PrintingService } from '../printing/printing.service';
 import { MESSAGE_PROVIDERS, ProviderError, type MessageProvider, type OutgoingMessage } from './providers';
 import {
@@ -29,8 +32,11 @@ interface MessageRow {
   guest_id: string | null; reservation_id: string | null; stay_id: string | null; invoice_id: string | null; payment_id: string | null;
   trigger: string; source_key: string; subject: string | null; body: string; status: string; skip_reason: string | null;
   last_error: string | null; attempts: number; send_after: Date; provider: string | null; provider_message_id: string | null;
+  outgoing_payload: StoredOutgoing | null;
   queued_at: Date; sent_at: Date | null; delivered_at: Date | null; failed_at: Date | null; resend_of: string | null;
 }
+
+type StoredOutgoing = Omit<OutgoingMessage, 'attachments'> & { attachments: { filename: string; content: string; contentType: string }[] };
 
 export interface QueueRequest {
   propertyId: string;
@@ -77,7 +83,48 @@ export class MessagingService {
     private readonly audit: AuditService,
     private readonly printing: PrintingService,
     @Inject(MESSAGE_PROVIDERS) private readonly providers: MessageProvider[],
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly outbox: OutboxService,
+    private readonly idempotency: IdempotencyService,
   ) {}
+
+  async emailSettings(propertyId: string) {
+    const settings = await this.settings(this.db, propertyId);
+    const { rows } = await this.db.query<{ version: number; recipients: string[] | {recipients?:string[]} | null }>(
+      `SELECT p.version, (SELECT value FROM settings WHERE property_id=p.id AND key='daily_summary_recipients') AS recipients FROM properties p WHERE p.id=$1`, [propertyId],
+    );
+    const raw=rows[0]!.recipients;
+    const owners=await this.db.query<{email:string}>(`SELECT email FROM users WHERE property_id=$1 AND role='owner' AND is_active AND email IS NOT NULL`,[propertyId]);
+    const recipients=Array.isArray(raw)?raw:raw?.recipients??owners.rows.map((r)=>r.email);
+    return {
+      enabled: settings.email_enabled, fromName: settings.email_from_name ?? '', fromAddress: settings.email_from_address ?? '', replyTo: settings.email_reply_to ?? '',
+      dailySummaryRecipients: recipients, version: rows[0]!.version,
+      provider: this.config.MESSAGING_PROVIDER, jobsEnabled: this.config.JOBS_ENABLED,
+      webhookConfigured: Boolean(this.config.RESEND_WEBHOOK_SECRET),
+      readyToSend: this.config.MESSAGING_PROVIDER === 'resend' && this.config.JOBS_ENABLED && Boolean(settings.email_from_address),
+    };
+  }
+
+  async saveEmailSettings(actor: Actor, input: EmailSettingsInput, key: string | undefined) {
+    return this.db.tx({ userId: actor.user.id }, async (q) => (await this.idempotency.run(q, actor, key,
+      { method: 'PUT', path: '/email-settings', body: input }, async () => {
+        const { rows } = await q.query<{ id: string }>(
+          `UPDATE properties SET email_enabled=$3, email_from_name=$4, email_from_address=$5, email_reply_to=$6
+            WHERE id=$1 AND version=$2 RETURNING id`,
+          [actor.user.propertyId, input.version, input.enabled, input.fromName ?? null, input.fromAddress ?? null, input.replyTo ?? null],
+        );
+        if (!rows[0]) throw staleVersion();
+        await q.query(`INSERT INTO settings (property_id,key,value) VALUES ($1,'daily_summary_recipients',$2::jsonb)
+          ON CONFLICT (property_id,key) DO UPDATE SET value=EXCLUDED.value`, [actor.user.propertyId, JSON.stringify({ recipients: input.dailySummaryRecipients })]);
+        await this.audit.record(q, actor, { action: 'email.settings_saved', entityType: 'property', entityId: actor.user.propertyId, after: input });
+        await this.outbox.emit(q, actor.user.propertyId, 'property.email_settings_changed', { type: 'property', id: actor.user.propertyId });
+        return { ok: true };
+      })).body);
+  }
+
+  private async mutate<T>(actor: Actor, key: string | undefined, path: string, body: unknown, fn: (q: Queryable) => Promise<T>) {
+    return this.db.tx({ userId: actor.user.id }, async (q) => (await this.idempotency.run(q,actor,key,{method:'POST',path,body},()=>fn(q))).body);
+  }
 
   private provider(channel: Channel): MessageProvider | null {
     return this.providers.find((p) => p.channel === channel) ?? null;
@@ -288,36 +335,50 @@ export class MessagingService {
    * cannot reach the guest twice.
    */
   async sendDue(limit = 10): Promise<{ claimed: number; sent: number; retrying: number; failed: number; skipped: number }> {
-    const { rows } = await this.db.query<MessageRow>(
-      `UPDATE messages m SET status = 'sending', attempts = m.attempts + 1, send_after = now() + make_interval(secs => $2)
-        WHERE m.id IN (
-          SELECT id FROM messages WHERE status IN ('queued', 'sending') AND send_after <= now()
-           ORDER BY send_after FOR UPDATE SKIP LOCKED LIMIT $1)
-       RETURNING m.*`,
-      [limit, LEASE_SECONDS],
-    );
-    const result = { claimed: rows.length, sent: 0, retrying: 0, failed: 0, skipped: 0 };
-    for (const m of rows) {
+    const result = { claimed: 0, sent: 0, retrying: 0, failed: 0, skipped: 0 };
+    // Resend retains idempotency keys for 24 hours. A send interrupted beyond that window
+    // needs manual delivery reconciliation; automatically repeating it could duplicate an email.
+    await this.db.query(`UPDATE messages SET status='failed', failed_at=now(), last_error='Delivery is uncertain after 24 hours. Check Resend before sending again.'
+      WHERE status IN ('queued','sending') AND first_attempt_at < now() - interval '23 hours'`);
+    for (let i = 0; i < limit; i += 1) {
+      // Claim only the next message, so later rows never wait for a batch's lease to expire.
+      const { rows } = await this.db.query<MessageRow>(
+        `UPDATE messages m SET status='sending', attempts=m.attempts+1, first_attempt_at=COALESCE(m.first_attempt_at,now()), send_after=now()+make_interval(secs=>$1)
+          WHERE m.id IN (SELECT id FROM messages WHERE status IN ('queued','sending') AND send_after <= now()
+            ORDER BY send_after FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING m.*`, [LEASE_SECONDS],
+      );
+      const m = rows[0];
+      if (!m) break;
+      result.claimed += 1;
       const provider = this.provider(m.channel);
       if (!provider) {
-        await this.db.query(`UPDATE messages SET status = 'skipped', skip_reason = 'No provider is set up for this channel.' WHERE id = $1`, [m.id]);
+        await this.db.query(`UPDATE messages SET status = 'skipped', skip_reason = 'No provider is set up for this channel.' WHERE id = $1 AND status='sending' AND attempts=$2`, [m.id, m.attempts]);
         result.skipped += 1;
         continue;
       }
       try {
         const s = await this.settings(this.db, m.property_id);
-        const out: OutgoingMessage = {
+        if (!s.email_enabled && m.trigger !== 'test') {
+          await this.db.query(`UPDATE messages SET status='skipped', skip_reason='Email is switched off in message settings.' WHERE id=$1 AND status='sending' AND attempts=$2`, [m.id, m.attempts]);
+          result.skipped += 1;
+          continue;
+        }
+        const payload: StoredOutgoing = m.outgoing_payload ?? {
           id: m.id, channel: m.channel, to: m.recipient,
           from: s.email_from_address ? { name: s.email_from_name ?? s.name, address: s.email_from_address } : null,
           replyTo: s.email_reply_to, subject: m.subject, text: m.body, html: emailHtml(m.body, s.name),
-          attachments: await this.attachments(m),
+          attachments: (await this.attachments(m)).map((a) => ({ ...a, content: a.content.toString('base64') })),
           tags: [{ name: 'template', value: m.template_key }],
         };
+        const saved = await this.db.query(`UPDATE messages SET outgoing_payload=COALESCE(outgoing_payload,$3::jsonb), send_after=now()+make_interval(secs=>$4)
+          WHERE id=$1 AND status='sending' AND attempts=$2`, [m.id,m.attempts,JSON.stringify(payload),LEASE_SECONDS]);
+        if (!saved.rowCount) continue; // A newer sender owns this attempt.
+        const out: OutgoingMessage = { ...payload, attachments: payload.attachments.map((a) => ({ ...a, content: Buffer.from(a.content,'base64') })) };
         const { providerMessageId } = await provider.send(out);
         await this.db.query(
           `UPDATE messages SET status = 'sent', sent_at = now(), provider = $2, provider_message_id = $3, last_error = NULL
-            WHERE id = $1 AND status = 'sending'`,
-          [m.id, provider.name, providerMessageId],
+            WHERE id = $1 AND status = 'sending' AND attempts=$4`,
+          [m.id, provider.name, providerMessageId, m.attempts],
         );
         result.sent += 1;
       } catch (err) {
@@ -325,12 +386,12 @@ export class MessagingService {
         const retryable = !(err instanceof ProviderError) || err.retryable;
         if (retryable && m.attempts < MAX_SEND_ATTEMPTS) {
           await this.db.query(
-            `UPDATE messages SET status = 'queued', last_error = $2, send_after = now() + make_interval(secs => $3) WHERE id = $1`,
-            [m.id, message, retryDelaySeconds(m.attempts)],
+            `UPDATE messages SET status = 'queued', last_error = $2, send_after = now() + make_interval(secs => $3) WHERE id = $1 AND status='sending' AND attempts=$4`,
+            [m.id, message, retryDelaySeconds(m.attempts), m.attempts],
           );
           result.retrying += 1;
         } else {
-          await this.db.query(`UPDATE messages SET status = 'failed', last_error = $2, failed_at = now() WHERE id = $1`, [m.id, message]);
+          await this.db.query(`UPDATE messages SET status = 'failed', last_error = $2, failed_at = now() WHERE id = $1 AND status='sending' AND attempts=$3`, [m.id, message, m.attempts]);
           result.failed += 1;
           this.logger.warn(`Message ${m.id} (${m.template_key}) failed: ${message}`);
         }
@@ -395,8 +456,8 @@ export class MessagingService {
   // ---------------------------------------------------------------------------
 
   /** "Resend" on the stay (§40): a new message with the same subject matter, never an edit of the old one. */
-  async resend(actor: Actor, messageId: string) {
-    return this.db.tx({ userId: actor.user.id }, async (q) => {
+  async resend(actor: Actor, messageId: string, requestKey?: string) {
+    return this.mutate(actor,requestKey,`/messages/${messageId}/resend`,{},async(q)=>{
       const { rows } = await q.query<MessageRow>(`SELECT * FROM messages WHERE id = $1 AND property_id = $2`, [messageId, actor.user.propertyId]);
       const m = rows[0];
       if (!m) throw notFound('Message');
@@ -407,19 +468,22 @@ export class MessagingService {
         createdBy: actor.user.id, resendOf: m.id,
       });
       await this.audit.record(q, actor, { action: 'message.resent', entityType: 'message', entityId: messageId, after: { newMessageId: id } });
+      if (id) await this.outbox.emit(q,actor.user.propertyId,'message.queued',{type:'message',id});
       const { rows: created } = await q.query<MessageRow>(`SELECT * FROM messages WHERE id = $1`, [id]);
       return mapMessage(created[0]!);
     });
   }
 
   /** Send a template to a key the desk chooses, for a booking (e.g. the confirmation again after an edit). */
-  async sendNow(actor: Actor, key: TemplateKey, target: { reservationId?: string; stayId?: string }) {
-    return this.db.tx({ userId: actor.user.id }, async (q) => {
+  async sendNow(actor: Actor, key: TemplateKey, target: { reservationId?: string; stayId?: string }, requestKey?: string) {
+    return this.mutate(actor,requestKey,'/messages/send',{key,...target},async(q)=>{
       const id = await this.queue(q, {
         propertyId: actor.user.propertyId, templateKey: key, trigger: 'resend', sourceKey: `manual:${randomUUID()}`,
         reservationId: target.reservationId, stayId: target.stayId, createdBy: actor.user.id,
       });
       const { rows } = await q.query<MessageRow>(`SELECT * FROM messages WHERE id = $1`, [id]);
+      await this.audit.record(q,actor,{action:'message.sent_manually',entityType:'message',entityId:id});
+      if (id) await this.outbox.emit(q,actor.user.propertyId,'message.queued',{type:'message',id});
       return mapMessage(rows[0]!);
     });
   }
@@ -442,6 +506,10 @@ export class MessagingService {
    * before any guest sees them. Goes through the same queue and sender as a real message.
    */
   async sendTest(actor: Actor, key: TemplateKey, language: Language, to: string) {
+    const provider = this.provider('email');
+    if (!provider) throw new AppError(ERROR_CODES.VALIDATION, 'Set up Resend on the server before sending a test.');
+    const settings = await this.settings(this.db, actor.user.propertyId);
+    if (provider.name === 'resend' && !settings.email_from_address) throw new AppError(ERROR_CODES.VALIDATION, 'Save a sender address on your verified domain first.');
     const vars = await this.sampleVars(actor.user.propertyId);
     return this.db.tx({ userId: actor.user.id }, async (q) => {
       const t = await this.template(q, actor.user.propertyId, key, 'email', language);
@@ -466,12 +534,16 @@ export class MessagingService {
    * audit has just closed the day, and quiet hours are for guest-facing messages.
    */
   async queueDailySummary(q: Queryable, req: { propertyId: string; recipient: string; businessDate: string; subject: string; body: string }): Promise<string | null> {
+    const settings = await this.settings(q, req.propertyId);
+    const skip = !settings.email_enabled ? 'Email is switched off in message settings.'
+      : !this.provider('email') ? 'No email provider is set up for this system.'
+      : this.provider('email')?.name === 'resend' && !settings.email_from_address ? 'No sender address is set in message settings.' : null;
     const { rows } = await q.query<{ id: string }>(
-      `INSERT INTO messages (property_id, template_key, channel, language, recipient, trigger, source_key, subject, body, status, send_after)
-       VALUES ($1, 'daily_summary', 'email', 'en', $2, 'schedule', $3, $4, $5, 'queued', now())
+      `INSERT INTO messages (property_id, template_key, channel, language, recipient, trigger, source_key, subject, body, status, skip_reason, send_after)
+       VALUES ($1, 'daily_summary', 'email', 'en', $2, 'schedule', $3, $4, $5, $6, $7, now())
        ON CONFLICT ON CONSTRAINT messages_once_per_cause DO NOTHING
        RETURNING id`,
-      [req.propertyId, req.recipient, `daily_summary:${req.businessDate}`, req.subject, req.body],
+      [req.propertyId, req.recipient, `daily_summary:${req.businessDate}`, req.subject, req.body, skip ? 'skipped' : 'queued', skip],
     );
     return rows[0]?.id ?? null;
   }

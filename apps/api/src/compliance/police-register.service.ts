@@ -6,7 +6,7 @@ import { DbService } from '../db/db.service';
 
 interface RegisterRow {
   occupant_id: string; full_name: string; age: number | null; nationality: string; id_type: string; id_last4: string | null;
-  room_number: string; arrived_at: Date; expected_departure: string; departed_on: string | null; persons: string;
+  room_number: string; arrived_at: Date; arrival_date: string; expected_departure: string; departed_on: string | null; persons: string;
   purpose: string | null; vehicle: string | null; address: string | null; mobile: string | null; is_primary: boolean;
 }
 
@@ -29,7 +29,9 @@ export class PoliceRegisterService {
     const columns = (settings[0]?.police_register_columns ?? []) as PoliceRegisterColumn[];
     const { rows } = await this.db.query<RegisterRow>(
       `SELECT o.id AS occupant_id, o.full_name, o.age, o.nationality, o.id_type, o.id_last4, o.is_primary,
-              rm.number AS room_number, s.checked_in_at AS arrived_at, s.expected_departure, s.business_date_out AS departed_on,
+              rm.number AS room_number, s.checked_in_at AS arrived_at,
+              to_char(s.checked_in_at AT TIME ZONE p.timezone, 'YYYY-MM-DD') AS arrival_date,
+              s.expected_departure, s.business_date_out AS departed_on,
               (SELECT count(*) FROM stay_occupants x WHERE x.stay_id = s.id) AS persons,
               res.purpose,
               (SELECT string_agg(v.registration, ', ') FROM stay_vehicles v WHERE v.stay_id = s.id) AS vehicle,
@@ -40,6 +42,7 @@ export class PoliceRegisterService {
          JOIN rooms rm ON rm.id = s.room_id
          JOIN reservations res ON res.id = s.reservation_id
          JOIN guests g ON g.id = res.primary_guest_id
+         JOIN properties p ON p.id = s.property_id
         WHERE o.property_id = $1 AND s.business_date_in BETWEEN $2::date AND $3::date
         ORDER BY s.checked_in_at, rm.number, o.is_primary DESC, o.full_name`,
       [propertyId, from, to],
@@ -48,7 +51,7 @@ export class PoliceRegisterService {
     const cell = (r: RegisterRow, column: PoliceRegisterColumn, index: number): string => {
       switch (column) {
         case 'serial': return String(index + 1);
-        case 'arrival': return formatDate(r.arrived_at.toISOString().slice(0, 10));
+        case 'arrival': return formatDate(r.arrival_date);
         case 'name': return r.full_name;
         case 'age': return r.age === null ? '' : String(r.age);
         case 'nationality': return r.nationality;

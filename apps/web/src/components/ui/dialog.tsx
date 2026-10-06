@@ -39,17 +39,17 @@ export function Dialog({ open, onClose, title, description, children, footer, si
             role="dialog"
             aria-modal="true"
             aria-label={title}
-            className={cn('relative flex max-h-[92vh] w-full flex-col rounded-t-xl bg-surface shadow-lg sm:rounded-xl',
+            className={cn('relative flex max-h-[92dvh] min-h-0 w-full flex-col rounded-t-xl bg-surface shadow-lg sm:rounded-xl',
               size === 'sm' ? 'sm:max-w-sm' : size === 'lg' ? 'sm:max-w-2xl' : 'sm:max-w-md')}
           >
-            <div className="flex items-start justify-between gap-4 px-5 pt-5">
+            <div className="flex shrink-0 items-start justify-between gap-4 px-5 pt-5">
               <div>
                 <h2 className="text-lg font-semibold text-text">{title}</h2>
                 {description && <p className="mt-1 text-sm text-text-3">{description}</p>}
               </div>
               <button onClick={onClose} className="-m-2 rounded-md p-2 text-text-3 hover:bg-surface-2 hover:text-text" aria-label="Close"><X className="h-5 w-5" /></button>
             </div>
-            <div className="overflow-y-auto px-5 py-4">{children}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>
             {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-border px-5 py-3">{footer}</div>}
           </motion.div>
         </div>

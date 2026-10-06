@@ -1,5 +1,5 @@
 -- The row counts and totals a restore is compared against (spec §53.5).
--- Kept deliberately small and stable: these are the things whose loss would be noticed.
+-- Include the operational and financial records whose loss could otherwise go unnoticed.
 SELECT json_build_object(
   'properties',        (SELECT count(*) FROM properties),
   'users',             (SELECT count(*) FROM users),
@@ -14,5 +14,21 @@ SELECT json_build_object(
   'audit_logs',        (SELECT count(*) FROM audit_logs),
   'outbox_events',     (SELECT count(*) FROM outbox_events),
   'nightly_rate_total',(SELECT coalesce(sum(nightly_rate), 0)::text FROM reservation_rooms),
+  'folios', (SELECT count(*) FROM folios),
+  'folio_lines', (SELECT count(*) FROM folio_lines),
+  'payments', (SELECT count(*) FROM payments),
+  'invoices', (SELECT count(*) FROM invoices),
+  'invoice_lines', (SELECT count(*) FROM invoice_lines),
+  'invoice_tax_groups', (SELECT count(*) FROM invoice_tax_groups),
+  'expenses', (SELECT count(*) FROM expenses),
+  'cashier_shifts', (SELECT count(*) FROM cashier_shifts),
+  'maintenance_tickets', (SELECT count(*) FROM maintenance_tickets),
+  'maintenance_schedules', (SELECT count(*) FROM maintenance_schedules),
+  'messages', (SELECT count(*) FROM messages),
+  'company_receipts', (SELECT count(*) FROM company_receipts),
+  'folio_charge_total', (SELECT coalesce(sum(amount) FILTER (WHERE voided_at IS NULL),0)::text FROM folio_lines),
+  'payment_cash_total', (SELECT coalesce(sum(cash_effect),0)::text FROM payments),
+  'payment_bill_total', (SELECT coalesce(sum(bill_effect),0)::text FROM payments),
+  'invoice_net_total', (SELECT coalesce(sum(CASE WHEN series='CN' THEN -grand_total ELSE grand_total END),0)::text FROM invoices),
   'room_night_total',  (SELECT coalesce(sum(room_rate + extra_person_amount + meal_amount), 0)::text FROM reservation_room_nights)
 ) AS counts;

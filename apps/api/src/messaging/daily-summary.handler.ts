@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { formatDate, formatINR } from '@resortos/shared';
+import { formatDate, formatINR, money, toMoneyString } from '@resortos/shared';
 import { DbService, gather, type Queryable } from '../db/db.service';
 import type { OutboxEvent, OutboxHandler } from '../jobs/outbox-handlers';
 import { MessagingService } from './messaging.service';
@@ -76,13 +76,11 @@ export class DailySummaryHandler implements OutboxHandler {
       ),
       // Money taken that day, net of refunds, by method.
       () => q.query<{ method: string; total: string }>(
-        `SELECT p.method, sum(CASE WHEN p.entry_type = 'refund' THEN -p.amount ELSE p.amount END)::numeric(14,2) AS total
+        `SELECT p.method, sum(p.cash_effect)::numeric(14,2) AS total
            FROM payments p
           WHERE p.property_id = $1 AND p.business_date = $2::date
-            AND p.entry_type IN ('payment', 'advance', 'refund', 'deposit', 'deposit_refund')
-            AND p.reverses_payment_id IS NULL
-          GROUP BY p.method HAVING sum(CASE WHEN p.entry_type = 'refund' THEN -p.amount ELSE p.amount END) <> 0
-          ORDER BY sum(CASE WHEN p.entry_type = 'refund' THEN -p.amount ELSE p.amount END) DESC`,
+          GROUP BY p.method HAVING sum(p.cash_effect) <> 0
+          ORDER BY sum(p.cash_effect) DESC`,
         [propertyId, date],
       ),
       // Guests who left owing money that day (§22 pending balances).
@@ -115,17 +113,15 @@ export class DailySummaryHandler implements OutboxHandler {
     const facts = (summary.rows[0]?.summary ?? {}) as Record<string, unknown>;
     const moneyLine = (taxCategory: string) =>
       q.query<{ total: string }>(
-        `SELECT COALESCE(sum(amount), 0)::numeric(14,2) AS total FROM folio_lines
-          WHERE property_id = $1 AND business_date = $2::date AND tax_category = $3`,
+        `SELECT COALESCE(sum(l.amount), 0)::numeric(14,2) AS total FROM folio_lines l
+          LEFT JOIN folio_lines base ON base.id = l.applies_to_line_id
+          WHERE l.property_id = $1 AND l.business_date = $2::date AND l.tax_category = $3
+            AND l.voided_at IS NULL AND base.voided_at IS NULL`,
         [propertyId, date, taxCategory],
       );
     const [food, activities, roomRevenue] = await gather(q, [
       () => moneyLine('food'), () => moneyLine('activity'),
-      () => q.query<{ total: string }>(
-        `SELECT COALESCE(sum(amount), 0)::numeric(14,2) AS total FROM folio_lines
-          WHERE property_id = $1 AND business_date = $2::date AND line_type = 'room_night'`,
-        [propertyId, date],
-      ),
+      () => moneyLine('accommodation'),
     ]);
 
     const collectedRows = collected.rows.map((r) => ({ method: r.method, total: r.total }));
@@ -136,7 +132,7 @@ export class DailySummaryHandler implements OutboxHandler {
       roomRevenue: roomRevenue.rows[0]!.total,
       food: food.rows[0]!.total,
       activities: activities.rows[0]!.total,
-      collected: collectedRows.reduce((t, r) => t + Number(r.total), 0).toFixed(2),
+      collected: toMoneyString(collectedRows.reduce((t, r) => t.plus(r.total), money(0))),
       byMethod: collectedRows,
       pendingDues: pending.rows[0]!.total,
       cashDifference: shifts.rows[0]?.diff ?? null,

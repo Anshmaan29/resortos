@@ -114,6 +114,9 @@ jobs:
       - name: Unit, API integration and contrast tests
         run: pnpm test
 
+      - name: Operational regression checks
+        run: pnpm --filter @resortos/api exec vitest run --config vitest.audit.config.mts
+
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
 

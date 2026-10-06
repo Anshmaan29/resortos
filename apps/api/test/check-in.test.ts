@@ -253,8 +253,11 @@ describe('checkout (status change with extension points, spec §22)', () => {
 
   it('checks the guest out, frees and dirties the room, and cannot run twice', async () => {
     const preview = await desk.get(`/api/v1/stays/${draft.stayId}/checkout-preview`).expect(200);
-    // Billing's steps are registered (2.3–2.6); an empty bill has nothing for any of them to block.
-    expect(preview.body).toMatchObject({ blockers: [], earlyDeparture: true, steps: ['deposit', 'settlement', 'invoice'] });
+    expect(preview.body).toMatchObject({ earlyDeparture: true, steps: ['room_charges', 'deposit', 'settlement', 'invoice'] });
+    expect(preview.body.blockers).toEqual([expect.objectContaining({ step: 'settlement' })]);
+    const bill = (await desk.get(`/api/v1/stays/${draft.stayId}/bill`).expect(200)).body;
+    const [account] = await sql<{ id: string }>("SELECT id FROM payment_accounts WHERE kind = 'upi' LIMIT 1");
+    await post(desk, `/folios/${bill.id}/payments`, { method: 'upi', paymentAccountId: account!.id, amount: bill.balance, reference: 'CHECKIN-CHECKOUT' }).expect(200);
 
     const out = await post(desk, `/stays/${draft.stayId}/checkout`, {}).expect(200);
     expect(out.body).toMatchObject({ status: 'checked_out', earlyDeparture: true, businessDateOut: '2026-09-16' });

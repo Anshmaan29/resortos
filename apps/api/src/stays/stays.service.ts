@@ -187,6 +187,8 @@ export class StaysService {
 
     let authorisedBy: string | null = null;
     if (input.rateDecision === 'new_room_type_rate') {
+      const { rows: billed } = await q.query(`SELECT 1 FROM folio_lines l JOIN folios f ON f.id=l.folio_id WHERE f.stay_id=$1 AND l.business_date=$2 AND l.source='night_audit' AND l.voided_at IS NULL LIMIT 1`, [stayId, bd]);
+      if (billed.length) throw new AppError(ERROR_CODES.CONFLICT, 'Today’s room charge is already on the bill. Keep the agreed rate when moving this guest; correct any price difference as a separate charge or discount.');
       const quote = await this.rates.quote(q, actor.user.propertyId, {
         roomTypeId: to.room_type_id, arrival: bd, departure: stay.expected_departure, adults: rr.adults, childAges: rr.child_ages.map(Number), mealPlan: rr.meal_plan,
       });
@@ -320,10 +322,10 @@ export class StaysService {
 
   async checkoutPreview(actor: Actor, stayId: string) {
     return this.db.tx({ userId: actor.user.id }, async (q) => {
-      const { rows } = await q.query<StayRow>(`SELECT * FROM stays WHERE id = $1 AND property_id = $2`, [stayId, actor.user.propertyId]);
+      const bd = await this.property.businessDate(q, actor.user.propertyId);
+      const { rows } = await q.query<StayRow>(`SELECT * FROM stays WHERE id = $1 AND property_id = $2 FOR UPDATE`, [stayId, actor.user.propertyId]);
       const stay = rows[0];
       if (!stay) throw notFound('Stay');
-      const bd = await this.property.businessDate(q, actor.user.propertyId);
       const blockers = stay.status === 'in_house' ? await collectBlockers(this.checkoutSteps, { q, actor, stay, businessDate: bd, input: {} }) : [];
       return {
         stayId, status: stay.status, businessDate: bd, expectedDeparture: stay.expected_departure,
@@ -335,9 +337,9 @@ export class StaysService {
   }
 
   async checkout(q: Queryable, actor: Actor, stayId: string, input: Record<string, unknown>) {
+    const bd = await this.property.businessDate(q, actor.user.propertyId);
     const stay = await this.lockStay(q, actor, stayId);
     if (stay.status !== 'in_house') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This guest has already checked out.');
-    const bd = await this.property.businessDate(q, actor.user.propertyId);
     const ctx = { q, actor, stay, businessDate: bd, input };
 
     const blockers = await collectBlockers(this.checkoutSteps, ctx);

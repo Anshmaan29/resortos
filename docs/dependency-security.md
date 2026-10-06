@@ -92,3 +92,10 @@ package is its own maintenance burden at every Nest upgrade, and the override re
 outright. The conclusion is recorded here so that **whoever adds the first upload route knows that
 multer is already loaded, that the pin is deliberate, and that 2.4.0's renamed message would break
 Nest's error mapping.**
+
+
+## Review on 6 October 2026
+
+Next.js is updated to 16.3.6 for GHSA-vcvr-r3jv-pc5j; `source-map-js` is overridden to 1.2.2 for GHSA-68fv-2mgg-jv7q. The high/critical gate passes against the resulting lockfile.
+
+Multer 2.3.0 now has a moderate advisory, GHSA-3pph-fpjx-jg34 (aborted uploads with orphaned disk writes), fixed in 2.4.0. The existing Nest error-message compatibility issue above remains. The API still exposes no multipart interceptors: guests upload directly to private object storage. This finding is printed by the gate and must be revisited before adding an API upload route. The compatibility test makes no claim that 2.3.0 has no known advisories.

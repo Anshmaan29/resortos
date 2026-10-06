@@ -18,7 +18,7 @@ export default defineConfig({
   timeout: 60_000,
   reporter: [['list']],
   globalSetup: './tests/e2e/global-setup.ts',
-  use: { baseURL: 'http://localhost:3000', locale: 'en-IN', timezoneId: 'Asia/Kolkata', trace: 'retain-on-failure' },
+  use: { baseURL: 'http://localhost:3000', locale: 'en-IN', timezoneId: 'Asia/Kolkata', trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
     { name: 'phone', use: { ...devices['Pixel 7'] }, grep: /@phone/ },

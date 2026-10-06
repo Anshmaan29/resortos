@@ -36,6 +36,7 @@ beforeAll(async () => {
   dev = app.get<MessageProvider[]>(MESSAGE_PROVIDERS)[0] as DevProvider;
   outbox = app.get(OutboxDispatcher);
   messaging = app.get(MessagingService);
+  await sql(`UPDATE properties SET email_enabled=true, email_from_address='stay@aravali.example'`);
   // The demo owner has no email; the summary goes to whoever the property configured.
   await sql(`INSERT INTO settings (property_id, key, value)
              SELECT id, 'daily_summary_recipients', '["accounts@aravali.example"]'::jsonb FROM properties LIMIT 1`);
@@ -61,7 +62,7 @@ describe('the daily summary email', () => {
     expect(m.body).toMatch(/Collected\s+₹/);
     expect(m.body).toMatch(/Needs a look\s+\d+ item/);
     expect(m.body).toMatch(/Tomorrow\s+\d+ arrivals? · \d+ departures?/);
-    // The numbers are the business date's, not today's: nothing was sold on the seeded day, so revenue is ₹0.
+    // This suite has no occupied stays; the summary must not invent revenue.
     expect(m.body).toMatch(/Room revenue\s+₹0(\.00)?/);
   });
 

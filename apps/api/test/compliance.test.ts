@@ -165,8 +165,8 @@ describe('Form C (spec §58.1)', () => {
     expect(early.body.code).toBe('INVALID_TRANSITION');
     expect(early.body.message).toMatch(/not checked out yet/);
 
-    // Check the stay out the way the desk would: an empty bill settles nothing and blocks nothing.
-    const out = await post(desk, `/stays/${oliver.stayId}/checkout`, { steps: {} });
+    // The owner records an authorised pending balance; departure reporting is tested independently of payment.
+    const out = await post(owner, `/stays/${oliver.stayId}/checkout`, { steps: { settlement: { pendingBalance: true } } });
     expect(out.status).toBe(200);
 
     const done = (await post(desk, `/form-c/${oliver.id}/departure-updated`, { version: oliver.version }).expect(200)).body;

@@ -739,7 +739,7 @@ export const maintenanceTicketCreateSchema = z.object({
   description: z.string().trim().max(2000).optional(),
   priority: z.enum(['low', 'normal', 'high']).optional(),
   assignedTo: zId.nullable().optional(),
-});
+}).refine((v) => (v.roomId != null) !== (v.area != null), { message: 'Choose a room or an area', path: ['area'] });
 export type MaintenanceTicketInput = z.infer<typeof maintenanceTicketCreateSchema>;
 
 export const maintenanceTicketPatchSchema = z.object({
@@ -761,6 +761,11 @@ export const maintenanceScheduleCreateSchema = z.object({
   nextDue: zIsoDate.optional(),
 });
 export type MaintenanceScheduleInput = z.infer<typeof maintenanceScheduleCreateSchema>;
+export const maintenanceSchedulePatchSchema = maintenanceScheduleCreateSchema.partial().extend({
+  roomId: zId.nullable().optional(), area: z.string().trim().min(2).max(120).nullable().optional(),
+  isActive: z.boolean().optional(), version: z.coerce.number().int().min(1),
+});
+export type MaintenanceSchedulePatch = z.infer<typeof maintenanceSchedulePatchSchema>;
 
 export const expenseCategorySchema = z.object({
   name: z.string().trim().min(2).max(40),
@@ -810,3 +815,14 @@ export const formCSubmitSchema = z.object({
   reference: z.string().trim().min(3, 'Enter the reference number from the portal').max(60),
   version: z.coerce.number().int().min(1),
 });
+
+/** Sender configuration is separate from guest message wording. Secrets stay on the server. */
+export const emailSettingsSchema = z.object({
+  enabled: z.boolean(),
+  fromName: optionalText(80),
+  fromAddress: z.string().trim().email('Enter a sender email address').optional().or(z.literal('').transform(() => undefined)),
+  replyTo: z.string().trim().email('Enter a reply email address').optional().or(z.literal('').transform(() => undefined)),
+  dailySummaryRecipients: z.array(z.string().trim().email()).max(20).transform((v) => [...new Set(v.map((x) => x.toLowerCase()))]),
+  version: z.coerce.number().int().min(1),
+}).refine((v) => !v.enabled || v.fromAddress, { path: ['fromAddress'], message: 'Set the sender address before switching email on' });
+export type EmailSettingsInput = z.infer<typeof emailSettingsSchema>;

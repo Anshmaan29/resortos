@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 const fromPlatformExpress = createRequire(require.resolve('@nestjs/platform-express'));
 
 describe('multer, pinned by pnpm.overrides above what Nest asks for', () => {
-  it('is a version with no known advisory', () => {
+  it('keeps the compatible minimum version above the older parser advisories', () => {
     const { version } = fromPlatformExpress('multer/package.json') as { version: string };
     const [major, minor] = version.split('.').map(Number);
     // Everything below 2.3.0 is vulnerable (GHSA-wc9g-mqfw-jrwm and three more).

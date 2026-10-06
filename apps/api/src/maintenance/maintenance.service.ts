@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { ERROR_CODES, money, type MaintenanceTicketInput, type MaintenanceTicketPatch, type MaintenanceScheduleInput } from '@resortos/shared';
+import { ERROR_CODES, money, type MaintenanceTicketInput, type MaintenanceTicketPatch, type MaintenanceScheduleInput, type MaintenanceSchedulePatch } from '@resortos/shared';
 import { AuditService } from '../common/audit.service';
 import { AppError, notFound, staleVersion } from '../common/errors';
 import type { Actor } from '../common/request-context';
 import { DbService, type Queryable } from '../db/db.service';
+import { OutboxService } from '../common/outbox.service';
 
 interface TicketRow {
   id: string; property_id: string; room_id: string | null; room_number: string | null; area: string | null;
@@ -34,7 +35,18 @@ const mapTicket = (r: TicketRow) => ({
  */
 @Injectable()
 export class MaintenanceService {
-  constructor(private readonly db: DbService, private readonly audit: AuditService) {}
+  constructor(private readonly db: DbService, private readonly audit: AuditService, private readonly outbox: OutboxService) {}
+
+  private async validateReferences(q: Queryable, propertyId: string, roomId?: string | null, assignedTo?: string | null) {
+    if (roomId) {
+      const result = await q.query<{ id: string }>('SELECT id FROM rooms WHERE id = $1 AND property_id = $2 AND is_active FOR SHARE', [roomId, propertyId]);
+      if (!result.rows[0]) throw notFound('Active room');
+    }
+    if (assignedTo) {
+      const result = await q.query<{ id: string }>('SELECT id FROM users WHERE id = $1 AND property_id = $2 AND is_active FOR SHARE', [assignedTo, propertyId]);
+      if (!result.rows[0]) throw notFound('Active staff member');
+    }
+  }
 
   async listTickets(propertyId: string, status?: 'open' | 'in_progress' | 'resolved' | 'closed') {
     const { rows } = await this.db.query<TicketRow>(
@@ -52,6 +64,7 @@ export class MaintenanceService {
   }
 
   async createTicket(q: Queryable, actor: Actor, input: MaintenanceTicketInput) {
+    await this.validateReferences(q, actor.user.propertyId, input.roomId, input.assignedTo);
     const { rows } = await q.query<{ id: string }>(
       `INSERT INTO maintenance_tickets (property_id, room_id, area, title, description, priority, assigned_to, created_by, updated_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8) RETURNING id`,
@@ -62,6 +75,7 @@ export class MaintenanceService {
       action: 'maintenance.ticket_opened', entityType: 'maintenance_ticket', entityId: rows[0]!.id,
       after: { title: input.title, roomId: input.roomId ?? null, area: input.area ?? null, priority: input.priority ?? 'normal' },
     });
+    await this.outbox.emit(q, actor.user.propertyId, 'maintenance.ticket_opened', { type: 'maintenance_ticket', id: rows[0]!.id }, {});
     return { id: rows[0]!.id };
   }
 
@@ -73,6 +87,7 @@ export class MaintenanceService {
     );
     if (!current[0]) throw notFound('Ticket');
     const t = current[0];
+    await this.validateReferences(q, actor.user.propertyId, null, patch.assignedTo);
 
     if (patch.status === 'resolved' && !patch.resolutionNote && !t.resolution_note) {
       throw new AppError(ERROR_CODES.VALIDATION, 'Say what was done before the ticket can be resolved.');
@@ -109,6 +124,7 @@ export class MaintenanceService {
       action: patch.status === 'resolved' ? 'maintenance.ticket_resolved' : patch.status === 'closed' ? 'maintenance.ticket_closed' : 'maintenance.ticket_updated',
       entityType: 'maintenance_ticket', entityId: id, after,
     });
+    await this.outbox.emit(q, actor.user.propertyId, 'maintenance.ticket_updated', { type: 'maintenance_ticket', id }, { status: patch.status ?? t.status });
     return this.readTicket(q, actor.user.propertyId, id);
   }
 
@@ -144,6 +160,8 @@ export class MaintenanceService {
   }
 
   async createSchedule(q: Queryable, actor: Actor, input: MaintenanceScheduleInput, businessDate: string) {
+    if (input.roomId && input.area) throw new AppError(ERROR_CODES.VALIDATION, 'Choose a room or an area.');
+    await this.validateReferences(q, actor.user.propertyId, input.roomId);
     const { rows } = await q.query<{ id: string }>(
       `INSERT INTO maintenance_schedules (property_id, name, area, room_id, every_days, next_due, created_by, updated_by)
        VALUES ($1,$2,$3,$4,$5,$6::date,$7,$7) RETURNING id`,
@@ -153,21 +171,26 @@ export class MaintenanceService {
       action: 'maintenance.schedule_created', entityType: 'maintenance_schedule', entityId: rows[0]!.id,
       after: { name: input.name, everyDays: input.everyDays, nextDue: input.nextDue ?? businessDate },
     });
+    await this.outbox.emit(q, actor.user.propertyId, 'maintenance.schedule_created', { type: 'maintenance_schedule', id: rows[0]!.id }, {});
     return { id: rows[0]!.id };
   }
 
-  async patchSchedule(q: Queryable, actor: Actor, id: string, patch: { name?: string; area?: string | null; everyDays?: number; nextDue?: string; isActive?: boolean; version: number }, businessDate: string) {
+  async patchSchedule(q: Queryable, actor: Actor, id: string, patch: MaintenanceSchedulePatch, businessDate: string) {
     const { rows: current } = await q.query<ScheduleRow>(
       `SELECT * FROM maintenance_schedules WHERE id = $1 AND property_id = $2 FOR UPDATE`, [id, actor.user.propertyId],
     );
     if (!current[0]) throw notFound('Schedule');
+    const roomId = patch.roomId !== undefined ? patch.roomId : patch.area != null ? null : current[0].room_id;
+    const area = patch.area !== undefined ? patch.area : patch.roomId != null ? null : current[0].area;
+    if (roomId && area) throw new AppError(ERROR_CODES.VALIDATION, 'Choose a room or an area.');
+    await this.validateReferences(q, actor.user.propertyId, roomId);
     const { rows } = await q.query<{ id: string }>(
       `UPDATE maintenance_schedules SET
-         name = $4, area = $5, every_days = $6, next_due = COALESCE($7::date, next_due), is_active = $8, updated_by = $9, version = version + 1
+         name = $4, area = $5, every_days = $6, next_due = COALESCE($7::date, next_due), is_active = $8, updated_by = $9, room_id = $10, version = version + 1
        WHERE id = $1 AND property_id = $2 AND version = $3 RETURNING id`,
       [id, actor.user.propertyId, patch.version,
-       patch.name ?? current[0].name, patch.area !== undefined ? patch.area : current[0].area,
-       patch.everyDays ?? current[0].every_days, patch.nextDue ?? null, patch.isActive ?? current[0].is_active, actor.user.id],
+       patch.name ?? current[0].name, area,
+       patch.everyDays ?? current[0].every_days, patch.nextDue ?? null, patch.isActive ?? current[0].is_active, actor.user.id, roomId],
     );
     if (!rows[0]) throw staleVersion();
     await this.audit.record(q, actor, {
@@ -175,6 +198,7 @@ export class MaintenanceService {
       after: { nextDue: patch.nextDue ?? current[0].next_due, isActive: patch.isActive ?? current[0].is_active },
     });
     void businessDate;
+    await this.outbox.emit(q, actor.user.propertyId, 'maintenance.schedule_updated', { type: 'maintenance_schedule', id }, {});
     return { id };
   }
 
@@ -199,7 +223,7 @@ export class MaintenanceService {
       const { rows: ticket } = await q.query<{ id: string }>(
         `INSERT INTO maintenance_tickets (property_id, room_id, area, title, priority, created_by, updated_by)
          VALUES ($1,$2,$3,$4,'normal',$5,$5) RETURNING id`,
-        [propertyId, s.room_id, s.area ?? s.name, `${s.name} is due for service`, actor?.user.id ?? null],
+        [propertyId, s.room_id, s.room_id ? null : s.area ?? s.name, `${s.name} is due for service`, actor?.user.id ?? null],
       );
       await q.query(
         `UPDATE maintenance_schedules SET next_due = $3::date + every_days, last_ticket_id = $4, updated_at = now(), updated_by = $5

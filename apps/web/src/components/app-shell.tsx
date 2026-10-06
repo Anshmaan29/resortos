@@ -1,7 +1,7 @@
 'use client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { BedDouble, Building2, Lock, BookUser, CalendarDays, ChevronDown, ClipboardCheck, ClipboardList, FileText, Globe, Home, Landmark, LogOut, MoonStar, Palmtree, Plus, Search, Settings, Sparkles, SprayCan, UserRound, Wallet, Wrench, WifiOff } from 'lucide-react';
+import { BedDouble, Building2, Lock, BookUser, CalendarDays, ChevronDown, ClipboardCheck, ClipboardList, FileText, Globe, Home, Landmark, LogOut, Menu, MoonStar, Palmtree, Plus, Search, Settings, Sparkles, SprayCan, UserRound, Wallet, Wrench, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -11,6 +11,7 @@ import { cn } from '@/lib/cn';
 import { useMe, useProperty } from '@/lib/session';
 import { GlobalSearch } from './global-search';
 import { Button } from './ui/button';
+import { Dialog } from './ui/dialog';
 
 const NAV = [
   { href: '/', label: 'Home', icon: Home, phone: true },
@@ -57,6 +58,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const property = useProperty();
   const online = useOnline();
   const [menu, setMenu] = useState(false);
+  const [navigationOpen, setNavigationOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -74,11 +76,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (e.metaKey || e.ctrlKey || e.altKey || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) || t.isContentEditable) return;
-      if (e.key === 'n' || e.key === 'N') { e.preventDefault(); router.push('/reservations/new'); }
+      if (me.data?.role !== 'cleaner' && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); router.push('/reservations/new'); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [router]);
+  }, [router, me.data?.role]);
 
   // Shared desk (spec §5.3): lock after the owner's idle time, or on demand. Locking ends the session;
   // the lock screen switches people in by PIN.
@@ -104,6 +106,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
+  const visibleNav = NAV.filter((item) => me.data?.role === 'cleaner' ? item.href === '/housekeeping' : !('owner' in item) || me.data?.role === 'owner');
 
   return (
     <div className="min-h-dvh lg:pl-60">
@@ -116,11 +119,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             <p className="text-xs text-text-3">ResortOS</p>
           </div>
         </div>
-        <div className="px-3 pb-3">
+        {me.data?.role !== 'cleaner' && <div className="px-3 pb-3">
           <Link href="/reservations/new"><Button className="w-full justify-start" size="md"><Plus className="h-4 w-4" />New booking<kbd className="ml-auto rounded border border-white/30 px-1.5 text-[10px] font-normal opacity-80">N</kbd></Button></Link>
-        </div>
-        <nav className="flex flex-col gap-0.5 px-3" aria-label="Main">
-          {NAV.filter((item) => !('owner' in item) || me.data?.role === 'owner').map((item) => {
+        </div>}
+        <nav className="flex min-h-0 flex-col gap-0.5 overflow-y-auto px-3 pb-4" aria-label="Main">
+          {visibleNav.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
             return (
@@ -137,6 +140,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Top bar */}
       <header className="no-print sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-surface/90 px-4 backdrop-blur sm:px-6">
+        <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md hover:bg-surface-2 lg:hidden" aria-label="Open navigation" aria-expanded={navigationOpen} onClick={() => setNavigationOpen(true)}><Menu className="h-5 w-5" aria-hidden /></button>
         <div className="flex items-center gap-2 lg:hidden">
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-brand text-brand-contrast"><Palmtree className="h-4 w-4" /></div>
           <span className="max-w-[40vw] truncate text-sm font-semibold">{property.data?.name}</span>
@@ -195,15 +199,20 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <GlobalSearch />
 
-      <main className="mx-auto w-full max-w-[1400px] px-4 pb-28 pt-6 sm:px-6 lg:pb-10">{children}</main>
+      <main className="mx-auto min-w-0 w-full max-w-[1400px] px-4 pb-28 pt-6 sm:px-6 lg:pb-10">{children}</main>
+      <Dialog open={navigationOpen} onClose={() => setNavigationOpen(false)} title="Menu">
+        <nav aria-label="All pages" className="grid grid-cols-2 gap-1">
+          {visibleNav.map(({ href, label, icon: Icon }) => <Link key={href} href={href} onClick={() => setNavigationOpen(false)} aria-current={isActive(href) ? 'page' : undefined} className={cn('flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium', isActive(href) ? 'bg-brand-soft text-brand' : 'hover:bg-surface-2')}><Icon className="h-5 w-5" aria-hidden />{label}</Link>)}
+        </nav>
+      </Dialog>
 
       {/* Bottom nav (phones/tablets) */}
       <nav className="no-print fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden" aria-label="Main">
-        {PHONE_NAV.slice(0, 2).map((item) => <MobileNavItem key={item.href} {...item} active={isActive(item.href)} />)}
-        <Link href="/reservations/new" className="flex flex-col items-center justify-center" aria-label="New booking">
+        {(me.data?.role === 'cleaner' ? visibleNav : PHONE_NAV.slice(0, 2)).map((item) => <MobileNavItem key={item.href} {...item} active={isActive(item.href)} />)}
+        {me.data?.role !== 'cleaner' && <Link href="/reservations/new" className="flex flex-col items-center justify-center" aria-label="New booking">
           <span className="flex h-11 w-11 items-center justify-center rounded-full bg-brand text-brand-contrast shadow-md"><Plus className="h-5 w-5" /></span>
-        </Link>
-        {PHONE_NAV.slice(2).map((item) => <MobileNavItem key={item.href} {...item} active={isActive(item.href)} />)}
+        </Link>}
+        {me.data?.role !== 'cleaner' && PHONE_NAV.slice(2).map((item) => <MobileNavItem key={item.href} {...item} active={isActive(item.href)} />)}
       </nav>
     </div>
   );

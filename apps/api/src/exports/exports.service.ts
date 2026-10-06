@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
-import { formatDate } from '@resortos/shared';
+import { formatDate, money, toMoneyString } from '@resortos/shared';
 import { ERROR_CODES } from '@resortos/shared';
 import { AppError } from '../common/errors';
 import type { Actor } from '../common/request-context';
@@ -23,9 +23,6 @@ export const EXPORT_KINDS = [
 ] as const;
 export type ExportKind = (typeof EXPORT_KINDS)[number];
 
-/** The GST slabs a GSTR-1 summary groups by, in the order the accountant reads them. */
-const GSTR_RATE_ORDER = ['0.00', '5.00', '12.00', '18.00', '28.00'];
-
 const num = (v: string | number | null | undefined) => (v === null || v === undefined ? null : { number: v });
 
 @Injectable()
@@ -38,9 +35,9 @@ export class ExportsService {
   private sheetRows(kind: ExportKind, propertyId: string, from: string, to: string): Promise<{ title: string; columns: string[]; rows: (string | number | null | undefined | { number: string | number })[][] }> {
     return this.db.tx({}, async (q) => {
       switch (kind) {
-        case 'bookings': return this.bookings(q, propertyId);
+        case 'bookings': return this.bookings(q, propertyId, from, to);
         case 'guests': return this.guests(q, propertyId);
-        case 'in-house': return this.inHouse(q, propertyId);
+        case 'in-house': return this.inHouse(q, propertyId, from, to);
         case 'payments': return this.payments(q, propertyId, from, to);
         case 'invoices': return this.invoices(q, propertyId, from, to);
         case 'expenses': return this.expenses(q, propertyId, from, to);
@@ -78,20 +75,21 @@ export class ExportsService {
 
   // ---------------- datasets ----------------
 
-  private async bookings(q: Queryable, propertyId: string) {
+  private async bookings(q: Queryable, propertyId: string, from: string, to: string) {
     const { rows } = await q.query<Record<string, string | null>>(
       `SELECT r.number, g.first_name || ' ' || g.last_name AS guest, g.mobile, r.source, r.ota_reference,
               to_char(r.arrival, 'YYYY-MM-DD') AS arrival, to_char(r.departure, 'YYYY-MM-DD') AS departure,
               r.status, r.group_name, r.purpose,
               (SELECT sum(rr.adults) FROM reservation_rooms rr WHERE rr.reservation_id = r.id)::text AS guests_count,
               (SELECT count(*) FROM reservation_rooms rr WHERE rr.reservation_id = r.id)::text AS rooms_count,
-              u.full_name AS created_by_name, to_char(r.created_at, 'YYYY-MM-DD HH24:MI') AS created_at
+              u.full_name AS created_by_name, to_char(r.created_at AT TIME ZONE prop.timezone, 'YYYY-MM-DD HH24:MI') AS created_at
          FROM reservations r
+         JOIN properties prop ON prop.id=r.property_id
          JOIN guests g ON g.id = r.primary_guest_id
          LEFT JOIN users u ON u.id = r.created_by
-        WHERE r.property_id = $1
+        WHERE r.property_id = $1 AND r.arrival BETWEEN $2::date AND $3::date
         ORDER BY r.arrival, r.number`,
-      [propertyId],
+      [propertyId, from, to],
     );
     return {
       title: 'Bookings',
@@ -101,7 +99,7 @@ export class ExportsService {
   }
 
   private async guests(q: Queryable, propertyId: string) {
-    const { rows } = await q.query<Record<string, string | null>>(
+    const { rows } = await q.query<Record<'guest' | 'mobile' | 'email' | 'city' | 'state' | 'address_line' | 'nationality' | 'company_name' | 'company_gstin' | 'special_note' | 'bookings_count' | 'last_arrival' | 'created_at', string | null> & { is_vip: boolean }>(
       `SELECT g.first_name || ' ' || g.last_name AS guest, g.mobile, g.email, g.city, g.state,
               g.address_line, g.nationality, g.company_name, g.company_gstin, g.is_vip, g.special_note,
               (SELECT count(*) FROM reservations r WHERE r.primary_guest_id = g.id)::text AS bookings_count,
@@ -115,11 +113,11 @@ export class ExportsService {
     return {
       title: 'Guests',
       columns: ['Guest', 'Mobile', 'Email', 'City', 'State', 'Address', 'Nationality', 'Company', 'Company GSTIN', 'VIP', 'Note', 'Bookings', 'Last arrival', 'Added on'],
-      rows: rows.map((r) => [r.guest, r.mobile, r.email, r.city, r.state, r.address_line, r.nationality, r.company_name, r.company_gstin, r.is_vip === 'true' ? 'Yes' : '', r.special_note, num(r.bookings_count), r.last_arrival, r.created_at]),
+      rows: rows.map((r) => [r.guest, r.mobile, r.email, r.city, r.state, r.address_line, r.nationality, r.company_name, r.company_gstin, r.is_vip ? 'Yes' : '', r.special_note, num(r.bookings_count), r.last_arrival, r.created_at]),
     };
   }
 
-  private async inHouse(q: Queryable, propertyId: string) {
+  private async inHouse(q: Queryable, propertyId: string, from: string, to: string) {
     const { rows } = await q.query<Record<string, string | null>>(
       `SELECT rm.number AS room, s.status, to_char(s.business_date_in, 'YYYY-MM-DD') AS checked_in,
               to_char(s.expected_departure, 'YYYY-MM-DD') AS expected_out, to_char(s.business_date_out, 'YYYY-MM-DD') AS checked_out,
@@ -132,9 +130,9 @@ export class ExportsService {
          JOIN room_types rt ON rt.id = rm.room_type_id
          JOIN reservations res ON res.id = s.reservation_id
          JOIN guests g ON g.id = res.primary_guest_id
-        WHERE s.property_id = $1
+        WHERE s.property_id = $1 AND s.business_date_in BETWEEN $2::date AND $3::date
         ORDER BY s.business_date_in, rm.number`,
-      [propertyId],
+      [propertyId, from, to],
     );
     return {
       title: 'Stays',
@@ -144,11 +142,12 @@ export class ExportsService {
   }
 
   private async payments(q: Queryable, propertyId: string, from: string, to: string) {
-    const { rows } = await q.query<Record<string, string | null>>(
+    const { rows } = await q.query<Record<'business_date' | 'number' | 'guest' | 'booking' | 'entry_type' | 'method' | 'account' | 'amount' | 'cash_effect' | 'bill_effect' | 'reference' | 'received_by_name' | 'received_at', string | null> & { is_reversal: boolean }>(
       `SELECT p.business_date, p.number, g.first_name || ' ' || g.last_name AS guest, r.number AS booking,
-              p.entry_type, p.method, a.name AS account, p.amount, p.reverses_payment_id IS NOT NULL AS is_reversal,
-              p.reference, u.full_name AS received_by_name, p.received_at
+              p.entry_type, p.method, a.name AS account, p.amount, p.cash_effect, p.bill_effect, p.reverses_payment_id IS NOT NULL AS is_reversal,
+              p.reference, u.full_name AS received_by_name, to_char(p.received_at AT TIME ZONE prop.timezone,'YYYY-MM-DD HH24:MI') AS received_at
          FROM payments p
+         JOIN properties prop ON prop.id=p.property_id
          JOIN guests g ON g.id = p.guest_id
          JOIN reservations r ON r.id = p.reservation_id
          LEFT JOIN payment_accounts a ON a.id = p.payment_account_id
@@ -159,8 +158,8 @@ export class ExportsService {
     );
     return {
       title: 'Payments',
-      columns: ['Date', 'Number', 'Guest', 'Booking', 'Entry', 'Method', 'Account', 'Amount', 'Reference', 'Received by'],
-      rows: rows.map((r) => [r.business_date, r.number, r.guest, r.booking, r.entry_type + (r.is_reversal === 'true' ? ' (reversed)' : ''), r.method, r.account, num(r.amount), r.reference, r.received_by_name]),
+      columns: ['Date', 'Number', 'Guest', 'Booking', 'Entry', 'Method', 'Account', 'Amount', 'Reference', 'Received by', 'Cash movement', 'Bill settlement'],
+      rows: rows.map((r) => [r.business_date, r.number, r.guest, r.booking, r.entry_type + (r.is_reversal ? ' (reversed)' : ''), r.method, r.account, num(r.amount), r.reference, r.received_by_name, num(r.cash_effect), num(r.bill_effect)]),
     };
   }
 
@@ -184,8 +183,8 @@ export class ExportsService {
   private async expenses(q: Queryable, propertyId: string, from: string, to: string) {
     const { rows } = await q.query<Record<string, string | null>>(
       `SELECT e.expense_date, e.number, c.name AS category, e.paid_to, e.method, a.name AS account,
-              e.amount, e.note, u.full_name AS paid_by_name,
-              EXISTS (SELECT 1 FROM expenses x WHERE x.reverses_expense_id = e.id) AS reversed
+              CASE WHEN e.reverses_expense_id IS NULL THEN e.amount ELSE -e.amount END AS amount,
+              e.note, u.full_name AS paid_by_name
          FROM expenses e
          JOIN expense_categories c ON c.id = e.category_id
          JOIN payment_accounts a ON a.id = e.payment_account_id
@@ -198,7 +197,7 @@ export class ExportsService {
       title: 'Expenses',
       columns: ['Date', 'Number', 'Category', 'Paid to', 'Method', 'Account', 'Amount', 'Note', 'Recorded by'],
       rows: rows.map((r) => [r.expense_date, r.number, r.category, r.paid_to, r.method, r.account,
-        num(r.reversed === 'true' ? null : r.amount), r.note, r.paid_by_name]),
+        num(r.amount), r.note, r.paid_by_name]),
     };
   }
 
@@ -222,12 +221,13 @@ export class ExportsService {
 
   private async formC(q: Queryable, propertyId: string) {
     const { rows } = await q.query<Record<string, string | null>>(
-      `SELECT to_char(f.arrived_at, 'YYYY-MM-DD HH24:MI') AS arrived, o.full_name, o.nationality, rm.number AS room,
+      `SELECT to_char(f.arrived_at AT TIME ZONE prop.timezone, 'YYYY-MM-DD HH24:MI') AS arrived, o.full_name, o.nationality, rm.number AS room,
               f.status, f.passport_number, f.passport_place_of_issue, f.passport_expiry_date, f.visa_number, f.visa_type,
               f.visa_expiry_date, f.arrival_in_india_date, f.arrival_port, f.next_destination,
-              f.submitted_reference, to_char(f.submitted_at, 'YYYY-MM-DD HH24:MI') AS submitted_at,
+              f.submitted_reference, to_char(f.submitted_at AT TIME ZONE prop.timezone, 'YYYY-MM-DD HH24:MI') AS submitted_at,
               to_char(s.expected_departure, 'YYYY-MM-DD') AS expected_out
          FROM form_c_records f
+         JOIN properties prop ON prop.id=f.property_id
          JOIN stay_occupants o ON o.id = f.occupant_id
          JOIN stays s ON s.id = f.stay_id
          JOIN rooms rm ON rm.id = s.room_id
@@ -255,20 +255,18 @@ export class ExportsService {
   // ---------------- accountant formats ----------------
 
   /**
-   * GSTR-1-ready CSV (§46): B2B invoices line by line, B2C aggregated per rate, credit/debit notes,
-   * and the documents-issued summary — the four blocks the accountant keys into the portal tool.
+   * Accountant GST summary (§46): immutable invoice tax groups, B2B documents,
+   * B2C totals and credit/debit notes. This is not a GST portal upload file.
    */
   async gstr1(actor: Actor, from: string, to: string): Promise<{ csv: string; rows: number }> {
     const { rows } = await this.db.tx({}, async (q) => q.query<Record<string, string | null>>(
       `SELECT i.number, i.invoice_date, i.document_type, i.buyer_name, i.buyer_gstin, i.place_of_supply,
-              i.supply_type, gl.gst_rate::text AS gst_rate, gl.taxable_value::text AS taxable_value,
-              CASE WHEN i.supply_type = 'intra_state' THEN round(gl.taxable_value * gl.gst_rate / 200.0, 2)::text ELSE '0.00' END AS cgst,
-              CASE WHEN i.supply_type = 'intra_state' THEN round(gl.taxable_value * gl.gst_rate / 200.0, 2)::text ELSE '0.00' END AS sgst,
-              CASE WHEN i.supply_type = 'inter_state' THEN round(gl.taxable_value * gl.gst_rate / 100.0, 2)::text ELSE '0.00' END AS igst
+              i.supply_type, gl.rate_percent::text AS gst_rate, gl.taxable_value::text AS taxable_value,
+              gl.cgst::text AS cgst, gl.sgst::text AS sgst, gl.igst::text AS igst
          FROM invoices i
-         JOIN invoice_lines gl ON gl.invoice_id = i.id
+         JOIN invoice_tax_groups gl ON gl.invoice_id = i.id
         WHERE i.property_id = $1 AND i.invoice_date BETWEEN $2::date AND $3::date
-        ORDER BY i.invoice_date, gl.line_no`,
+        ORDER BY i.invoice_date, i.seq, gl.rate_percent`,
       [actor.user.propertyId, from, to],
     ));
     const cell = (v: string | null | undefined) => (v ?? '').replace(/,/g, ' ');
@@ -278,120 +276,74 @@ export class ExportsService {
     for (const r of rows) {
       if (r.buyer_gstin || r.document_type === 'credit_note' || r.document_type === 'debit_note') {
         // B2B and the notes are reported document by document, line by line.
-        out.push([r.buyer_gstin ? 'B2B' : 'CDN', cell(r.buyer_gstin), cell(r.buyer_name), r.number!, r.invoice_date!, r.document_type!, r.place_of_supply!, r.supply_type!, r.gst_rate!, r.taxable_value!, r.cgst ?? '', r.sgst ?? '', r.igst ?? ''].join(','));
+        out.push([r.document_type === 'credit_note' || r.document_type === 'debit_note' ? 'CDN' : 'B2B', cell(r.buyer_gstin), cell(r.buyer_name), r.number!, r.invoice_date!, r.document_type!, r.place_of_supply!, r.supply_type!, r.gst_rate!, r.taxable_value!, r.cgst ?? '', r.sgst ?? '', r.igst ?? ''].join(','));
         count += 1;
       }
     }
     // B2C: aggregated per rate for the period, the way the portal's B2C tab wants it.
-    const b2c = new Map<string, { taxable: number; cgst: number; sgst: number; igst: number }>();
+    const b2c = new Map<string, { rate: string; place: string; supply: string; taxable: ReturnType<typeof money>; cgst: ReturnType<typeof money>; sgst: ReturnType<typeof money>; igst: ReturnType<typeof money> }>();
     for (const r of rows) {
       if (r.buyer_gstin || (r.document_type !== 'tax_invoice' && r.document_type !== 'bill_of_supply')) continue;
-      const key = r.gst_rate!;
-      const acc = b2c.get(key) ?? { taxable: 0, cgst: 0, sgst: 0, igst: 0 };
-      acc.taxable += Number(r.taxable_value);
-      acc.cgst += Number(r.cgst ?? 0);
-      acc.sgst += Number(r.sgst ?? 0);
-      acc.igst += Number(r.igst ?? 0);
+      const key = `${r.gst_rate}:${r.place_of_supply}:${r.supply_type}`;
+      const acc = b2c.get(key) ?? { rate: r.gst_rate!, place: r.place_of_supply!, supply: r.supply_type!, taxable: money(0), cgst: money(0), sgst: money(0), igst: money(0) };
+      acc.taxable = acc.taxable.plus(r.taxable_value ?? 0);
+      acc.cgst = acc.cgst.plus(r.cgst ?? 0);
+      acc.sgst = acc.sgst.plus(r.sgst ?? 0);
+      acc.igst = acc.igst.plus(r.igst ?? 0);
       b2c.set(key, acc);
     }
-    for (const rate of [...b2c.keys()].sort((a, b) => GSTR_RATE_ORDER.indexOf(a) - GSTR_RATE_ORDER.indexOf(b))) {
-      const acc = b2c.get(rate)!;
-      out.push(['B2C', '', '—', '', from, 'aggregated', '', '', rate, acc.taxable.toFixed(2), acc.cgst.toFixed(2), acc.sgst.toFixed(2), acc.igst.toFixed(2)].join(','));
+    for (const acc of [...b2c.values()].sort((a, b) => money(a.rate).comparedTo(b.rate) || a.place.localeCompare(b.place))) {
+      out.push(['B2C', '', '—', '', from, 'aggregated', acc.place, acc.supply, acc.rate, toMoneyString(acc.taxable), toMoneyString(acc.cgst), toMoneyString(acc.sgst), toMoneyString(acc.igst)].join(','));
       count += 1;
     }
     return { csv: out.join('\r\n'), rows: count };
   }
 
-  /**
-   * Tally vouchers (§46): sales (invoices) and receipts (payments) in Tally's XML import format.
-   * The ledger names are defaults; the resort's accountant maps them once in Tally (spec: "a
-   * Tally-importable format agreed with the resort's accountant").
-   */
+  /** Accounting vouchers use signed ledger amounts and the immutable invoice tax snapshot.
+   * Ledger masters must be mapped and a sample imported by the accountant before live use. */
   async tallyXml(actor: Actor, from: string, to: string): Promise<{ xml: string; count: number }> {
     const data = await this.db.tx({}, async (q) => {
-      const invoices = await q.query<Record<string, string | null>>(
-        `SELECT i.number, i.invoice_date, i.buyer_name, i.buyer_gstin, i.grand_total, i.seller_state_code,
-                (SELECT string_agg(distinct gl.gst_rate::text, ',') FROM invoice_lines gl WHERE gl.invoice_id = i.id) AS rates
-           FROM invoices i
-          WHERE i.property_id = $1 AND i.invoice_date BETWEEN $2::date AND $3::date
-            AND i.document_type IN ('tax_invoice', 'bill_of_supply')
-          ORDER BY i.invoice_date, i.seq`,
-        [actor.user.propertyId, from, to],
+      const invoices = await q.query<Record<'id'|'number'|'invoice_date'|'buyer_name'|'series'|'taxable_total'|'cgst_total'|'sgst_total'|'igst_total'|'round_off'|'grand_total', string>>(
+        `SELECT id,number,invoice_date,buyer_name,series,taxable_total,cgst_total,sgst_total,igst_total,round_off,grand_total
+           FROM invoices WHERE property_id=$1 AND invoice_date BETWEEN $2::date AND $3::date ORDER BY invoice_date,series,seq`,
+        [actor.user.propertyId,from,to],
       );
-      const receipts = await q.query<Record<string, string | null>>(
-        `SELECT p.number, p.business_date, p.amount, p.method, a.name AS account, g.first_name || ' ' || g.last_name AS guest
-           FROM payments p
-           LEFT JOIN payment_accounts a ON a.id = p.payment_account_id
-           LEFT JOIN guests g ON g.id = p.guest_id
-          WHERE p.property_id = $1 AND p.business_date BETWEEN $2::date AND $3::date
-            AND p.entry_type IN ('payment', 'advance') AND p.reverses_payment_id IS NULL
-          ORDER BY p.business_date`,
-        [actor.user.propertyId, from, to],
+      const receipts = await q.query<Record<'id'|'number'|'business_date'|'cash_effect'|'entry_type'|'method'|'account'|'guest', string>>(
+        `SELECT p.id,p.number,p.business_date,p.cash_effect,p.entry_type,p.method,a.name AS account,g.first_name||' '||g.last_name AS guest
+           FROM payments p JOIN payment_accounts a ON a.id=p.payment_account_id JOIN guests g ON g.id=p.guest_id
+          WHERE p.property_id=$1 AND p.business_date BETWEEN $2::date AND $3::date AND p.cash_effect<>0
+            AND NOT EXISTS (SELECT 1 FROM payments reversal WHERE reversal.reverses_payment_id=p.id AND reversal.business_date BETWEEN $2::date AND $3::date)
+            AND NOT EXISTS (SELECT 1 FROM payments original WHERE original.id=p.reverses_payment_id AND original.business_date BETWEEN $2::date AND $3::date)
+          ORDER BY p.business_date,p.received_at,p.id`, [actor.user.propertyId,from,to],
       );
       return { invoices: invoices.rows, receipts: receipts.rows };
     });
-    const esc = (v: string | null | undefined) => (v ?? '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!));
-    const voucherDate = (d: string) => d.split('-').reverse().join('-');
+    const esc = (v: string) => v.replace(/[<>&"']/g, (c) => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;', '"':'&quot;', "'":'&apos;' }[c]!));
     const vouchers: string[] = [];
+    const voucher = (id: string, type: string, date: string, number: string, party: string, narration: string, lines: { name: string; amount: string }[]) => {
+      const nonzero = lines.filter((l) => !money(l.amount).isZero());
+      if (!nonzero.reduce((sum,l) => sum.plus(l.amount),money(0)).isZero()) throw new AppError(ERROR_CODES.CONFLICT,'The accounting voucher does not balance.');
+      return `<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER REMOTEID="${esc(id)}" VCHTYPE="${type}" ACTION="Create" OBJVIEW="Accounting Voucher View">
+        <GUID>${esc(id)}</GUID><DATE>${date.replaceAll('-','')}</DATE><VOUCHERNUMBER>${esc(number)}</VOUCHERNUMBER>
+        <VOUCHERTYPENAME>${type}</VOUCHERTYPENAME><PARTYLEDGERNAME>${esc(party)}</PARTYLEDGERNAME><NARRATION>${esc(narration)}</NARRATION>
+        ${nonzero.map((l) => `<LEDGERENTRIES.LIST><LEDGERNAME>${esc(l.name)}</LEDGERNAME><ISDEEMEDPOSITIVE>${money(l.amount).isNegative()?'Yes':'No'}</ISDEEMEDPOSITIVE><AMOUNT>${l.amount}</AMOUNT></LEDGERENTRIES.LIST>`).join('')}
+      </VOUCHER></TALLYMESSAGE>`;
+    };
     for (const inv of data.invoices) {
-      vouchers.push(`
-    <TALLYMESSAGE xmlns:UDF="TallyUDF">
-     <VOUCHER VCHTYPE="Sales" ACTION="Create" OBJVIEW="Accounting Voucher View">
-      <DATE>${voucherDate(inv.invoice_date!)}</DATE>
-      <NARRATION>Invoice ${esc(inv.number)}</NARRATION>
-      <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
-      <PARTYLEDGERNAME>${esc(inv.buyer_name)}</PARTYLEDGERNAME>
-      <ALLINVENTORYENTRIES.LIST></ALLINVENTORYENTRIES.LIST>
-      <LEDGERENTRIES.LIST>
-       <LEDGERNAME>${esc(inv.buyer_name)}</LEDGERNAME>
-       <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
-       <AMOUNT>-${inv.grand_total}</AMOUNT>
-      </LEDGERENTRIES.LIST>
-      <LEDGERENTRIES.LIST>
-       <LEDGERNAME>Sales - GST ${esc(inv.rates ?? '')}</LEDGERNAME>
-       <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
-       <AMOUNT>${inv.grand_total}</AMOUNT>
-      </LEDGERENTRIES.LIST>
-     </VOUCHER>
-    </TALLYMESSAGE>`);
+      const sign = inv.series==='CN' ? -1 : 1;
+      vouchers.push(voucher(`resortos-invoice-${inv.id}`, inv.series==='CN'?'Credit Note':inv.series==='DN'?'Debit Note':'Sales', inv.invoice_date, inv.number, inv.buyer_name, `Invoice ${inv.number}`, [
+        { name:inv.buyer_name, amount:toMoneyString(money(inv.grand_total).times(-sign)) },
+        ...([['Sales',inv.taxable_total],['Output CGST',inv.cgst_total],['Output SGST',inv.sgst_total],['Output IGST',inv.igst_total],['Round off',inv.round_off]] as const)
+          .map(([name,amount])=>({name,amount:toMoneyString(money(amount).times(sign))})),
+      ]));
     }
     for (const rec of data.receipts) {
-      vouchers.push(`
-    <TALLYMESSAGE xmlns:UDF="TallyUDF">
-     <VOUCHER VCHTYPE="Receipt" ACTION="Create" OBJVIEW="Accounting Voucher View">
-      <DATE>${voucherDate(rec.business_date!)}</DATE>
-      <NARRATION>${esc(rec.method)} from ${esc(rec.guest)} (${esc(rec.number)})</NARRATION>
-      <VOUCHERTYPENAME>Receipt</VOUCHERTYPENAME>
-      <PARTYLEDGERNAME>${esc(rec.guest)}</PARTYLEDGERNAME>
-      <LEDGERENTRIES.LIST>
-       <LEDGERNAME>${esc(rec.account ?? rec.method)}</LEDGERNAME>
-       <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
-       <AMOUNT>${rec.amount}</AMOUNT>
-      </LEDGERENTRIES.LIST>
-      <LEDGERENTRIES.LIST>
-       <LEDGERNAME>${esc(rec.guest)}</LEDGERNAME>
-       <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
-       <AMOUNT>-${rec.amount}</AMOUNT>
-      </LEDGERENTRIES.LIST>
-     </VOUCHER>
-    </TALLYMESSAGE>`);
+      const party = rec.entry_type==='deposit'||rec.entry_type==='deposit_refund'?'Guest deposits':rec.guest;
+      vouchers.push(voucher(`resortos-payment-${rec.id}`, money(rec.cash_effect).gt(0)?'Receipt':'Payment', rec.business_date, rec.number,party,`${rec.method} ${rec.entry_type} (${rec.number})`,[
+        { name:rec.account,amount:toMoneyString(money(rec.cash_effect).negated()) },{ name:party,amount:rec.cash_effect },
+      ]));
     }
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<ENVELOPE>
- <HEADER>
-  <TALLYREQUEST>Import Data</TALLYREQUEST>
- </HEADER>
- <BODY>
-  <IMPORTDATA>
-   <REQUESTDESC>
-    <REPORTNAME>Vouchers</REPORTNAME>
-   </REQUESTDESC>
-   <REQUESTDATA>${vouchers.join('')}
-   </REQUESTDATA>
-  </IMPORTDATA>
- </BODY>
-</ENVELOPE>`;
-    return { xml, count: vouchers.length };
+    return { count:vouchers.length,xml:`<?xml version="1.0" encoding="UTF-8"?><ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER><BODY><IMPORTDATA><REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME></REQUESTDESC><REQUESTDATA>${vouchers.join('')}</REQUESTDATA></IMPORTDATA></BODY></ENVELOPE>` };
   }
 
   // ---------------- police register PDF ----------------
@@ -418,15 +370,17 @@ export class ExportsService {
     const drawRow = (cells: string[], bold = false) => {
       const size = bold ? 8.5 : 8;
       doc.font('body').fontSize(size).fillColor(bold ? '#111111' : '#333333');
-      const rowTop = doc.y;
+      let rowTop = doc.y;
       const heights = cells.map((c, i) => doc.heightOfString(String(c ?? ''), { width: colWidth - 6 }));
       const rowHeight = Math.max(size + 2, ...heights) + 4;
       if (rowTop + rowHeight > doc.page.height - doc.page.margins.bottom) {
         doc.addPage({ size: 'A4', layout: 'landscape', margin: 36 });
+        if (!bold) drawRow(sheet.columns, true);
         doc.font('body').fontSize(size);
+        rowTop = doc.y;
       }
       cells.forEach((c, i) => {
-        doc.text(String(c ?? ''), left + i * colWidth, doc.page.height - doc.page.margins.bottom <= doc.y ? doc.y : rowTop, { width: colWidth - 6, height: rowHeight, ellipsis: true });
+        doc.text(String(c ?? ''), left + i * colWidth, rowTop, { width: colWidth - 6, height: rowHeight, ellipsis: true });
       });
       doc.y = rowTop + rowHeight;
       doc.moveTo(left, doc.y).lineTo(left + width, doc.y).strokeColor('#cccccc').lineWidth(0.5).stroke();

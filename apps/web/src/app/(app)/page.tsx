@@ -53,7 +53,7 @@ export default function HomePage() {
         <Kpi label="Ready to sell" icon={DoorOpen} value={desk.data?.roomCounts.ready} tone="var(--st-ready)" suffix={desk.data ? ` of ${desk.data.totalRooms}` : ''} />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader title="Arrivals" description="Expected to check in today"
             action={<Link href="/reservations?view=arrivals" className="text-sm font-medium text-brand hover:underline">All</Link>} />
