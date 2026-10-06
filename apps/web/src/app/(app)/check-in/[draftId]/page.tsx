@@ -99,7 +99,7 @@ export default function CheckInPage() {
           {step < 5 ? (
             <Button onClick={() => go(step + 1)}>Next<ArrowRight className="h-4 w-4" /></Button>
           ) : (
-            <Button size="lg" loading={confirm.isPending} disabled={d.problems.length > 0 || dirty.current || saveState === 'saving'}
+            <Button size="lg" loading={confirm.isPending} disabled={uploading || d.problems.length > 0 || dirty.current || saveState === 'saving'}
               title={d.problems[0]?.message} onClick={() => confirm.mutate()}>
               <Check className="h-5 w-5" />Confirm check-in
             </Button>

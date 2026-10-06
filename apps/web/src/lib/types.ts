@@ -99,7 +99,7 @@ export interface CheckoutPreview {
 }
 export interface GrcVersion {
   id: string; number: string; version: number; supersedesId: string | null; sizeBytes: number; sha256: string;
-  signatureMethod: 'touchscreen' | 'phone' | 'paper_scan'; signedAt: string; noticeVersion: string; generatedAt: string; reason: string | null;
+  signatureMethod: 'touchscreen' | 'phone' | 'paper_scan' | 'not_collected'; signedAt: string | null; noticeVersion: string; generatedAt: string; reason: string | null;
 }
 export interface GrcList { stayId: string; current: GrcVersion | null; versions: GrcVersion[] }
 

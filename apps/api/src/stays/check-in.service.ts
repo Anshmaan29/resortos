@@ -17,7 +17,7 @@ export interface CheckInPolicy {
   requireGuestPhoto: boolean;
   requireSignature: boolean;
 }
-export const DEFAULT_CHECK_IN_POLICY: CheckInPolicy = { idRequiredFor: 'all_adults', requireGuestPhoto: true, requireSignature: true };
+export const DEFAULT_CHECK_IN_POLICY: CheckInPolicy = { idRequiredFor: 'all_adults', requireGuestPhoto: true, requireSignature: false };
 
 export interface CheckInProblem { path: string; message: string }
 

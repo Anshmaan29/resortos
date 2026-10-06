@@ -194,6 +194,11 @@ test('the whole stay: desk check-in with phone scanner, registration card, room 
   await page.getByRole('button', { name: 'Save signature' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Received' }).first()).toBeVisible({ timeout: 30_000 });
 
+  await expect(page.getByText('You can continue without a signature.')).toBeVisible();
+  await page.getByTestId('file-input-signature').setInputFiles({ name: 'signature.jpg', mimeType: 'image/jpeg', buffer: await syntheticCard(page, 'GUEST SIGNATURE') });
+  await useEditor(page, { crop: false });
+  await expect(page.getByRole('status').filter({ hasText: 'Received' }).first()).toBeVisible({ timeout: 30_000 });
+
   // Step 5 — confirm
   await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.getByText('Everything is ready.')).toBeVisible({ timeout: 15_000 });
@@ -226,7 +231,7 @@ test('the whole stay: desk check-in with phone scanner, registration card, room 
   await page.getByRole('button', { name: 'Create and print' }).click();
   await expect(page.getByText(/Registration card GRC-\d{6} created/)).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(/GRC-\d{6} · version 1/)).toBeVisible();
-  await expect(page.getByText('Signed on the reception touchscreen')).toBeVisible();
+  await expect(page.getByText('Signed on paper, scanned back in')).toBeVisible();
 
   // What was stored really is a PDF, and its hash is the one shown on screen.
   const grc = await (await page.request.get(`/api/v1/stays/${stayLink!.split('/').pop()}/grc`)).json();

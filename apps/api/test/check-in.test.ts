@@ -170,7 +170,6 @@ describe('confirm check-in (spec §18.3, §19.6)', () => {
       "Meera Joshi's ID (back) is still uploading",
       "Arjun Joshi's ID (front) is missing",
       'guest photo of Meera Joshi is missing',
-      'Guest signature is missing',
       'The guest must accept the stay and legal-compliance notice',
     ]));
   });

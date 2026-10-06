@@ -109,7 +109,7 @@ export interface GuestDocumentRow {
 export interface GrcDocumentRow {
   id: string; property_id: string; stay_id: string; number: string; version: number; supersedes_id: string | null;
   storage_key: string; content_type: string; size_bytes: number; sha256: Buffer;
-  signature_method: 'touchscreen' | 'phone' | 'paper_scan'; signature_document_id: string; signed_at: Date;
+  signature_method: 'touchscreen' | 'phone' | 'paper_scan' | 'not_collected'; signature_document_id: string | null; signed_at: Date | null;
   notice_version: string; generated_at: Date; generated_by: string; reason: string | null; created_at: Date;
 }
 

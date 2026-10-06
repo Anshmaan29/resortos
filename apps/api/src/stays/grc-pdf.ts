@@ -73,7 +73,7 @@ export interface GrcPdfInput {
   consents: { stayAndCompliance: boolean; marketing: boolean };
   houseRules: { en: string[]; hi: string[] };
   notice: { version: string; en: string; hi: string };
-  signature: { image: Buffer; contentType: string; method: SignatureMethod; signedAt: Date; signedBy: string };
+  signature: { image: Buffer; contentType: string; method: SignatureMethod; signedAt: Date; signedBy: string } | null;
   generatedAt: Date;
   generatedBy: string;
 }
@@ -198,6 +198,12 @@ function signatureBlock(doc: Doc, input: GrcPdfInput): void {
   const boxWidth = 250;
   const boxHeight = 70;
   doc.rect(PAGE.margin, top, boxWidth, boxHeight).lineWidth(0.5).strokeColor(RULE).stroke();
+  if (!signature) {
+    doc.fontSize(9).fillColor(MUTED).text('Signature not collected', PAGE.margin + 6, top + 20, { width: boxWidth - 12 });
+    doc.y = top + boxHeight + 6;
+    doc.x = PAGE.margin;
+    return;
+  }
   // fit keeps the aspect ratio; a signature is never stretched.
   doc.image(signature.image, PAGE.margin + 6, top + 6, { fit: [boxWidth - 12, boxHeight - 12], align: 'center', valign: 'center' });
 
@@ -223,7 +229,7 @@ function footer(doc: Doc, input: GrcPdfInput): void {
 /** Renders the card. Deterministic: same input in, same bytes out. */
 export function renderGrcPdf(input: GrcPdfInput): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    if (!(SIGNATURE_CONTENT_TYPES as readonly string[]).includes(input.signature.contentType)) {
+    if (input.signature && !(SIGNATURE_CONTENT_TYPES as readonly string[]).includes(input.signature.contentType)) {
       reject(new Error(`Signature image must be PNG or JPEG, got ${input.signature.contentType}`));
       return;
     }

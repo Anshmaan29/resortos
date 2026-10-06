@@ -42,3 +42,5 @@ The private Railway bucket needs a browser CORS rule for the hotel's exact HTTPS
 - Guest email has passed a provider delivery check. Configure Resend's signed delivery webhook if delivered/bounced status is needed in the app; review wording and sender/reply-to before handover.
 
 This checklist records remaining acceptance work. Passing automated tests alone is not a handover sign-off.
+
+Guest signatures are optional. In Registration & signature, reception may draw a signature, take a photo of a paper signature, or choose an existing signature picture. Pictures use the normal compressed, private, server-verified upload flow. Check-in and registration-card printing also work without a signature; the archived card then explicitly says “Signature not collected” and has no signed timestamp. Existing signed cards remain unchanged.
