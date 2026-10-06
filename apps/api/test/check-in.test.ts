@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -174,6 +174,39 @@ describe('confirm check-in (spec §18.3, §19.6)', () => {
     ]));
   });
 
+  it('uses only the latest retake and blocks a pending replacement despite an older verified ID', async () => {
+    const old = await deskDocument(draft.id, 'id_front', { idType: 'driving_licence', occupantKey: 'r0a0' });
+    const bytes = jpeg();
+    const payload = { source: 'desk_camera', docType: 'id_front', idType: 'driving_licence', occupantKey: 'r0a0',
+      contentType: 'image/jpeg', sizeBytes: bytes.length, sha256: sha(bytes), clientUploadId: randomUUID() };
+    const replacement = await post(desk, `/check-in-drafts/${draft.id}/documents`, payload, null).expect(201);
+    const pending = await desk.get(`/api/v1/check-in-drafts/${draft.id}`).expect(200);
+    expect(pending.body.documents.filter((d: any) => d.docType === 'id_front' && d.occupantKey === 'r0a0').map((d: any) => d.id)).toEqual([replacement.body.documentId]);
+    expect(pending.body.problems.map((p: any) => p.message)).toContain("Meera Joshi's ID (front) is still uploading");
+    const retry = await post(desk, `/check-in-drafts/${draft.id}/documents`, payload, null).expect(201);
+    expect(retry.body.documentId).toBe(replacement.body.documentId);
+    expect((await putFile(replacement.body.upload, bytes)).status).toBe(200);
+    await post(desk, `/check-in-drafts/${draft.id}/documents/${replacement.body.documentId}/confirm`, {}, null).expect(200);
+    const current = await desk.get(`/api/v1/check-in-drafts/${draft.id}`).expect(200);
+    expect(current.body.documents.some((d: any) => d.id === old.id)).toBe(false);
+    draft.replacementId = replacement.body.documentId;
+    draft.oldDocumentId = old.id;
+  });
+
+  it('late completion of an older retake cannot replace the newest upload', async () => {
+    const bytes = jpeg();
+    const old = await post(desk, `/check-in-drafts/${draft.id}/documents`, {
+      source: 'desk_camera', docType: 'id_front', idType: 'driving_licence', occupantKey: 'r0a0',
+      contentType: 'image/jpeg', sizeBytes: bytes.length, sha256: sha(bytes),
+    }, null).expect(201);
+    const latest = await deskDocument(draft.id, 'id_front', { idType: 'driving_licence', occupantKey: 'r0a0' });
+    expect((await putFile(old.body.upload, bytes)).status).toBe(200);
+    await post(desk, `/check-in-drafts/${draft.id}/documents/${old.body.documentId}/confirm`, {}, null).expect(200);
+    const current = await desk.get(`/api/v1/check-in-drafts/${draft.id}`).expect(200);
+    expect(current.body.documents.filter((d: any) => d.docType === 'id_front' && d.occupantKey === 'r0a0').map((d: any) => d.id)).toEqual([latest.id]);
+    draft.replacementId = latest.id;
+  });
+
   it('confirms once all documents are verified; a double click does not check in twice', async () => {
     await deskDocument(draft.id, 'id_back', { idType: 'driving_licence', occupantKey: 'r0a0' });
     await deskDocument(draft.id, 'id_front', { idType: 'passport', occupantKey: 'r0a1' });
@@ -204,6 +237,9 @@ describe('confirm check-in (spec §18.3, §19.6)', () => {
     expect(stay.body.occupants.map((o: any) => o.idLast4)).toEqual(['4321', 'Z9K1']);
     expect(stay.body.vehicles[0].registration).toBe('RJ27CB1234');
     expect(stay.body.documents.filter((d: any) => d.status === 'verified').length).toBe(5);
+    expect(stay.body.documents.some((d: any) => d.id === draft.replacementId)).toBe(true);
+    const [oldDocument] = await sql(`SELECT stay_id FROM guest_documents WHERE id = $1`, [draft.oldDocumentId]);
+    expect(oldDocument.stay_id).toBeNull();
     draft.stayId = stay.body.id;
   });
 

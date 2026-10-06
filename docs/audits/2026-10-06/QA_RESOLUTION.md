@@ -36,3 +36,12 @@ Confirm accountant GST settings, create a separate receptionist account when rea
 - Browser: 16 journeys passed, including mobile navigation and full phone scanner/check-in/checkout flow against isolated test records.
 - Production build and workspace typecheck passed. Dependency audit reported no known vulnerabilities. Staged change secret scan found no leaks.
 - Local/browser automation cannot replace acceptance on the hotel's actual phone and printer.
+
+
+## Document retakes (7 October)
+
+Repeated capture now replaces the active slot for that guest's photo, ID front, ID back, extra page or signature. Draft/scanner and stay views select the latest creation, regardless of completion order. A pending replacement cannot inherit an older verified tick or satisfy required-document readiness. Confirmation attaches only current verified captures; generated GRC versions remain immutable and separate. Earlier capture records remain internal history, outside the current document list.
+
+Upload creation locks the draft against confirmation and timestamps after acquiring that lock. Database ordering preserves sub-millisecond creation precision. Cancelled/replaced local uploads cannot reappear from a delayed grant or persistence callback. Form C lists only current pages; registration cards select the newest captured signature rather than whichever upload finished last.
+
+Validation: full API 334 tests passed; targeted final retake/slot tests 18 passed; web 101 tests passed. Production build and typecheck passed. All 16 browser journeys passed, including phone upload/resume, signature photo, registration printing and checkout.

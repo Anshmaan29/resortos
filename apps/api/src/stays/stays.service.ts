@@ -11,6 +11,7 @@ import { PropertyService } from '../property/property.service';
 import { RatesService } from '../rates/rates.service';
 import { documentView } from './capture.service';
 import { applySteps, CHECKOUT_STEPS, collectBlockers, type CheckoutStep } from './checkout-pipeline';
+import { latestDocuments } from './document-slots';
 
 @Injectable()
 export class StaysService {
@@ -51,7 +52,7 @@ export class StaysService {
       () => q.query<{ occupant_key: string; full_name: string; is_primary: boolean; is_child: boolean; age: number | null; nationality: string; id_type: string; id_last4: string | null }>(
         `SELECT occupant_key, full_name, is_primary, is_child, age, nationality, id_type, id_last4 FROM stay_occupants WHERE stay_id = $1 ORDER BY is_primary DESC, is_child, created_at`, [stayId]),
       () => q.query<{ registration: string; vehicle_type: string; parking_slot: string | null }>(`SELECT registration, vehicle_type, parking_slot FROM stay_vehicles WHERE stay_id = $1`, [stayId]),
-      () => q.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE stay_id = $1 ORDER BY created_at`, [stayId]),
+      () => q.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE stay_id = $1 ORDER BY created_at, id`, [stayId]),
       () => q.query<{ from_number: string; to_number: string; business_date: string; reason: string; rate_decision: string; created_at: Date; by_name: string }>(
         `SELECT f.number AS from_number, t.number AS to_number, sh.business_date, sh.reason, sh.rate_decision, sh.created_at, u.full_name AS by_name
            FROM room_shifts sh JOIN rooms f ON f.id = sh.from_room_id JOIN rooms t ON t.id = sh.to_room_id JOIN users u ON u.id = sh.created_by
@@ -67,7 +68,7 @@ export class StaysService {
       businessDate, canShiftRoom: s.status === 'in_house' && businessDate < s.expected_departure, version: s.version,
       occupants: occupants.rows.map((o) => ({ key: o.occupant_key, fullName: o.full_name, isPrimary: o.is_primary, isChild: o.is_child, age: o.age, nationality: o.nationality, idType: o.id_type, idLast4: o.id_last4 })),
       vehicles: vehicles.rows.map((v) => ({ registration: v.registration, vehicleType: v.vehicle_type, parkingSlot: v.parking_slot })),
-      documents: documents.rows.map(documentView),
+      documents: latestDocuments(documents.rows).map(documentView),
       shifts: shifts.rows.map((x) => ({ from: x.from_number, to: x.to_number, businessDate: x.business_date, reason: x.reason, rateDecision: x.rate_decision, at: x.created_at, by: x.by_name })),
     };
   }

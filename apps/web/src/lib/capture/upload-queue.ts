@@ -159,6 +159,8 @@ export class UploadQueue {
   /** The upload in flight, so losing the network can cut it short instead of leaving it hanging. */
   private active: XMLHttpRequest | null = null;
   private persistenceBroken = false;
+  private removed = new Set<string>();
+  private activeItemId: string | null = null;
 
   /** True when this device refused to store the queue; the UI warns that a refresh would lose it. */
   get isMemoryOnly() {
@@ -167,7 +169,10 @@ export class UploadQueue {
 
   private async persist(item: QueueItem): Promise<void> {
     try {
-      await (await db()).put('uploads', item);
+      const database = await db();
+      if (this.removed.has(item.id)) return;
+      await database.put('uploads', item);
+      if (this.removed.has(item.id)) await database.delete('uploads', item.id);
     } catch (err) {
       // Keep going: the photo is in memory and the upload is what matters.
       this.persistenceBroken = true;
@@ -225,6 +230,9 @@ export class UploadQueue {
     // Persistence is best effort. If this device cannot write to IndexedDB at all (private
     // browsing, storage full, an old WebKit bug), the upload still runs from memory for this
     // session rather than the capture failing in the guest's face.
+    for (const previous of await this.items()) {
+      if (previous.slotKey === item.slotKey) await this.remove(previous.id);
+    }
     this.memory.set(item.id, item);
     await this.persist(item);
     await this.emit();
@@ -234,6 +242,9 @@ export class UploadQueue {
 
   /** Discards a failed item so the slot can be captured again. */
   async remove(id: string) {
+    this.removed.add(id);
+    if (this.activeItemId === id) this.active?.abort();
+    this.progress.delete(id);
     this.memory.delete(id);
     try {
       await (await db()).delete('uploads', id);
@@ -251,10 +262,11 @@ export class UploadQueue {
     }
     // This session's copies win: they carry the live status even when the write failed.
     for (const item of this.memory.values()) if (item.scope === this.scope) byId.set(item.id, item);
-    return [...byId.values()].sort((a, b) => a.createdAt - b.createdAt);
+    return [...byId.values()].filter((item) => !this.removed.has(item.id)).sort((a, b) => a.createdAt - b.createdAt);
   }
 
   private async save(item: QueueItem, patch: Partial<QueueItem>) {
+    if (this.removed.has(item.id)) return;
     Object.assign(item, patch, { updatedAt: Date.now() });
     this.memory.set(item.id, item);
     await this.persist(item);
@@ -270,7 +282,7 @@ export class UploadQueue {
     try {
       const database = await db();
       for (const item of await database.getAll('uploads')) {
-        if (item.status === 'done' && Date.now() - item.updatedAt > DONE_RETENTION_MS) await database.delete('uploads', item.id);
+        if (this.removed.has(item.id) || item.status === 'done' && Date.now() - item.updatedAt > DONE_RETENTION_MS) await database.delete('uploads', item.id);
       }
     } catch (err) {
       this.persistenceBroken = true;
@@ -283,12 +295,13 @@ export class UploadQueue {
     this.running = true;
     try {
       for (const item of await this.items()) {
-        if (item.status === 'done' || item.status === 'failed' || item.nextAttemptAt > Date.now()) continue;
+        if (this.removed.has(item.id) || item.status === 'done' || item.status === 'failed' || item.nextAttemptAt > Date.now()) continue;
         if (!navigator.onLine) {
           if (item.status !== 'waiting_network') await this.save(item, { status: 'waiting_network' });
           continue;
         }
-        await this.step(item);
+        this.activeItemId = item.id;
+        try { await this.step(item); } finally { this.activeItemId = null; }
       }
     } finally {
       this.running = false;
@@ -350,6 +363,7 @@ export class UploadQueue {
   }
 
   private async step(item: QueueItem) {
+    if (this.removed.has(item.id)) return;
     try {
       // 1. Get a pre-signed URL (new document, or a fresh URL for the same pending document).
       if (!item.documentId || !item.grant || new Date(item.grant.expiresAt).getTime() < Date.now() + 30_000) {
@@ -357,6 +371,7 @@ export class UploadQueue {
         const res = item.documentId
           ? await this.call('upload link', (signal) => this.transport.refresh(item.documentId!, signal))
           : await this.call('upload link', (signal) => this.transport.create(item, signal));
+        if (this.removed.has(item.id)) return;
         await this.save(item, { documentId: res.documentId, grant: res.upload });
       }
 
@@ -365,12 +380,14 @@ export class UploadQueue {
         const body = item.bytes ? new Blob([item.bytes], { type: item.contentType }) : item.blob ?? null;
         if (!body) return this.fail(item, 'The photo is no longer on this device. Capture it again.');
         await this.save(item, { status: 'uploading', error: undefined });
+        if (this.removed.has(item.id)) return;
         const put = await putWithProgress(
           item.grant!, body,
           (f) => { this.progress.set(item.id, f); void this.emit(); },
           (xhr) => { this.active = xhr; },
         ).finally(() => { this.active = null; });
         this.progress.delete(item.id);
+        if (this.removed.has(item.id)) return;
         if (put.status === 0) return this.deferForNetwork(item, 'Network lost — will resume automatically');
         if (put.status === 403) { await this.save(item, { grant: undefined }); return this.retryLater(item, 'Upload link expired — renewing'); }
         if (put.status === 400 && put.code === 'XAmzContentChecksumMismatch') return this.fail(item, 'The photo was damaged in transfer. Capture it again.');
@@ -379,12 +396,14 @@ export class UploadQueue {
       }
 
       // 3. The server re-hashes the stored object; only then is it received.
+      if (this.removed.has(item.id)) return;
       const result = await this.call('confirmation', (signal) => this.transport.confirm(item.documentId!, signal));
       // bytes go, the thumbnail stays: the desk keeps seeing what it sent.
       if (result.status === 'verified') return this.save(item, { status: 'done', bytes: null, blob: null, error: undefined });
       if (result.status === 'failed' || result.status === 'orphaned') return this.fail(item, 'The server could not verify this photo. Capture it again.');
       return this.retryLater(item, 'Waiting for the server to receive the photo');
     } catch (err) {
+      if (this.removed.has(item.id)) return;
       // The request was cancelled for taking too long. Nothing is known about whether the server
       // acted on it, which is exactly what idempotency keys are for: sending it again is safe.
       if (err instanceof UploadTimeoutError) return this.retryLater(item, 'The server is taking a long time — trying again');

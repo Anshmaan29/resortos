@@ -196,7 +196,7 @@ export class GrcService {
     const { rows: signatures } = await q.query<GuestDocumentRow>(
       `SELECT * FROM guest_documents
         WHERE stay_id = $1 AND doc_type = 'signature' AND status = 'verified'
-        ORDER BY verified_at DESC LIMIT 1`,
+        ORDER BY created_at DESC, id DESC LIMIT 1`,
       [stay.id],
     );
     const signature = signatures[0];

@@ -9,6 +9,7 @@ import { DbService, type Queryable } from '../db/db.service';
 import type { CaptureSessionRow, CheckInDraftRow, GuestDocumentRow, IdRow } from '../db/rows';
 import { newToken, tokenHash } from '../auth/tokens';
 import { StorageService } from '../storage/storage.service';
+import { latestDocuments } from './document-slots';
 
 const SESSION_MINUTES = 10;
 /** How often the event stream re-checks for a change worth telling the desk about. */
@@ -141,9 +142,9 @@ export class CaptureService {
 
   async draftDocuments(propertyId: string, draftId: string) {
     const { rows } = await this.db.query<GuestDocumentRow>(
-      `SELECT * FROM guest_documents WHERE property_id = $1 AND draft_id = $2 ORDER BY created_at`, [propertyId, draftId],
+      `SELECT * FROM guest_documents WHERE property_id = $1 AND draft_id = $2 ORDER BY created_at, id`, [propertyId, draftId],
     );
-    return rows.map(documentView);
+    return latestDocuments(rows).map(documentView);
   }
 
   /** Desk webcam, file upload or signature pad. */
@@ -209,11 +210,11 @@ export class CaptureService {
   /** Lets the phone page resume after a refresh: session state and this session's documents only. */
   async phoneStatus(token: string, deviceSecret: string | undefined) {
     const s = await this.phoneSession(this.db, token, deviceSecret);
-    const { rows } = await this.db.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE capture_session_id = $1 ORDER BY created_at`, [s.id]);
+    const { rows } = await this.db.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE capture_session_id = $1 ORDER BY created_at, id`, [s.id]);
     return {
       expiresAt: s.expires_at,
       occupants: await this.occupantSlots(this.db, s.draft_id),
-      documents: rows.map((d) => ({ id: d.id, docType: d.doc_type, idType: d.id_type, occupantKey: d.occupant_key, status: d.status, failureReason: d.failure_reason })),
+      documents: latestDocuments(rows).map((d) => ({ id: d.id, docType: d.doc_type, idType: d.id_type, occupantKey: d.occupant_key, status: d.status, failureReason: d.failure_reason })),
     };
   }
 
@@ -258,11 +259,13 @@ export class CaptureService {
 
   private async createDocument(q: Queryable, propertyId: string, draftId: string, req: DocumentUploadRequest,
     by: { source: string; uploadedBy: string; sessionId: string | null; device: string | null }) {
+    const { rows: drafts } = await q.query<Pick<CheckInDraftRow, 'status'>>(`SELECT status FROM check_in_drafts WHERE id = $1 AND property_id = $2 FOR UPDATE`, [draftId, propertyId]);
+    if (drafts[0]?.status !== 'active') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This check-in is already finished.');
     const key = this.storage.newKey(propertyId);
     const { rows } = await q.query<IdRow>(
       `INSERT INTO guest_documents (property_id, draft_id, occupant_key, doc_type, id_type, storage_key, content_type, size_bytes, sha256,
-                                    source, capture_session_id, uploaded_by, device, client_upload_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+                                    source, capture_session_id, uploaded_by, device, client_upload_id, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,clock_timestamp())
        ON CONFLICT (draft_id, client_upload_id) WHERE client_upload_id IS NOT NULL DO NOTHING
        RETURNING id`,
       [propertyId, draftId, req.occupantKey ?? null, req.docType, req.idType ?? null, key, req.contentType, req.sizeBytes,

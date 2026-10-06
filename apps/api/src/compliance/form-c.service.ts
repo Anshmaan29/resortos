@@ -104,7 +104,10 @@ export class FormCService {
     const { rows: documents } = await this.db.query<{ id: string; doc_type: string }>(
       `SELECT d.id, d.doc_type FROM guest_documents d
          JOIN stay_occupants o ON o.stay_id = d.stay_id AND o.occupant_key = d.occupant_key
-        WHERE o.id = $1 AND d.status = 'verified' ORDER BY d.created_at`,
+        WHERE o.id = $1 AND d.status = 'verified' AND NOT EXISTS (SELECT 1 FROM guest_documents newer
+          WHERE newer.stay_id = d.stay_id AND newer.occupant_key IS NOT DISTINCT FROM d.occupant_key
+            AND newer.doc_type = d.doc_type AND (newer.created_at, newer.id) > (d.created_at, d.id))
+        ORDER BY d.created_at`,
       [rows[0].occupant_id],
     );
     return { ...record, documents: documents.map((d) => ({ id: d.id, docType: d.doc_type })) };
