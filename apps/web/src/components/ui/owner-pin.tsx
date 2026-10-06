@@ -1,7 +1,7 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
 import { Delete, ShieldCheck } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { Button } from './button';
@@ -16,31 +16,38 @@ export function OwnerPinDialog({ open, reason, error, busy, onCancel, onSubmit }
   open: boolean; reason: string; error?: string | null; busy?: boolean; onCancel: () => void; onSubmit: (ownerUserId: string, pin: string) => void;
 }) {
   const owners = useQuery({ queryKey: ['owners'], queryFn: () => api<{ id: string; fullName: string }[]>('/auth/owners'), enabled: open });
-  const [ownerId, setOwnerId] = useState('');
+  const [selectedOwnerId, setOwnerId] = useState('');
+  const ownerId = selectedOwnerId || owners.data?.[0]?.id || '';
   const [pin, setPin] = useState('');
-  const state = useRef({ pin, ownerId, busy, onSubmit });
-  state.current = { pin, ownerId, busy, onSubmit };
+  // Keyboard events can arrive before React commits the last digit. Keep the input
+  // current synchronously so a fast Enter submits all six digits, rather than five.
+  const pinRef = useRef('');
+  const state = useRef({ ownerId, busy, onSubmit });
+  state.current = { ownerId, busy, onSubmit };
+  const updatePin = useCallback((next: string) => { pinRef.current = next; setPin(next); }, []);
 
-  useEffect(() => { if (open) setPin(''); }, [open, error]);
-  useEffect(() => { if (!ownerId && owners.data?.[0]) setOwnerId(owners.data[0].id); }, [owners.data, ownerId]);
+  useLayoutEffect(() => { if (open) updatePin(''); }, [open, error, updatePin]);
 
-  const press = useCallback((d: string) => setPin((p) => (p.length < 6 ? p + d : p)), []);
+  const press = useCallback((d: string) => {
+    if (pinRef.current.length < 6) updatePin(pinRef.current + d);
+  }, [updatePin]);
+  const removeDigit = useCallback(() => updatePin(pinRef.current.slice(0, -1)), [updatePin]);
   const submit = useCallback(() => {
     const s = state.current;
-    if (s.pin.length === 6 && s.ownerId && !s.busy) s.onSubmit(s.ownerId, s.pin);
+    if (pinRef.current.length === 6 && s.ownerId && !s.busy) s.onSubmit(s.ownerId, pinRef.current);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (/^\d$/.test(e.key)) { e.preventDefault(); press(e.key); }
-      else if (e.key === 'Backspace') { e.preventDefault(); setPin((p) => p.slice(0, -1)); }
+      else if (e.key === 'Backspace') { e.preventDefault(); removeDigit(); }
       else if (e.key === 'Enter') { e.preventDefault(); submit(); }
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [open, press, submit]);
+  }, [open, press, removeDigit, submit]);
 
   return (
     <Dialog open={open} onClose={onCancel} title="Owner authorisation" size="sm" description={reason}>
@@ -56,6 +63,8 @@ export function OwnerPinDialog({ open, reason, error, busy, onCancel, onSubmit }
             ))}
           </div>
         )}
+        {owners.isPending && <p className="text-center text-sm text-text-3" role="status">Loading owners…</p>}
+        {owners.isError && <p className="text-center text-sm text-danger" role="alert">Could not load owners. Close this dialog and try again.</p>}
         {owners.data?.length === 0 && <p className="text-center text-sm text-danger">No owner has set a PIN yet. The owner can do this action from their own login.</p>}
         <div className="flex gap-2.5" role="status" aria-label={`${pin.length} of 6 digits entered`}>
           {Array.from({ length: 6 }, (_, i) => (
@@ -69,7 +78,7 @@ export function OwnerPinDialog({ open, reason, error, busy, onCancel, onSubmit }
           ))}
           <span />
           <button type="button" tabIndex={-1} onClick={() => press('0')} className="h-14 rounded-lg bg-surface-2 text-xl font-medium num hover:bg-surface-3 active:scale-95">0</button>
-          <button type="button" tabIndex={-1} onClick={() => setPin((p) => p.slice(0, -1))} className="flex h-14 items-center justify-center rounded-lg text-text-2 hover:bg-surface-2" aria-label="Delete digit"><Delete className="h-5 w-5" /></button>
+          <button type="button" tabIndex={-1} onClick={removeDigit} className="flex h-14 items-center justify-center rounded-lg text-text-2 hover:bg-surface-2" aria-label="Delete digit"><Delete className="h-5 w-5" /></button>
         </div>
         <p className="text-xs text-text-3">You can also type the PIN on the keyboard and press Enter.</p>
         <div className="flex w-full gap-2">

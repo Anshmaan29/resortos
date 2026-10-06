@@ -18,8 +18,9 @@ This pass fixes the reproduced operational failures and prepares a configurable 
 | A9/A10: register printing | Arrival uses the property timezone. Multi-page PDFs restart the row position and repeat column headers. The 100-row regression now produces four pages; page 2 was visually inspected. Additional export timestamps use the property timezone. |
 | A11: records | Booking and stay exports apply the selected date range. Record-page tables/search/drill-down remain a separate unfinished feature. |
 | A12: phone navigation | Full role-aware menu reaches operational modules. Cleaner navigation excludes booking actions. Long dashboard rows fit the phone width; long dialogs scroll within the viewport. |
+| CI follow-up: fast owner PIN input | The second GitHub run exposed a lost Enter submission when React had not committed the final digit. PIN input now updates synchronously, resets before paint, and derives the default owner without a delayed effect. A same-task digit/Enter regression reproduced the old failure deterministically; real-keyboard editing and submission remain covered. |
 | S1: dependency gate | Next.js 16.3.6 and source-map-js 1.2.2 address the critical/high findings. The high/critical gate passes. One moderate Multer finding remains on an unused API multipart path; the compatibility reason is recorded in `docs/dependency-security.md`. |
-| S2: CI storage | Public MinIO image pulls no longer work. CI/development now build pinned upstream MinIO/mc source commits. Both images built locally; a separate temporary server passed readiness and private/versioned/Object Lock bucket creation. Existing local storage was not replaced. GitHub CI must confirm the Linux runner path. |
+| S2: CI storage | Public MinIO image pulls no longer work. CI/development now build pinned upstream MinIO/mc source commits. Both images built locally; a separate temporary server passed readiness and private/versioned/Object Lock bucket creation. Existing local storage was not replaced. The first full GitHub CI run confirmed the Linux runner path. |
 | S3/S4: operations | Restore comparison now includes financial/message/maintenance counts and financial totals. First-owner provisioning creates only live identity records in an empty migrated database, hashes credentials, writes audit/outbox, and handles concurrent attempts safely. The production guard and normal owner login were tested on that new database. |
 
 Operational regression results and observations are in `progress-evidence/`. The original failed audit evidence remains in `evidence/`.
@@ -51,9 +52,10 @@ The larger specification still includes guest merge and import reconciliation, s
 - Full suite: **445 tests passed** (306 API, 41 shared, 98 web/contrast).
 - Operational audit regressions: **25 passed**, including completed checkout, elapsed/late-arrival billing, property separation, accounting reversals and the 100-row register.
 - Browser journeys: **14 passed**, desktop and mobile. Covers document capture, signature/GRC, room move, checkout, owner overrides, shared-desk switching, sender settings and navigation with populated dashboard data.
+- After the owner-PIN CI follow-up, the web production build, typecheck and all **14 browser journeys** passed again, including the deterministic fast-input regression.
 - After the final queue-wakeup change, the API build and **23 messaging/daily-summary tests** passed again.
 - Dependency high/critical gate passed; the one moderate compatibility finding is documented.
 - Gitleaks passed across existing Git history and the staged changes.
 - Both pinned storage images built and their readiness/bucket setup passed on a separate disposable local container.
 
-CI is required on the pushed branch. Local checks are evidence for the covered paths, not proof of real email delivery, actual Tally import, off-site production recovery or external VAPT.
+Full GitHub CI passed for `ea741ca` ([run](https://github.com/Anshmaan29/resortos/actions/runs/37436341571)), including all 445 suite tests, 25 audit checks and 14 browser journeys. The duplicate PR run exposed the owner-PIN race above; the follow-up change must also pass CI. Local checks are evidence for the covered paths, not proof of real email delivery, actual Tally import, off-site production recovery or external VAPT.

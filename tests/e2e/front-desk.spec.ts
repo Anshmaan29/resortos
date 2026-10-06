@@ -51,12 +51,18 @@ test('below-minimum rate: Owner PIN typed on the physical keyboard, override sho
   await page.getByLabel('Room rate per night').fill('2000');
   await expect(page.getByText(/Below the minimum rate of ₹3,200/)).toBeVisible();
   await expect(page.getByText('Estimated total incl. GST')).toBeVisible();
+  const ownersLoaded = page.waitForResponse((r) => r.url().endsWith('/api/v1/auth/owners') && r.status() === 200);
   await page.getByRole('button', { name: 'Save booking' }).click();
 
   const pad = page.getByRole('dialog', { name: 'Owner authorisation' });
   await expect(pad.getByText('Needed because: Rate ₹2,000 is below the minimum ₹3,200')).toBeVisible();
-  await page.keyboard.type('000000');
-  await page.keyboard.press('Enter');
+  await ownersLoaded;
+  await expect(pad.getByText('Loading owners…')).toBeHidden();
+  // Keep a burst of digits and Enter in the same browser task. This reproduces the
+  // lost-submit race without depending on how quickly a CI runner commits React state.
+  await page.evaluate(() => {
+    for (const key of [...'000000', 'Enter']) window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  });
   await expect(pad.getByText('Owner PIN is incorrect.')).toBeVisible();
   await page.keyboard.type('48291');
   await page.keyboard.press('Backspace');
