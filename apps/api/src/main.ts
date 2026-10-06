@@ -7,6 +7,7 @@ import { assertProductionSafe } from './safety/production-guard';
 async function main() {
   const config = loadConfig();
   const app = await createApp();
+  app.enableShutdownHooks();
   if (config.NODE_ENV === 'production') {
     await assertProductionSafe(app.get(DbService));
   }
