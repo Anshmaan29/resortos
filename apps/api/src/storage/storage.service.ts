@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client, S3ServiceException } from '@aws-sdk/client-s3';
+import { type CORSRule, GetBucketCorsCommand, PutBucketCorsCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client, S3ServiceException } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Inject, Injectable, type OnModuleDestroy } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config';
@@ -35,8 +35,10 @@ export class StorageService implements OnModuleDestroy {
   private readonly internal: S3Client;
   private readonly presigner: S3Client;
   private readonly bucket: string;
+  private readonly webOrigin: string;
 
   constructor(@Inject(APP_CONFIG) config: AppConfig) {
+    this.webOrigin = new URL(config.PUBLIC_WEB_URL ?? config.WEB_ORIGIN).origin;
     const base = {
       region: config.S3_REGION,
       forcePathStyle: config.S3_FORCE_PATH_STYLE,
@@ -117,6 +119,22 @@ export class StorageService implements OnModuleDestroy {
       Bucket: this.bucket, Key: key, ResponseContentType: contentType, ResponseCacheControl: 'private, no-store', ResponseContentDisposition: downloadName ? `attachment; filename="${downloadName}"` : 'inline',
     }), { expiresIn: VIEW_SECONDS });
     return { url, expiresAt: new Date(Date.now() + VIEW_SECONDS * 1000) };
+  }
+
+  /** Explicit owner setup for direct browser uploads; it never makes the bucket public. */
+  async configurePhoneAccess() {
+    let rules: CORSRule[];
+    try { rules = (await this.internal.send(new GetBucketCorsCommand({ Bucket: this.bucket }))).CORSRules ?? []; }
+    catch (err) {
+      if (!(err instanceof S3ServiceException) || err.$metadata.httpStatusCode !== 404) throw err;
+      rules = [];
+    }
+    await this.internal.send(new PutBucketCorsCommand({ Bucket: this.bucket, CORSConfiguration: { CORSRules: [
+      ...rules.filter((r) => r.ID !== 'ResortOSPhoneAccess'),
+      { ID: 'ResortOSPhoneAccess', AllowedOrigins: [this.webOrigin], AllowedMethods: ['GET', 'HEAD', 'PUT'],
+        AllowedHeaders: ['content-type', 'x-amz-checksum-sha256', 'if-none-match'], ExposeHeaders: ['ETag'], MaxAgeSeconds: 600 },
+    ] } }));
+    return { origin: this.webOrigin };
   }
 
   /** Readiness check for /health/storage. */

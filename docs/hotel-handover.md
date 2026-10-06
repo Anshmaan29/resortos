@@ -28,6 +28,10 @@ A sync failure does not block bookings. The status shows the last attempt and it
 
 Official setup references: [Google service accounts](https://developers.google.com/identity/protocols/oauth2/service-account), [Sheets batch updates](https://developers.google.com/workspace/sheets/api/guides/batchupdate).
 
+## Phone upload access
+
+The private Railway bucket needs a browser CORS rule for the hotel's exact HTTPS origin. An authenticated owner/operator can call `POST /api/v1/storage/phone-access` with the normal ResortOS security header to configure it. This keeps existing unrelated rules, permits only GET/HEAD/PUT for the app origin with the required checksum/content headers, and does not make guest files public. Changing the app domain requires applying the rule again. A successful storage health ping alone does not prove browser uploads work; verify a synthetic upload reaches **Received**.
+
 ## Before taking real bookings
 
 - Accountant confirms and reception saves GST rules. Print one invoice and receipt on the hotel's printer.
