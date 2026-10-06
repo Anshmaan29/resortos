@@ -49,7 +49,11 @@ test('below-minimum rate: four-digit Owner PIN typed on the physical keyboard, o
   await page.getByLabel('Last name').fill('Reddy');
   await page.getByLabel('Mobile').fill('9849012345');
   await expect(page.getByLabel('Meal plan')).toHaveCount(0);
-  await page.getByLabel('Room rate per night').fill('2000');
+  await page.getByLabel('Base room price per night').fill('2000');
+  await page.getByLabel('Extra adult / child charges per night').fill('375.50');
+  await expect(page.getByText('₹2,375.50', { exact: true }).first()).toBeVisible();
+  await page.getByLabel('Extra adult / child charges per night').fill('');
+  await expect(page.getByText('₹3,150', { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/Below the minimum rate of ₹3,200/)).toBeVisible();
   await expect(page.getByText('Estimated total incl. GST')).toBeVisible();
   const ownersLoaded = page.waitForResponse((r) => r.url().endsWith('/api/v1/auth/owners') && r.status() === 200);
