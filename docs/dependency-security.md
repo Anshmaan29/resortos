@@ -48,54 +48,12 @@ Every field is required. The gate then enforces the parts that make it a real de
 Renewing is not automatic: it means writing a new `accepted_on` and a fresh reason, which is the
 point.
 
-## The multer pin — a worked example
+## Patched image and upload dependencies (6 October 2026)
 
-`@nestjs/platform-express@11.2.5` depends on `multer` **pinned exactly at 2.2.0**, which carries
-four advisories (three high, one low): GHSA-wc9g-mqfw-jrwm, GHSA-qfvm-cv95-jqjf, GHSA-535w-7cp7-47q4
-and GHSA-qvfw-j98x-7q72. All four are fixed in **2.3.0**. Because the range is exact, Dependabot
-cannot resolve a bump on its own — which is why its update job kept failing while the alerts stayed
-open.
+Root overrides now pin sharp 0.35.5 and multer 2.4.0. Sharp fixes GHSA-wq5f-xc86-pv6w in librsvg; multer fixes GHSA-3pph-fpjx-jg34 affecting aborted disk uploads. The audit gate remains enabled with no advisory acceptance entries.
 
-Resolved with a root `pnpm.overrides` entry raising multer to 2.3.0 for the whole workspace. Three
-things were checked before taking it:
+Nest 11.2.5 pins an older multer and maps errors by message. Multer 2.4.0 changes `LIMIT_UNEXPECTED_FILE` to `Unexpected file field`. ResortOS never mounts multipart middleware: photos go directly to private object storage through constrained signed PUTs. The compatibility test verifies the API Nest loads, all error messages including this known change, and scans application source to prevent introduction of file interceptors while that Nest incompatibility exists. Adding multipart routes requires addressing the upstream mapping first; do not lower the security pin.
 
-1. **The API it exposes.** Nest calls `multer()`, `.single()`, `.array()`, `.fields()`, `.none()`,
-   `.any()`, plus `diskStorage`, `memoryStorage` and `MulterError`. All present and unchanged.
-2. **The error messages.** `transformException()` in platform-express maps multer failures to HTTP
-   statuses by matching the error **message string**, not the code. **2.4.0 — the latest release —
-   renames `LIMIT_UNEXPECTED_FILE` from `Unexpected field` to `Unexpected file field`**, which would
-   silently turn a clean 400 into a 500 for anyone who later adds a file interceptor. 2.3.0 keeps
-   every message Nest expects, so the pin is 2.3.0 and not latest. `apps/api/test/dependency-pins.test.ts`
-   asserts this, so the next bump cannot break it quietly.
-3. **The full suite** — build, typecheck, unit, API integration and E2E — passed on the override.
+The patched sharp supplies corrected prebuilt librsvg binaries in the Railway image. Verify build, typecheck, API tests, browser uploads and the dependency audit after dependency changes.
 
-### Could the upload middleware be dropped instead?
-
-Not cleanly, and we do not need it to. Verified: `@nestjs/core` loads the adapter with
-`require('@nestjs/platform-express')`, whose barrel eagerly re-exports `./multer`, which `require`s
-multer at module load. So multer is **resident in every API process** (22 of its modules enter
-`require.cache`) and cannot be excluded without patching Nest or moving to Fastify.
-
-What is true — and is the reason this was never an exposure in practice — is that **multer's parsing
-code never runs**:
-
-- No route uses `FileInterceptor`, `FilesInterceptor`, `AnyFilesInterceptor` or `MulterModule`, so
-  no multer instance is ever constructed and no multipart middleware is mounted.
-- The API accepts no file uploads at all. Photos and ID scans go **browser → object storage**
-  through a pre-signed PUT bound to content-type, length and SHA-256; the API only ever sees the
-  key and re-reads the object to verify its checksum (spec §19.4).
-- All four advisories are denial-of-service in multipart field parsing, reachable only through a
-  mounted multer middleware.
-
-Patching Nest to make the require lazy was considered and rejected: a `pnpm patch` on a framework
-package is its own maintenance burden at every Nest upgrade, and the override removes the finding
-outright. The conclusion is recorded here so that **whoever adds the first upload route knows that
-multer is already loaded, that the pin is deliberate, and that 2.4.0's renamed message would break
-Nest's error mapping.**
-
-
-## Review on 6 October 2026
-
-Next.js is updated to 16.3.6 for GHSA-vcvr-r3jv-pc5j; `source-map-js` is overridden to 1.2.2 for GHSA-68fv-2mgg-jv7q. The high/critical gate passes against the resulting lockfile.
-
-Multer 2.3.0 now has a moderate advisory, GHSA-3pph-fpjx-jg34 (aborted uploads with orphaned disk writes), fixed in 2.4.0. The existing Nest error-message compatibility issue above remains. The API still exposes no multipart interceptors: guests upload directly to private object storage. This finding is printed by the gate and must be revisited before adding an API upload route. The compatibility test makes no claim that 2.3.0 has no known advisories.
+References: [sharp advisory](https://github.com/advisories/GHSA-wq5f-xc86-pv6w), [multer advisory](https://github.com/advisories/GHSA-3pph-fpjx-jg34).

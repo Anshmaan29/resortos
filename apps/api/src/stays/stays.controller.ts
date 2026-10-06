@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Headers, HttpCode, Param, Patch, Post, Query, Req, Sse } from '@nestjs/common';
+import type { Response } from 'express';
+import { Body, Controller, Get, Headers, HttpCode, Param, Patch, Post, Query, Req, Res, Sse } from '@nestjs/common';
 import {
   checkoutSchema, createCheckInDraftSchema, documentUploadRequestSchema, extendStaySchema, regenerateGrcSchema, roomShiftSchema,
   stayListQuerySchema, updateCheckInDraftSchema, zId, zIsoDate,
@@ -83,6 +84,13 @@ export class StaysController {
   @HttpCode(200)
   deskGrant(@CurrentActor() actor: Actor, @Param('draftId') draftId: string, @Param('id') id: string) {
     return this.capture.deskRefreshGrant(actor, parse(zId, draftId), parse(zId, id));
+  }
+
+  @Get('documents/:id/download')
+  async downloadDocument(@CurrentActor() actor: Actor, @Param('id') id: string, @Res() res: Response) {
+    const link = await this.capture.viewUrl(actor, parse(zId, id), true);
+    res.set('Cache-Control', 'private, no-store');
+    return res.redirect(link.url);
   }
 
   @Get('documents/:id/view-url')

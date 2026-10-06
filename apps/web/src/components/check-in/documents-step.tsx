@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ID_TYPES_WITH_BACK, type DocumentType, type IdType } from '@resortos/shared';
 import { CaptureSlot } from '@/components/capture/capture-slot';
-import { slotState } from '@/lib/capture/slot-state';
+import { slotState, statusForSlot } from '@/lib/capture/slot-state';
 import { Field, Input, Select } from '@/components/ui/field';
 import { Card, CardHeader } from '@/components/ui/surface';
 import { api } from '@/lib/api';
@@ -66,8 +66,7 @@ export function DocumentsStep({ draft, data, onChange, onRefresh, queue }: {
   const setOccupant = (roomIndex: number, key: string, patch: Partial<Occupant>) =>
     onChange({ ...data, rooms: data.rooms.map((r, i) => (i === roomIndex ? { ...r, occupants: r.occupants.map((o) => (o.key === key ? { ...o, ...patch } : o)) } : r)) });
 
-  const serverStatus = (occupantKey: string, docType: DocumentType) =>
-    [...draft.documents].reverse().find((d) => d.occupantKey === occupantKey && d.docType === docType)?.status;
+
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
@@ -103,7 +102,7 @@ export function DocumentsStep({ draft, data, onChange, onRefresh, queue }: {
                       const item = queue.latest(slotKey);
                       return (
                         <CaptureSlot key={slotKey} compact label={s.label + (s.required ? '' : ' (optional)')} docType={s.docType} idType={s.docType === 'guest_photo' ? null : idType}
-                          state={slotState(serverStatus(o.key, s.docType), item, item ? queue.progressOf(item.id) : 0)} item={item}
+                          state={slotState(statusForSlot(draft.documents, o.key, s.docType, item), item, item ? queue.progressOf(item.id) : 0)} item={item}
                           onDiscardFailed={() => { if (item?.status === 'failed') void queue.remove(item.id); }}
                           onCaptured={(r, via) => void queue.add({
                             slotKey, docType: s.docType, occupantKey: o.key, idType: s.docType === 'guest_photo' ? undefined : idType ?? undefined,

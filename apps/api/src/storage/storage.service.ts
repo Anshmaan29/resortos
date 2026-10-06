@@ -112,9 +112,9 @@ export class StorageService implements OnModuleDestroy {
   }
 
   /** Short-lived signed view URL (spec §19.7). */
-  async viewUrl(key: string, contentType: string): Promise<{ url: string; expiresAt: Date }> {
+  async viewUrl(key: string, contentType: string, downloadName?: string): Promise<{ url: string; expiresAt: Date }> {
     const url = await getSignedUrl(this.presigner, new GetObjectCommand({
-      Bucket: this.bucket, Key: key, ResponseContentType: contentType, ResponseCacheControl: 'private, no-store', ResponseContentDisposition: 'inline',
+      Bucket: this.bucket, Key: key, ResponseContentType: contentType, ResponseCacheControl: 'private, no-store', ResponseContentDisposition: downloadName ? `attachment; filename="${downloadName}"` : 'inline',
     }), { expiresIn: VIEW_SECONDS });
     return { url, expiresAt: new Date(Date.now() + VIEW_SECONDS * 1000) };
   }

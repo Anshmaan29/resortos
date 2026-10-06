@@ -29,6 +29,9 @@ const envSchema = z.object({
   /** Svix signing secret for Resend delivery webhooks ("whsec_…"). Without it the webhook refuses everything. */
   RESEND_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
   RESEND_API_URL: z.string().url().default('https://api.resend.com'),
+  /** Optional one-way Sheets mirror. Credentials stay on the server, never in guest pages. */
+  GOOGLE_SHEETS_ID: z.string().regex(/^[A-Za-z0-9_-]{20,150}$/).optional(),
+  GOOGLE_SERVICE_ACCOUNT_JSON: z.string().optional(),
   /** Background job runner. Off in tests, which drive the dispatcher directly and deterministically. */
   JOBS_ENABLED: z.enum(['true', 'false']).optional().transform((v) => v === undefined ? undefined : v === 'true'),
 }).transform((c) => ({

@@ -32,7 +32,7 @@ export class ExportsService {
     private readonly police: PoliceRegisterService,
   ) {}
 
-  private sheetRows(kind: ExportKind, propertyId: string, from: string, to: string): Promise<{ title: string; columns: string[]; rows: (string | number | null | undefined | { number: string | number })[][] }> {
+  sheetRows(kind: ExportKind, propertyId: string, from: string, to: string): Promise<{ title: string; columns: string[]; rows: (string | number | null | undefined | { number: string | number })[][] }> {
     return this.db.tx({}, async (q) => {
       switch (kind) {
         case 'bookings': return this.bookings(q, propertyId, from, to);
@@ -71,6 +71,16 @@ export class ExportsService {
       body, contentType, rows,
       filename: `${kind}${kind === 'bookings' || kind === 'guests' || kind === 'form-c' ? '' : stamp}.${format}`,
     };
+  }
+
+  /** One workbook of all operational records, without a date filter. */
+  async allRecords(actor: Actor) {
+    const sheets: Sheet[] = [];
+    for (const kind of EXPORT_KINDS) {
+      const data = await this.sheetRows(kind, actor.user.propertyId, '0001-01-01', '9999-12-31');
+      sheets.push({ name: data.title, columns: data.columns, rows: data.rows.map((r) => r.map((c) => c ?? null)) });
+    }
+    return { body: workbook(sheets), rows: sheets.reduce((sum, s) => sum + s.rows.length, 0) };
   }
 
   // ---------------- datasets ----------------

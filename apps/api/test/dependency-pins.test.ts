@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 
@@ -8,7 +10,7 @@ import { describe, expect, it } from 'vitest';
  * API process whether we use it or not. 2.2.0 carries four advisories, so the root
  * `pnpm.overrides` raises it. This test guards the two things that override could break.
  *
- * See docs/dependency-security.md for why the pin is 2.3.0 and not latest.
+ * See docs/dependency-security.md for why the pin is 2.4.0 and how its changed message is contained.
  */
 // The API compiles to CommonJS, so `require` is the resolver here. multer is not a dependency of
 // ours: it is only reachable from inside @nestjs/platform-express, which is where it matters.
@@ -20,7 +22,7 @@ describe('multer, pinned by pnpm.overrides above what Nest asks for', () => {
     const [major, minor] = version.split('.').map(Number);
     // Everything below 2.3.0 is vulnerable (GHSA-wc9g-mqfw-jrwm and three more).
     expect(major).toBe(2);
-    expect(minor).toBeGreaterThanOrEqual(3);
+    expect(minor).toBeGreaterThanOrEqual(4);
   });
 
   it('still offers the API Nest calls, so the Express adapter loads', () => {
@@ -34,10 +36,10 @@ describe('multer, pinned by pnpm.overrides above what Nest asks for', () => {
     }
   });
 
-  it('still produces the error messages Nest maps to HTTP statuses', () => {
+  it('tracks the changed unexpected-file message and forbids unsupported API multipart interceptors', () => {
     // Nest's transformException() switches on the error *message*, not the code, so a renamed
-    // message downgrades a clean 400 into a 500. multer 2.4.0 renames LIMIT_UNEXPECTED_FILE,
-    // which is exactly why the override pins 2.3.0.
+    // message would downgrade a 400 into a 500. We use no multipart interceptors; guard
+    // that fact before accepting the one known renamed message in patched multer 2.4.0.
     const { MulterError } = fromPlatformExpress('multer') as {
       MulterError: new (code: string) => Error;
     };
@@ -45,9 +47,14 @@ describe('multer, pinned by pnpm.overrides above what Nest asks for', () => {
       '@nestjs/platform-express/multer/multer/multer.constants',
     ) as { multerExceptions: Record<string, string> };
 
+    const source = resolve(__dirname, '../src');
+    const files = readdirSync(source, { recursive: true, withFileTypes: true }).filter((f) => f.isFile() && f.name.endsWith('.ts') && !f.name.endsWith('.test.ts'));
+    for (const f of files) {
+      expect(readFileSync(resolve(f.parentPath, f.name), 'utf8'), f.name).not.toMatch(/\b(?:FileInterceptor|FilesInterceptor|FileFieldsInterceptor|AnyFilesInterceptor|MulterModule)\b/);
+    }
     expect(Object.keys(multerExceptions).length).toBeGreaterThan(0);
     for (const [code, expected] of Object.entries(multerExceptions)) {
-      expect(new MulterError(code).message, code).toBe(expected);
+      expect(new MulterError(code).message, code).toBe(code === 'LIMIT_UNEXPECTED_FILE' ? 'Unexpected file field' : expected);
     }
   });
 });

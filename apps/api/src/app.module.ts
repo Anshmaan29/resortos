@@ -22,6 +22,7 @@ import { RatesModule } from './rates/rates.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { StaysModule } from './stays/stays.module';
 import { StorageModule } from './storage/storage.module';
+import { SheetsModule } from './sheets/sheets.module';
 import { Global } from '@nestjs/common';
 
 @Global()
@@ -29,7 +30,7 @@ import { Global } from '@nestjs/common';
 class ConfigModule {}
 
 @Module({
-  imports: [ConfigModule, DbModule, StorageModule, JobsModule, AuthModule, PropertyModule, RatesModule, GuestsModule, ReservationsModule, StaysModule, FoliosModule, CashierModule, ReceivablesModule, PrintingModule, ReviewModule, MessagingModule, HousekeepingModule, ExpensesModule, ComplianceModule, ExportsModule, MaintenanceModule, NightAuditModule],
+  imports: [SheetsModule, ConfigModule, DbModule, StorageModule, JobsModule, AuthModule, PropertyModule, RatesModule, GuestsModule, ReservationsModule, StaysModule, FoliosModule, CashierModule, ReceivablesModule, PrintingModule, ReviewModule, MessagingModule, HousekeepingModule, ExpensesModule, ComplianceModule, ExportsModule, MaintenanceModule, NightAuditModule],
   controllers: [HealthController],
 })
 export class AppModule {}

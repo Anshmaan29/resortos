@@ -29,3 +29,12 @@ export function slotState(serverStatus: 'pending' | 'verified' | 'failed' | 'orp
   if (serverStatus === 'failed') return { kind: 'failed', message: 'Upload failed — capture it again' };
   return { kind: 'empty' };
 }
+
+/** A verified earlier photo must not make a retake look received before its upload finishes. */
+export function statusForSlot(
+  documents: readonly { id: string; occupantKey: string | null; docType: string; status: 'pending' | 'verified' | 'failed' | 'orphaned' }[],
+  occupantKey: string, docType: string, item?: QueueItem,
+) {
+  if (item && item.status !== 'done') return documents.find((d) => d.id === item.documentId)?.status;
+  return [...documents].reverse().find((d) => d.occupantKey === occupantKey && d.docType === docType)?.status;
+}

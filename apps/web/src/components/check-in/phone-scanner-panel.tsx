@@ -18,11 +18,13 @@ interface SessionStatus { claimed: boolean; open: boolean; expiresAt: string; cl
 export function PhoneScannerPanel({ draftId, onDocumentsChanged }: { draftId: string; onDocumentsChanged: () => void }) {
   const [session, setSession] = useState<Session | null>(null);
   const [qr, setQr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
   const create = useMutation({
     mutationFn: () => api<Session>(`/check-in-drafts/${draftId}/capture-sessions`, { method: 'POST', body: {} }),
-    onSuccess: async (s) => { setSession(s); setQr(await QRCode.toDataURL(s.captureUrl, { margin: 1, width: 260, errorCorrectionLevel: 'M' })); },
+    onSuccess: async (s) => { setCopied(false); setLinkError(null); setSession(s); setQr(await QRCode.toDataURL(s.captureUrl, { margin: 1, width: 260, errorCorrectionLevel: 'M' })); },
   });
   const close = useMutation({
     mutationFn: () => api(`/capture-sessions/${session!.sessionId}/close`, { method: 'POST', body: {} }),
@@ -88,6 +90,15 @@ export function PhoneScannerPanel({ draftId, onDocumentsChanged }: { draftId: st
                 {' '}· expires in {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}
               </p>
             )}
+            {!expired && <div className="flex flex-wrap justify-center gap-2">
+              <a href={session.captureUrl} target="_blank" rel="noopener noreferrer" className="rounded-md border border-border px-3 py-2 text-sm font-medium">Open scanner on this phone</a>
+              <Button variant="outline" size="sm" onClick={async () => {
+                try { await navigator.clipboard.writeText(session.captureUrl); setCopied(true); setLinkError(null); }
+                catch { setLinkError('Could not copy. Scan the QR code with the phone camera instead.'); }
+              }}>{copied ? 'Link copied' : 'Copy scanner link'}</Button>
+            </div>}
+            {linkError && <p role="alert" className="text-sm text-danger">{linkError}</p>}
+            {close.isError && <p role="alert" className="text-sm text-danger">{(close.error as Error).message}</p>}
             <ul className="flex w-full flex-col gap-2" aria-live="polite" aria-label="Documents received from the phone">
               <AnimatePresence initial={false}>
                 {fromPhone.map((d) => (

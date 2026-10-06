@@ -9,8 +9,8 @@ async function login(page: Page, username = 'priya', password = 'Aravali#Desk26'
 }
 
 /** Draws a slightly rotated "ID card" on a dark table so edge detection has something real to find. */
-async function syntheticCard(page: Page, label: string): Promise<Buffer> {
-  const dataUrl = await page.evaluate((text) => {
+async function syntheticCard(page: Page, label: string, large = false): Promise<Buffer> {
+  const dataUrl = await page.evaluate(({ text, large }) => {
     const c = document.createElement('canvas');
     c.width = 1600; c.height = 1100;
     const g = c.getContext('2d')!;
@@ -23,8 +23,9 @@ async function syntheticCard(page: Page, label: string): Promise<Buffer> {
     for (let i = 0; i < 6; i++) g.fillText(`LINE ${i} ${Math.random().toString(36).slice(2, 14).toUpperCase()}`, -500, -90 + i * 60);
     g.fillText('1234 5678 9012', -150, 290);
     g.restore();
+    if (large) { const big = document.createElement('canvas'); big.width = 4800; big.height = 3300; big.getContext('2d')!.drawImage(c, 0, 0, big.width, big.height); return big.toDataURL('image/jpeg', 0.95); }
     return c.toDataURL('image/jpeg', 0.92);
-  }, label);
+  }, { text: label, large });
   return Buffer.from(dataUrl.split(',')[1]!, 'base64');
 }
 
@@ -88,8 +89,10 @@ test('the whole stay: desk check-in with phone scanner, registration card, room 
   await useEditor(page);
   await ishaan.getByTestId('file-input-id_back').setInputFiles({ name: 'dl-back.jpg', mimeType: 'image/jpeg', buffer: await syntheticCard(page, 'BACK') });
   await useEditor(page);
-  await ishaan.getByTestId('file-input-guest_photo').setInputFiles({ name: 'photo.jpg', mimeType: 'image/jpeg', buffer: await syntheticCard(page, 'PHOTO') });
+  const compressedFace = page.waitForRequest((r) => r.url().endsWith('/documents') && r.method() === 'POST' && r.postDataJSON()?.docType === 'guest_photo');
+  await ishaan.getByTestId('file-input-guest_photo').setInputFiles({ name: 'photo.jpg', mimeType: 'image/jpeg', buffer: await syntheticCard(page, 'PHOTO', true) });
   await useEditor(page, { crop: false });
+  expect((await compressedFace).postDataJSON().sizeBytes).toBeLessThanOrEqual(200_000);
   await expect(ishaan.getByRole('status').filter({ hasText: 'Received' })).toHaveCount(3, { timeout: 30_000 });
 
   // Phone scanner for the second guest
@@ -99,6 +102,7 @@ test('the whole stay: desk check-in with phone scanner, registration card, room 
   await page.getByRole('button', { name: 'Show QR code' }).click();
   const { captureUrl, sessionId } = await (await sessionResponse).json();
   await expect(page.getByAltText('QR code for the phone scanner')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open scanner on this phone' })).toHaveAttribute('href', captureUrl);
 
   // The desk is updated over SSE, not by polling (spec §19.2). This goes through the same Next
   // rewrite the app uses, which is the part most likely to buffer a stream and break it silently.
@@ -161,6 +165,22 @@ test('the whole stay: desk check-in with phone scanner, registration card, room 
   await expect(riya.getByLabel('ID type')).toHaveValue('aadhaar', { timeout: 10_000 });
   await page.getByRole('button', { name: 'Done with phone' }).click();
   await phoneCtx.close();
+
+  // Private/restricted phone storage must not prevent a fresh scanner from opening.
+  const renewed = page.waitForResponse((r) => r.url().includes('/capture-sessions') && r.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Show QR code' }).click();
+  const fresh = await (await renewed).json();
+  const restricted = await browser.newContext({ ...devices['iPhone 13'] });
+  await restricted.addInitScript(() => {
+    Storage.prototype.getItem = () => { throw new DOMException('Storage blocked', 'SecurityError'); };
+    Storage.prototype.setItem = () => { throw new DOMException('Storage blocked', 'SecurityError'); };
+  });
+  const safariSized = await restricted.newPage();
+  await safariSized.goto(new URL(fresh.captureUrl).pathname);
+  await expect(safariSized.getByText('This page can only send photos to the desk')).toBeVisible();
+  expect(await safariSized.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Done with phone' }).click();
+  await restricted.close();
 
   // Step 4 — consent and signature
   await page.getByRole('button', { name: 'Next' }).click();

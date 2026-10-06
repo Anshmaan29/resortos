@@ -324,7 +324,7 @@ export class CaptureService {
   }
 
   /** Signed 60-second view URL; every view is logged (spec §19.7). */
-  async viewUrl(actor: Actor, documentId: string) {
+  async viewUrl(actor: Actor, documentId: string, download = false) {
     const { rows } = await this.db.query<GuestDocumentRow & { stay_status: string | null; draft_status: string | null }>(
       `SELECT d.*, s.status AS stay_status, dr.status AS draft_status
          FROM guest_documents d LEFT JOIN stays s ON s.id = d.stay_id LEFT JOIN check_in_drafts dr ON dr.id = d.draft_id
@@ -336,8 +336,8 @@ export class CaptureService {
     const current = d.stay_status === 'in_house' || (d.stay_id === null && d.draft_status === 'active');
     if (actor.user.role !== 'owner' && !current) throw new AppError(ERROR_CODES.FORBIDDEN, 'Documents of past stays can only be viewed by the owner.');
     await this.db.query(
-      `INSERT INTO document_access_log (property_id, document_id, user_id, purpose) VALUES ($1,$2,$3,'view')`, [actor.user.propertyId, d.id, actor.user.id],
+      `INSERT INTO document_access_log (property_id, document_id, user_id, purpose) VALUES ($1,$2,$3,$4)`, [actor.user.propertyId, d.id, actor.user.id, download ? 'download' : 'view'],
     );
-    return this.storage.viewUrl(d.storage_key, d.content_type);
+    return this.storage.viewUrl(d.storage_key, d.content_type, download ? `document-${d.id}.${({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' } as Record<string, string>)[d.content_type] ?? 'bin'}` : undefined);
   }
 }

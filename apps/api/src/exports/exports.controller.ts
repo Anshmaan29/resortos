@@ -29,6 +29,16 @@ export class ExportsController {
     private readonly audit: AuditService,
   ) {}
 
+  @Get('exports/all.xlsx')
+  @Roles('owner')
+  async all(@CurrentActor() actor: Actor, @Res({ passthrough: true }) res: Response) {
+    const out = await this.exports.allRecords(actor);
+    await this.log(actor, 'all-records', 'xlsx', '0001-01-01', '9999-12-31', out.rows);
+    res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="resortos-all-records.xlsx"', 'Cache-Control': 'private, no-store' });
+    return new StreamableFile(out.body);
+  }
+
   @Get('exports/gstr-1.csv')
   @Roles('owner')
   async gstr1(@CurrentActor() actor: Actor, @Query() query: unknown, @Res({ passthrough: true }) res: Response) {

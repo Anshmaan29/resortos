@@ -220,6 +220,12 @@ describe('confirm check-in (spec §18.3, §19.6)', () => {
     expect((await fetch(link.body.url.replace(/X-Amz-Expires=\d+/, 'X-Amz-Expires=86400'))).status).toBe(403);
     const [log] = await sql(`SELECT count(*)::int AS n FROM document_access_log WHERE document_id = $1`, [doc.id]);
     expect(log.n).toBe(1);
+    const download = await desk.get(`/api/v1/documents/${doc.id}/download`).expect(302);
+    const saved = await fetch(download.headers.location!);
+    expect(saved.status).toBe(200);
+    expect(saved.headers.get('content-disposition')).toContain('attachment; filename="document-');
+    const [access] = await sql(`SELECT purpose FROM document_access_log WHERE document_id=$1 ORDER BY id DESC LIMIT 1`, [doc.id]);
+    expect(access.purpose).toBe('download');
   });
 });
 

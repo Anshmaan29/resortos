@@ -1,5 +1,9 @@
+import { generateKeyPairSync } from 'node:crypto';
+import { APP_CONFIG, type AppConfig } from '../src/config';
+import { GoogleSheetsClient } from '../src/sheets/google-client';
+import { inflateRawSync } from 'node:zlib';
 import type { INestApplication } from '@nestjs/common';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { bootAppOnOwnDatabase, login, post, key, type Agent } from './helpers';
 
 /**
@@ -110,6 +114,55 @@ describe('records as Excel and CSV (§43)', () => {
       // The writer is deterministic: the same rows, the same bytes (§36).
       expect((b.body as Buffer).equals(body)).toBe(true);
     }
+  });
+
+  it('downloads every date in one workbook and restricts it to the owner', async () => {
+    const response = await get(owner, '/exports/all.xlsx').expect(200);
+    const bytes = response.body as Buffer;
+    const parts: string[] = [];
+    let offset = 0;
+    while (bytes.readUInt32LE(offset) === 0x04034b50) {
+      const size = bytes.readUInt32LE(offset + 18);
+      const start = offset + 30 + bytes.readUInt16LE(offset + 26) + bytes.readUInt16LE(offset + 28);
+      parts.push(inflateRawSync(bytes.subarray(start, start + size)).toString());
+      offset = start + size;
+    }
+    expect(parts.join('')).toContain(bookingNumber);
+    expect(parts.join('')).toContain(invoiceNumber);
+    expect(parts.join('')).toContain('Form C');
+    expect(parts.join('')).toContain('Daily summaries');
+    await get(desk, '/exports/all.xlsx').expect(403);
+  });
+
+  it('honestly shows Sheets as disconnected and protects the owner connection', async () => {
+    await owner.get('/api/v1/sheets/status').expect(200).expect((r) => expect(r.body.configured).toBe(false));
+    await desk.get('/api/v1/sheets/status').expect(403);
+    await post(owner, '/sheets/sync', {}).expect(400);
+  });
+
+  it('syncs records after a failure, records the outcome and releases the worker lock', async () => {
+    const config = app.get<AppConfig>(APP_CONFIG);
+    const original = { id: config.GOOGLE_SHEETS_ID, credentials: config.GOOGLE_SERVICE_ACCOUNT_JSON };
+    const keys = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    config.GOOGLE_SHEETS_ID = 'hotel-sheet-id-for-test';
+    config.GOOGLE_SERVICE_ACCOUNT_JSON = JSON.stringify({ client_email: 'test@example.iam.gserviceaccount.com', private_key: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }) });
+    const mirror = vi.spyOn(GoogleSheetsClient.prototype, 'replace');
+    try {
+      mirror.mockRejectedValueOnce(new Error('secret provider payload'));
+      await post(owner, '/sheets/sync', {}).expect(503).expect((r) => expect(r.body.message).not.toContain('secret'));
+      await owner.get('/api/v1/sheets/status').expect(200).expect((r) => expect(r.body.lastAttemptOk).toBe(false));
+      mirror.mockResolvedValueOnce(undefined);
+      await post(owner, '/sheets/sync', {}).expect(201);
+      const tabs = mirror.mock.calls[1]![1];
+      expect(tabs.map((s) => s.name)).toContain('ResortOS Bookings');
+      expect(tabs.flatMap((s) => s.rows.flat()).join(' ')).toContain(bookingNumber);
+      expect(tabs.map((s) => s.name)).not.toContain('ResortOS Form C');
+      await owner.get('/api/v1/sheets/status').expect(200).expect((r) => {
+        expect(r.body.lastAttemptOk).toBe(true);
+        expect(r.body.message).toBeNull();
+      });
+      await post(desk, '/sheets/sync', {}).expect(403);
+    } finally { mirror.mockRestore(); config.GOOGLE_SHEETS_ID = original.id; config.GOOGLE_SERVICE_ACCOUNT_JSON = original.credentials; }
   });
 
   it('the bookings CSV carries the booking that was made', async () => {

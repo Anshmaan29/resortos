@@ -8,6 +8,7 @@ import { Card, CardHeader, EmptyState, ErrorBanner, PageHeader, Skeleton } from 
 import { Pill } from '@/components/ui/status';
 import { api } from '@/lib/api';
 import { useMe, useProperty } from '@/lib/session';
+import { SheetsSync } from '@/components/records/sheets-sync';
 import { PoliceRegisterTable } from '@/components/records/police-register-table';
 
 /**
@@ -50,6 +51,12 @@ export default function RecordsPage() {
         title="Records"
         description="Your resort's data, ready to open in Excel or hand to the accountant. Every download is recorded in the audit log."
       />
+
+      <Card>
+        <CardHeader title="Download all records" description="One Excel file with all dates: bookings, guests, stays, payments, invoices, expenses and registers. Photos are available from each guest or stay." />
+        <div className="p-4"><DownloadLink href="/api/v1/exports/all.xlsx" kind="secondary">Download all records (Excel)</DownloadLink></div>
+      </Card>
+      <SheetsSync />
 
       <Card>
         <CardHeader title="Date range" description="Applies to the records that depend on dates." />

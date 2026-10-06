@@ -202,6 +202,7 @@ function DocumentRow({ doc, whose, onError }: { doc: StayDocument; whose: string
           {doc.status === 'verified' ? `Verified ${doc.verifiedAt ? formatDateTime(doc.verifiedAt) : ''}` : doc.status}
         </p>
       </div>
+      {doc.status === 'verified' && <a href={`/api/v1/documents/${doc.id}/download`} className="rounded-md px-3 py-2 text-sm hover:bg-surface-2">Download</a>}
       <Button variant="ghost" size="sm" loading={view.isPending} disabled={doc.status !== 'verified'} onClick={() => view.mutate()}>
         <Eye className="h-4 w-4" />View
       </Button>
