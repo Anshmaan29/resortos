@@ -44,7 +44,7 @@ export default function InvoicesPage() {
                   <th scope="col" className="px-4 py-2 font-medium">Date</th>
                   <th scope="col" className="px-4 py-2 font-medium">Billed to</th>
                   <th scope="col" className="px-4 py-2 text-right font-medium">Taxable</th>
-                  <th scope="col" className="px-4 py-2 text-right font-medium">CGST + SGST</th>
+                  <th scope="col" className="px-4 py-2 text-right font-medium">GST</th>
                   <th scope="col" className="px-4 py-2 text-right font-medium">Total</th>
                 </tr>
               </thead>
@@ -58,7 +58,7 @@ export default function InvoicesPage() {
                     <td className="whitespace-nowrap px-4 py-2 tabular-nums">{formatDate(r.invoiceDate)}</td>
                     <td className="px-4 py-2">{r.buyerName}{r.buyerGstin && <span className="ml-2 text-xs text-text-3">{r.buyerGstin}</span>}</td>
                     <td className="px-4 py-2 text-right tabular-nums">{sign(r) < 0 ? '−' : ''}{formatINR(r.taxable)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{sign(r) < 0 ? '−' : ''}{formatINR(money(r.cgst).plus(r.sgst).toFixed(2))}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{sign(r) < 0 ? '−' : ''}{formatINR(money(r.cgst).plus(r.sgst).plus(r.igst).toFixed(2))}</td>
                     <td className="px-4 py-2 text-right font-medium tabular-nums">{sign(r) < 0 ? '−' : ''}{formatINR(r.total)}</td>
                   </tr>
                 ))}

@@ -440,7 +440,19 @@ export class FolioService {
       largest.amount = largest.amount.plus(drift);
     }
     const allocations = parts.filter((p) => p.amount.gt(0));
-    const percent = round2(wanted.dividedBy(base).times(100));
+    // Enforce the total discount against original charges, including earlier discounts.
+    // Check each affected line too, so a large cheap item cannot hide a deep discount on another.
+    const original = live.filter((l) => l.line_type !== 'discount').reduce((t, l) => t.plus(l.amount), money(0));
+    const existing = live.filter((l) => l.line_type === 'discount').reduce((t, l) => t.minus(l.amount), money(0));
+    const cumulative = existing.plus(wanted);
+    const limit = money(actor.user.discountLimitPercent);
+    const billAboveLimit = cumulative.times(100).gt(original.times(limit));
+    const lineAboveLimit = allocations.some((p) => money(p.line.amount).minus(net.get(p.line.id)!).plus(p.amount).times(100).gt(money(p.line.amount).times(limit)));
+    const billPercent = cumulative.dividedBy(original).times(100);
+    const percent = round2(allocations.reduce((max, p) => {
+      const linePercent = money(p.line.amount).minus(net.get(p.line.id)!).plus(p.amount).dividedBy(p.line.amount).times(100);
+      return linePercent.gt(max) ? linePercent : max;
+    }, billPercent));
 
     const after = [
       ...live,
@@ -457,10 +469,9 @@ export class FolioService {
         ? [{ lineId: a.lineId, name: line.name, businessDate: line.business_date, fromRate: b.ratePercent, toRate: a.ratePercent }]
         : [];
     });
-    const limit = money(actor.user.discountLimitPercent);
     return {
       live, allocations, wanted, base, percent, slabChanges, taxBefore, taxAfter,
-      needsOwner: actor.user.role !== 'owner' && percent.gt(limit),
+      needsOwner: actor.user.role !== 'owner' && (billAboveLimit || lineAboveLimit),
       limit,
     };
   }
@@ -501,10 +512,10 @@ export class FolioService {
         q, actor,
         {
           operation: 'folio.discount',
-          scope: { folioId, parts: plan.allocations.map((p) => [p.line.id, toMoneyString(p.amount)]), reason: input.reason },
+          scope: { folioId, request: { scope: input.scope, lineId: input.lineId, kind: input.kind, value: input.value, reason: input.reason, note: input.note }, live: plan.live.map((l) => [l.id, l.amount]), parts: plan.allocations.map((p) => [p.line.id, toMoneyString(p.amount)]), reason: input.reason },
           reasons: [{
             action: 'discount_above_limit',
-            description: `Discount of ${formatINR(toMoneyString(plan.wanted))} (${toMoneyString(plan.percent)}%) is above the ${toMoneyString(plan.limit)}% limit`,
+            description: `Total discount after this change (${toMoneyString(plan.percent)}%) is above the ${toMoneyString(plan.limit)}% limit`,
           }],
         },
         input.ownerAuthorisationId, { type: 'folio', id: folioId },

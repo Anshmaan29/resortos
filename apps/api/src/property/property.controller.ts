@@ -17,6 +17,10 @@ export class PropertyController {
     return this.property.getProperty(actor.user.propertyId);
   }
 
+  @Get('property/setup-status')
+  @Roles('owner', 'receptionist')
+  setupStatus(@CurrentActor() actor: Actor) { return this.property.setupStatus(actor.user.propertyId); }
+
   @Patch('property/policies')
   @Roles('owner')
   updatePolicies(@CurrentActor() actor: Actor, @Body() body: unknown) {

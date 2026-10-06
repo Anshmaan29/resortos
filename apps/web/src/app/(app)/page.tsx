@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BookUser, ArrowRight, BedDouble, CalendarPlus, Crown, DoorOpen, LogIn, LogOut, UserPlus, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { formatDate, formatINR } from '@resortos/shared';
+import { SetupReminder } from '@/components/setup-reminder';
 import { RoomBoard, RoomLegend } from '@/components/front-desk/room-board';
 import { Button } from '@/components/ui/button';
 import { CountUp } from '@/components/ui/count-up';
@@ -44,6 +45,7 @@ export default function HomePage() {
 
       {desk.isError && <ErrorBanner message={(desk.error as Error).message} onRetry={() => desk.refetch()} />}
 
+      <SetupReminder />
       <FormCReminder />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

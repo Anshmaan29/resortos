@@ -1,5 +1,6 @@
+import { FormCService } from '../src/compliance/form-c.service';
 import type { INestApplication } from '@nestjs/common';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { bootAppOnOwnDatabase, login, post, type Agent } from './helpers';
 
 /**
@@ -97,6 +98,18 @@ describe('Form C (spec §58.1)', () => {
     const summary = (await desk.get('/api/v1/form-c/pending-summary').expect(200)).body;
     expect(summary).toMatchObject({ pending: 1 });
     expect(summary.hoursLeft).toBeGreaterThan(0);
+  });
+
+  it('uses the hotel date for a Form C arrival after midnight in India', async () => {
+    const [record] = await pendingRecords();
+    const service = app.get(FormCService);
+    const original = await service.get((await sql<{ id: string }>(`SELECT id FROM properties`))[0]!.id, record!.id);
+    // Arrival is immutable in the database; substitute only the read timestamp for this boundary.
+    const get = vi.spyOn(service, 'get').mockResolvedValueOnce({ ...original, arrivedAt: new Date('2026-09-16T19:00:00Z') });
+    try {
+      const summary = (await desk.get(`/api/v1/form-c/${record!.id}/portal-summary`).expect(200)).body;
+      expect(JSON.stringify(summary)).toContain('Arrived at resort: 17 Sep 2026');
+    } finally { get.mockRestore(); }
   });
 
   it('opens one record per foreign occupant, never for the Indian ones', async () => {

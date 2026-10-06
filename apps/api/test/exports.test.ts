@@ -154,6 +154,12 @@ describe('records as Excel and CSV (§43)', () => {
       mirror.mockResolvedValueOnce(undefined);
       await post(owner, '/sheets/sync', {}).expect(201);
       const tabs = mirror.mock.calls[1]![1];
+      const columns = tabs.flatMap((s) => s.columns);
+      expect(columns).not.toEqual(expect.arrayContaining(['Email']));
+      for (const forbidden of ['Email', 'City', 'State', 'Address', 'Nationality', 'Company GSTIN', 'VIP', 'Note', 'Purpose', 'Reference', 'Paid to', 'Reason']) expect(columns).not.toContain(forbidden);
+      expect(tabs.find((s) => s.name==='ResortOS Guests')!.rows.every((r) => r[1] === null || /^••••\d{4}$/.test(String(r[1])))).toBe(true);
+      const mobiles = await sql<{ mobile: string }>(`SELECT mobile FROM guests`);
+      for (const g of mobiles) expect(JSON.stringify(tabs)).not.toContain(g.mobile);
       expect(tabs.map((s) => s.name)).toContain('ResortOS Bookings');
       expect(tabs.flatMap((s) => s.rows.flat()).join(' ')).toContain(bookingNumber);
       expect(tabs.map((s) => s.name)).not.toContain('ResortOS Form C');
@@ -163,6 +169,19 @@ describe('records as Excel and CSV (§43)', () => {
       });
       await post(desk, '/sheets/sync', {}).expect(403);
     } finally { mirror.mockRestore(); config.GOOGLE_SHEETS_ID = original.id; config.GOOGLE_SERVICE_ACCOUNT_JSON = original.credentials; }
+  });
+
+  it('defaults exports to the hotel calendar date after midnight and selects the correct financial year', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-09-16T19:00:00Z').getTime());
+    // Only Date construction is clock-mocked; timers/PG I/O stay real.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-16T19:00:00Z'));
+    try {
+      const res = await get(owner, '/exports/payments.csv').expect(200);
+      expect(res.headers['content-disposition']).toContain('2026-04-01-to-2026-09-17');
+      const march = await get(owner, '/exports/payments.csv?to=2026-03-31').expect(200);
+      expect(march.headers['content-disposition']).toContain('2025-04-01-to-2026-03-31');
+    } finally { vi.useRealTimers(); now.mockRestore(); }
   });
 
   it('the bookings CSV carries the booking that was made', async () => {

@@ -9,7 +9,7 @@ export function SheetsSync() {
   const status = useQuery({ queryKey: ['sheets-status'], queryFn: () => api<Status>('/sheets/status'), refetchInterval: 30_000 });
   const sync = useMutation({ mutationFn: () => api('/sheets/sync', { method: 'POST', body: {} }), onSettled: () => { void status.refetch(); } });
   return <Card>
-    <CardHeader title="Google Sheets" description="A copy of bookings, guest contacts, payments, invoices, expenses and daily summaries. Updates every five minutes when connected. Edit hotel records in ResortOS." />
+    <CardHeader title="Google Sheets" description="A copy of bookings, guest names and masked mobiles, payments, invoices, expenses and daily summaries. Updates every five minutes when connected. Edit hotel records in ResortOS." />
     <div className="flex flex-col gap-3 p-4 text-sm">
       {status.isLoading ? <p>Checking connection…</p> : status.isError ? <p role="alert" className="text-danger">{(status.error as Error).message}</p> : !status.data?.configured
         ? <p>Not connected yet. Create a private hotel sheet; the connection can be set up when it is ready.</p>
@@ -24,7 +24,7 @@ export function SheetsSync() {
         </>}
       {sync.isError && <p role="alert" className="text-danger">{(sync.error as Error).message}</p>}
       {sync.isSuccess && <p role="status" className="text-success">Sheet updated.</p>}
-      <p className="text-text-3">ID images, signatures and passport details stay in ResortOS. Keep the sheet private. ResortOS tabs are replaced during sync; use separate tabs for your own notes.</p>
+      <p className="text-text-3">Full phones, email, addresses, private notes, flags and ID details stay in ResortOS. Keep the sheet private. ResortOS tabs are replaced during sync; use separate tabs for your own notes.</p>
     </div>
   </Card>;
 }

@@ -20,6 +20,28 @@ const mapRoomType = (r: RoomTypeRow) => ({
 export class PropertyService {
   constructor(private readonly db: DbService, private readonly audit: AuditService, private readonly outbox: OutboxService) {}
 
+  /** Missing setup is visible before the desk reaches a blocked payment or checkout. */
+  async setupStatus(propertyId: string) {
+    const { rows } = await this.db.query<{
+      rooms_tax: boolean; food_tax: boolean; cash: boolean; upi: boolean; rate_floors: boolean; reception: boolean;
+    }>(`SELECT
+      EXISTS (SELECT 1 FROM tax_rules t WHERE t.property_id=p.id AND t.tax_category='accommodation'
+        AND p.current_business_date >= t.effective_from AND (t.effective_to IS NULL OR p.current_business_date <= t.effective_to)
+        AND t.origin='configured') AS rooms_tax,
+      EXISTS (SELECT 1 FROM tax_rules t WHERE t.property_id=p.id AND t.tax_category='food'
+        AND p.current_business_date >= t.effective_from AND (t.effective_to IS NULL OR p.current_business_date <= t.effective_to)
+        AND t.origin='configured') AS food_tax,
+      EXISTS (SELECT 1 FROM payment_accounts a WHERE a.property_id=p.id AND a.kind='cash' AND a.is_active) AS cash,
+      EXISTS (SELECT 1 FROM payment_accounts a WHERE a.property_id=p.id AND a.kind='upi' AND a.is_active) AS upi,
+      NOT EXISTS (SELECT 1 FROM room_types t WHERE t.property_id=p.id AND t.is_active AND t.min_rate=0) AS rate_floors,
+      EXISTS (SELECT 1 FROM users u WHERE u.property_id=p.id AND u.role='receptionist' AND u.is_active) AS reception
+      FROM properties p WHERE p.id=$1`, [propertyId]);
+    if (!rows[0]) throw notFound('Property');
+    const r = rows[0];
+    return { roomTaxConfigured: r.rooms_tax, foodTaxConfigured: r.food_tax, cashConfigured: r.cash,
+      upiConfigured: r.upi, rateFloorsConfigured: r.rate_floors, receptionistConfigured: r.reception };
+  }
+
   async businessDate(q: Queryable, propertyId: string): Promise<string> {
     const { rows } = await q.query<{ current_business_date: string }>(`SELECT current_business_date FROM properties WHERE id = $1`, [propertyId]);
     if (!rows[0]) throw notFound('Property');

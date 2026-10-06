@@ -25,6 +25,7 @@ const CATEGORY_LABEL: Record<string, string> = { accommodation: 'Rooms', food: '
  * rate and SAC with the resort's CA.
  */
 export function TaxSettings() {
+  const property = useProperty();
   const rules = useQuery({ queryKey: ['tax-rules'], queryFn: () => api<TaxRule[]>('/tax-rules') });
   const [adding, setAdding] = useState(false);
   const [closing, setClosing] = useState<TaxRule | null>(null);
@@ -35,6 +36,9 @@ export function TaxSettings() {
     : '';
   return (
     <div className="flex flex-col gap-5">
+      {!rules.data.some((r) => r.taxCategory === 'accommodation' && !r.isDemoPlaceholder &&
+        r.effectiveFrom <= (property.data?.businessDate ?? '') && (!r.effectiveTo || r.effectiveTo >= (property.data?.businessDate ?? ''))) &&
+        <p role="alert" className="rounded-lg border border-warning/40 bg-warning-soft px-4 py-3 text-sm text-warning">Room GST rules are missing for the business date. Invoicing and checkout cannot finish until reception adds accountant-confirmed rules. Enter the appropriate value bands and SAC; do not guess a rate.</p>}
       {placeholders && (
         <p className="rounded-lg border border-warning/40 bg-warning-soft px-4 py-3 text-sm text-warning">
           Some rules are demo placeholders. Confirm the real rates and SAC codes with your CA, close each placeholder, and add the confirmed rule — the system will not go live on placeholders.

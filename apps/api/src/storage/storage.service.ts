@@ -41,6 +41,8 @@ export class StorageService implements OnModuleDestroy {
     this.webOrigin = new URL(config.PUBLIC_WEB_URL ?? config.WEB_ORIGIN).origin;
     const base = {
       region: config.S3_REGION,
+      maxAttempts: 2,
+      requestHandler: { connectionTimeout: 3_000, requestTimeout: 10_000, throwOnRequestTimeout: true },
       forcePathStyle: config.S3_FORCE_PATH_STYLE,
       credentials: config.S3_ACCESS_KEY_ID && config.S3_SECRET_ACCESS_KEY
         ? { accessKeyId: config.S3_ACCESS_KEY_ID, secretAccessKey: config.S3_SECRET_ACCESS_KEY }
@@ -91,7 +93,7 @@ export class StorageService implements OnModuleDestroy {
   }
 
   async getObject(key: string): Promise<Buffer> {
-    const object = await this.internal.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    const object = await this.internal.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }), { abortSignal: AbortSignal.timeout(15_000) });
     const chunks: Buffer[] = [];
     for await (const chunk of object.Body as Readable) chunks.push(chunk as Buffer);
     return Buffer.concat(chunks);
@@ -101,7 +103,7 @@ export class StorageService implements OnModuleDestroy {
     try {
       const head = await this.internal.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
       if (head.ContentLength !== sizeBytes) return { ok: false, reason: 'size_mismatch' };
-      const object = await this.internal.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      const object = await this.internal.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }), { abortSignal: AbortSignal.timeout(15_000) });
       const hash = createHash('sha256');
       for await (const chunk of object.Body as Readable) hash.update(chunk as Buffer);
       return hash.digest().equals(sha256) ? { ok: true } : { ok: false, reason: 'checksum_mismatch' };
@@ -139,7 +141,7 @@ export class StorageService implements OnModuleDestroy {
 
   /** Readiness check for /health/storage. */
   async ping(): Promise<void> {
-    await this.internal.send(new HeadObjectCommand({ Bucket: this.bucket, Key: '__health__' })).catch((err: unknown) => {
+    await this.internal.send(new HeadObjectCommand({ Bucket: this.bucket, Key: '__health__' }), { abortSignal: AbortSignal.timeout(5_000) }).catch((err: unknown) => {
       if (err instanceof S3ServiceException && err.$metadata.httpStatusCode === 404) return;
       throw err;
     });

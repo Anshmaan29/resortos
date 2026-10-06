@@ -1,15 +1,16 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import localFont from 'next/font/local';
 import type { ReactNode } from 'react';
 import { Providers } from './providers';
 import './globals.css';
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
+const inter = localFont({ src: '../fonts/inter-latin.woff2', weight: '100 900', style: 'normal', variable: '--font-inter', display: 'swap' });
 
 export const metadata: Metadata = {
   title: { default: 'ResortOS', template: '%s · ResortOS' },
   description: 'Resort management for Indian resorts',
   applicationName: 'ResortOS',
+  robots: { index: false, follow: false },
 };
 
 export const viewport: Viewport = {

@@ -20,6 +20,19 @@ beforeAll(async () => {
 }, 120_000);
 afterAll(async () => { await app.close(); });
 
+describe('setup checks', () => {
+  it('shows effective tax/payment/staff setup and protects paid storage health probes', async () => {
+    const res = await owner.get('/api/v1/property/setup-status').expect(200);
+    expect(res.body).toMatchObject({ cashConfigured: true, upiConfigured: true, receptionistConfigured: true });
+    // Development's placeholder taxes deliberately do not count as accountant-confirmed setup.
+    expect(typeof res.body.roomTaxConfigured).toBe('boolean');
+    await desk.get('/api/v1/property/setup-status').expect(200);
+    await desk.get('/api/v1/health/storage').expect(403);
+    const users = (await owner.get('/api/v1/users').expect(200)).body;
+    expect(users.find((u: any) => u.role==='owner').canRunNightAudit).toBe(true);
+  });
+});
+
 describe('policies', () => {
   it('are the owner’s, versioned, audited, and email cannot be switched on without a sender', async () => {
     const { body: p } = await owner.get('/api/v1/property').expect(200);

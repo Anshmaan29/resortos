@@ -1,6 +1,6 @@
 import { Controller, Get, Param, Query, Res, StreamableFile } from '@nestjs/common';
 import type { Response } from 'express';
-import { ERROR_CODES, zIsoDate } from '@resortos/shared';
+import { ERROR_CODES, todayIn, zIsoDate } from '@resortos/shared';
 import { z } from 'zod';
 import { CurrentActor, Roles } from '../common/decorators';
 import type { Actor } from '../common/request-context';
@@ -42,7 +42,7 @@ export class ExportsController {
   @Get('exports/gstr-1.csv')
   @Roles('owner')
   async gstr1(@CurrentActor() actor: Actor, @Query() query: unknown, @Res({ passthrough: true }) res: Response) {
-    const { from, to } = this.range(query);
+    const { from, to } = await this.range(actor.user.propertyId, query);
     const { csv, rows } = await this.exports.gstr1(actor, from, to);
     await this.log(actor, 'gstr-1', 'csv', from, to, rows);
     res.set({
@@ -56,7 +56,7 @@ export class ExportsController {
   @Get('exports/tally.xml')
   @Roles('owner')
   async tally(@CurrentActor() actor: Actor, @Query() query: unknown, @Res({ passthrough: true }) res: Response) {
-    const { from, to } = this.range(query);
+    const { from, to } = await this.range(actor.user.propertyId, query);
     const { xml, count } = await this.exports.tallyXml(actor, from, to);
     await this.log(actor, 'tally', 'xml', from, to, count);
     res.set({
@@ -76,7 +76,7 @@ export class ExportsController {
     if (dot <= 0 || !(EXPORT_KINDS as readonly string[]).includes(kind) || !['xlsx', 'csv', 'pdf'].includes(ext)) {
       throw new AppError(ERROR_CODES.VALIDATION, `Unknown export "${file}". Available: ${EXPORT_KINDS.join(', ')} as xlsx or csv (police register also pdf), gstr-1.csv, tally.xml.`);
     }
-    const { from, to } = this.range(query);
+    const { from, to } = await this.range(actor.user.propertyId, query);
     const out = await this.exports.download(actor, kind as ExportKind, ext as 'xlsx' | 'csv' | 'pdf', from, to);
     await this.log(actor, kind, ext, from, to, out.rows);
     res.set({
@@ -96,10 +96,14 @@ export class ExportsController {
   }
 
   /** Every export is a range; with none picked, the financial year so far. */
-  private range(query: unknown): { from: string; to: string } {
+  private async range(propertyId: string, query: unknown): Promise<{ from: string; to: string }> {
     const { from, to } = parse(querySchema, query);
-    const today = new Date();
-    const fyStart = today.getMonth() >= 3 ? `${today.getFullYear()}-04-01` : `${today.getFullYear() - 1}-04-01`;
-    return { from: from ?? fyStart, to: to ?? today.toISOString().slice(0, 10) };
+    const { rows } = await this.db.query<{ timezone: string }>(`SELECT timezone FROM properties WHERE id=$1`, [propertyId]);
+    const today = todayIn(rows[0]!.timezone);
+    // An explicitly selected historical end date also selects its financial year.
+    const end = to ?? today;
+    const year = Number(end.slice(0, 4));
+    const fyStart = `${Number(end.slice(5, 7)) >= 4 ? year : year - 1}-04-01`;
+    return parse(querySchema, { from: from ?? fyStart, to: end }) as { from: string; to: string };
   }
 }

@@ -1,7 +1,7 @@
 'use client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { BedDouble, Building2, Lock, BookUser, CalendarDays, ChevronDown, ClipboardCheck, ClipboardList, FileText, Globe, Home, Landmark, LogOut, Menu, MoonStar, Palmtree, Plus, Search, Settings, Sparkles, SprayCan, UserRound, Wallet, Wrench, WifiOff } from 'lucide-react';
+import { BedDouble, DoorOpen, Building2, Lock, BookUser, CalendarDays, ChevronDown, ClipboardCheck, ClipboardList, FileText, Globe, Home, Landmark, LogOut, Menu, MoonStar, Palmtree, Plus, Search, Settings, Sparkles, SprayCan, UserRound, Wallet, Wrench, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -19,7 +19,7 @@ const NAV = [
   { href: '/guests', label: 'Guests', icon: UserRound, phone: true },
   { href: '/in-house', label: 'In house', icon: BedDouble, phone: true },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays, phone: false },
-  { href: '/rooms', label: 'Rooms', icon: BedDouble, phone: false },
+  { href: '/rooms', label: 'Rooms', icon: DoorOpen, phone: false },
   { href: '/housekeeping', label: 'Housekeeping', icon: SprayCan, phone: false },
   { href: '/form-c', label: 'Form C', icon: BookUser, phone: false },
   { href: '/maintenance', label: 'Maintenance', icon: Wrench, phone: false },

@@ -165,6 +165,6 @@ describe('OTA bookings', () => {
 
   it('every booking made today is on the "availability changed today" list', async () => {
     const list = (await desk.get('/api/v1/availability-changes/today').expect(200)).body;
-    expect(list.some((e: any) => String(e.what).includes('booking_com'))).toBe(true);
+    expect(list.some((e: any) => String(e.what).includes('Booking.com'))).toBe(true);
   });
 });

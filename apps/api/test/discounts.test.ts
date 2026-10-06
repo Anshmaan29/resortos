@@ -146,6 +146,41 @@ describe('the receptionist limit', () => {
   });
 });
 
+describe('cumulative limits cannot be split into small requests', () => {
+  it('allows 10%, blocks the next 10%, and binds owner approval to the live bill', async () => {
+    const { folioId, stayId } = await stayWithNight('209', 'PRE', '6000.00', '9820055010');
+    const body = { scope: 'bill', kind: 'percent', value: '10', reason: 'regular_guest' };
+    const first = (await post(desk, `/folios/${folioId}/discounts`, body).expect(200)).body;
+    const preview = (await post(desk, `/folios/${folioId}/discounts/preview`, body, null).expect(200)).body;
+    expect(preview).toMatchObject({ needsOwner: true, percentOfCharges: '19.00' });
+    const refused = await post(desk, `/folios/${folioId}/discounts`, body).expect(403);
+    expect(refused.body.code).toBe('OWNER_PIN_REQUIRED');
+    expect((await desk.get(`/api/v1/stays/${stayId}/bill`)).body.charges).toBe('5400.00');
+    const approved = await approve(desk, refused.body.details.authorisationId, await ownerId()).expect(200);
+    const part = first.lines.find((l: any) => l.lineType === 'discount');
+    // A change to the bill makes the previous owner's approval unusable.
+    await post(owner, `/folio-lines/${part.id}/void`, { reason: 'Undo practice discount' }).expect(200);
+    await post(owner, `/folios/${folioId}/discounts`, { ...body, value: '5' }).expect(200);
+    await post(desk, `/folios/${folioId}/discounts`, { ...body, ownerAuthorisationId: approved.body.authorisationId }).expect(403);
+  });
+
+  it('checks line and bill scopes together, even when the bill total hides a deep line discount', async () => {
+    const { folioId, stayId } = await stayWithNight('210', 'PRE', '6000.00', '9820055011');
+    await post(owner, `/folios/${folioId}/charges`, { lineType: 'food', name: 'Practice meal', quantity: 1, unitRate: '50000' }).expect(200);
+    const room = (await desk.get(`/api/v1/stays/${stayId}/bill`)).body.lines.find((l: any) => l.lineType === 'room_night');
+    await post(desk, `/folios/${folioId}/discounts`, { scope: 'line', lineId: room.id, kind: 'amount', value: '600', reason: 'regular_guest' }).expect(200);
+    await post(desk, `/folios/${folioId}/discounts`, { scope: 'bill', kind: 'amount', value: '0.10', reason: 'rounding' }).expect(403);
+    await post(desk, `/folios/${folioId}/discounts`, { scope: 'line', lineId: room.id, kind: 'amount', value: '0.01', reason: 'rounding' }).expect(403);
+  });
+
+  it('serialises simultaneous discounts so both cannot pass the same remaining limit', async () => {
+    const { folioId } = await stayWithNight('208', 'PRE', '6000.00', '9820055012');
+    const body = { scope: 'bill', kind: 'percent', value: '10', reason: 'regular_guest' };
+    const results = await Promise.all([post(desk, `/folios/${folioId}/discounts`, body), post(desk, `/folios/${folioId}/discounts`, body)]);
+    expect(results.map((r) => r.status).sort()).toEqual([200, 403]);
+  });
+});
+
 describe('the database', () => {
   it('refuses a discount larger than its charge, a discount of a discount, and editing either', async () => {
     const { folioId } = await stayWithNight('103', 'DLX', '3000.00', '9820055005');

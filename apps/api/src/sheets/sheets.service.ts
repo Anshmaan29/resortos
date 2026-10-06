@@ -7,6 +7,8 @@ import { DbService } from '../db/db.service';
 import { ExportsService, type ExportKind } from '../exports/exports.service';
 import { GoogleSheetsClient, SheetsError, type MirrorSheet } from './google-client';
 
+import { safeProjection } from './safe-projection';
+
 const KINDS: ExportKind[] = ['bookings', 'guests', 'payments', 'invoices', 'expenses', 'daily-summaries'];
 @Injectable()
 export class SheetsService {
@@ -50,7 +52,7 @@ export class SheetsService {
         const sheets: MirrorSheet[] = [];
         for (const kind of KINDS) {
           const data = await this.exports.sheetRows(kind, propertyId, '0001-01-01', '9999-12-31');
-          sheets.push({ name: `ResortOS ${data.title}`, columns: data.columns, rows: data.rows });
+          sheets.push(safeProjection(kind, data));
         }
         await new GoogleSheetsClient(this.config.GOOGLE_SERVICE_ACCOUNT_JSON!).replace(this.config.GOOGLE_SHEETS_ID!, sheets);
         await this.db.tx({}, (q) => this.audit.recordSystem(q, propertyId, { action: 'sheets.synced', entityType: 'property', entityId: propertyId, after: { ok: true, rows: sheets.reduce((n, s) => n + s.rows.length, 0) } }));

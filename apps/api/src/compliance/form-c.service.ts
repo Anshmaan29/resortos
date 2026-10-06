@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ERROR_CODES, FORM_C_REQUIRED, formatDate, type FormCDetailsInput } from '@resortos/shared';
+import { ERROR_CODES, FORM_C_REQUIRED, formatDate, todayIn, type FormCDetailsInput } from '@resortos/shared';
 import { AuditService } from '../common/audit.service';
 import { AppError, notFound, staleVersion } from '../common/errors';
 import type { Actor } from '../common/request-context';
@@ -222,6 +222,8 @@ export class FormCService {
   async portalSummary(propertyId: string, id: string) {
     const record = await this.get(propertyId, id);
     const d = record.details;
+    const { rows: properties } = await this.db.query<{ timezone: string }>(`SELECT timezone FROM properties WHERE id=$1`, [propertyId]);
+    const arrivalDate = todayIn(properties[0]!.timezone, new Date(record.arrivedAt));
     const lines = [
       ['Name', record.guestName], ['Nationality', record.nationality],
       ['Passport number', d.passportNumber], ['Passport place of issue', d.passportPlaceOfIssue],
@@ -231,7 +233,7 @@ export class FormCService {
       ['Visa issued', d.visaIssueDate && formatDate(d.visaIssueDate)],
       ['Visa expires', d.visaExpiryDate && formatDate(d.visaExpiryDate)],
       ['Arrived in India', d.arrivalInIndiaDate && formatDate(d.arrivalInIndiaDate)], ['Port of arrival', d.arrivalPort],
-      ['Arrived at resort', formatDate(new Date(record.arrivedAt).toISOString().slice(0, 10))],
+      ['Arrived at resort', formatDate(arrivalDate)],
       ['Room', record.roomNumber], ['Expected departure', formatDate(record.expectedDeparture)],
       ['Next destination', d.nextDestination],
       ['Address in India', d.addressInIndia], ['Contact in India', d.contactInIndia],

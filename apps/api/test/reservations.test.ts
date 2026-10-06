@@ -160,3 +160,13 @@ describe('manual extra guest prices', () => {
     await post(desk, '/reservations/estimate', { arrival: body.arrival, departure: body.departure, rooms: [{ ...room, extraPersonRate: '-1' }] }, null).expect(400);
   });
 });
+
+
+describe('calendar range', () => {
+  it('honours an explicit exclusive end and refuses oversized or ambiguous ranges', async () => {
+    const range = await desk.get('/api/v1/calendar?from=2026-11-01&to=2026-11-29').expect(200);
+    expect(range.body.to).toBe('2026-11-29');
+    await desk.get('/api/v1/calendar?from=2026-11-01&to=2027-11-01').expect(400);
+    await desk.get('/api/v1/calendar?from=2026-11-01&to=2026-11-10&days=3').expect(400);
+  });
+});

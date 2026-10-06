@@ -100,7 +100,7 @@ export default function RecordsPage() {
       <Card>
         <CardHeader title="For the accountant" description="Tax summaries for your accountant. Confirm the ledger mapping and a sample import before using Tally vouchers." />
         <div className="flex flex-wrap gap-2 px-4 pb-4">
-          <DownloadLink kind="secondary" href={`/api/v1/exports/gstr-1.csv?from=${range.from}&to=${range.to}`}>GSTR-1 ready (CSV)</DownloadLink>
+          <DownloadLink kind="secondary" href={`/api/v1/exports/gstr-1.csv?from=${range.from}&to=${range.to}`}>GSTR-1 summary (CSV)</DownloadLink>
           <DownloadLink kind="secondary" href={`/api/v1/exports/tally.xml?from=${range.from}&to=${range.to}`}>Tally vouchers (XML)</DownloadLink>
         </div>
       </Card>

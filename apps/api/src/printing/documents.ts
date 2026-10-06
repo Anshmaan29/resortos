@@ -177,9 +177,11 @@ export function renderInvoicePdf(input: InvoicePrint): Promise<Buffer> {
   row('Taxable value', inr(input.taxableTotal));
   for (const g of input.groups) {
     if (Number(g.ratePercent) === 0) continue;
-    row(`CGST ${Number(g.ratePercent) / 2}% on ${inr(g.taxableValue)}`, inr(g.cgst));
-    row(`SGST ${Number(g.ratePercent) / 2}% on ${inr(g.taxableValue)}`, inr(g.sgst));
     if (Number(g.igst)) row(`IGST ${Number(g.ratePercent)}% on ${inr(g.taxableValue)}`, inr(g.igst));
+    else {
+      row(`CGST ${Number(g.ratePercent) / 2}% on ${inr(g.taxableValue)}`, inr(g.cgst));
+      row(`SGST ${Number(g.ratePercent) / 2}% on ${inr(g.taxableValue)}`, inr(g.sgst));
+    }
   }
   if (Number(input.roundOff) !== 0) row('Round off', inr(input.roundOff));
   hr(doc, sumX, 260, 4);

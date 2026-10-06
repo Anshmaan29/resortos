@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ERROR_CODES, formatReference, money, OTA_SOURCES, toMoneyString, type OtaBookingInput, type OtaPayoutInput } from '@resortos/shared';
+import { ERROR_CODES, formatReference, money, OTA_SOURCES, BOOKING_SOURCE_LABELS, toMoneyString, type OtaBookingInput, type OtaPayoutInput } from '@resortos/shared';
 import { AuditService } from '../common/audit.service';
 import { AppError, notFound, staleVersion } from '../common/errors';
 import type { Actor } from '../common/request-context';
@@ -169,19 +169,21 @@ export class OtaService {
    * cancellation, extension and out-of-order already writes to the outbox — nothing new to forget.
    */
   async availabilityChangedToday(propertyId: string) {
-    const { rows } = await this.db.query<{ id: string; created_at: Date; aggregate_type: string; aggregate_id: string | null; payload: { from?: string; to?: string }; label: string | null }>(
+    const { rows } = await this.db.query<{ id: string; created_at: Date; aggregate_type: string; aggregate_id: string | null; payload: { from?: string; to?: string }; label: string | null; source: keyof typeof BOOKING_SOURCE_LABELS | null }>(
       `SELECT e.id, e.created_at, e.aggregate_type, e.aggregate_id, e.payload,
+              (SELECT r.source FROM reservations r WHERE e.aggregate_type='reservation' AND r.id=e.aggregate_id) AS source,
               COALESCE(
-                (SELECT r.number || ' · ' || r.source FROM reservations r WHERE e.aggregate_type = 'reservation' AND r.id = e.aggregate_id),
+                (SELECT r.number FROM reservations r WHERE e.aggregate_type = 'reservation' AND r.id = e.aggregate_id),
                 (SELECT 'Room ' || rm.number FROM rooms rm WHERE e.aggregate_type = 'room' AND rm.id = e.aggregate_id),
                 (SELECT 'Room ' || rm.number || ' stay' FROM stays s JOIN rooms rm ON rm.id = s.room_id WHERE e.aggregate_type = 'stay' AND s.id = e.aggregate_id)
               ) AS label
          FROM outbox_events e JOIN properties p ON p.id = e.property_id
         WHERE e.property_id = $1 AND e.topic = 'inventory.changed'
+          AND e.payload->>'from' IS NOT NULL AND e.payload->>'to' IS NOT NULL
           AND e.created_at >= (date_trunc('day', now() AT TIME ZONE p.timezone) AT TIME ZONE p.timezone)
         ORDER BY e.created_at DESC LIMIT 200`,
       [propertyId],
     );
-    return rows.map((r) => ({ id: r.id, at: r.created_at, what: r.label ?? r.aggregate_type, from: r.payload.from ?? null, to: r.payload.to ?? null }));
+    return rows.map((r) => ({ id: r.id, at: r.created_at, what: r.source ? `${r.label ?? r.aggregate_type} · ${BOOKING_SOURCE_LABELS[r.source]}` : r.label ?? r.aggregate_type, from: r.payload.from ?? null, to: r.payload.to ?? null }));
   }
 }

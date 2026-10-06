@@ -41,7 +41,7 @@ export function PropertySettings() {
         <Field label="PIN code" required error={save.fields.pinCode}>{(id) => <Input id={id} inputMode="numeric" value={f.pinCode} onChange={set('pinCode')} maxLength={6} />}</Field>
         <Field label="State" required>{(id) => (
           <Select id={id} value={f.stateCode} onChange={set('stateCode')}>
-            {Object.entries(GST_STATE_CODES).map(([code, name]) => <option key={code} value={code}>{name} ({code})</option>)}
+            {Object.entries(GST_STATE_CODES).sort((a, b) => a[1].localeCompare(b[1])).map(([code, name]) => <option key={code} value={code}>{name} ({code})</option>)}
           </Select>)}</Field>
         <Field label="GSTIN" hint="Leave empty if not registered — invoices then become bills of supply with no tax"
           error={gstinBad ? 'Not a valid GSTIN for this state' : save.fields.gstin}>

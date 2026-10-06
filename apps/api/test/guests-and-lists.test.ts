@@ -65,6 +65,19 @@ describe('guest search (spec §16)', () => {
     expect(loose.body.map((g: { fullName: string }) => g.fullName)).toContain(vehicle.guest);
   });
 
+  it('matches typed wildcard characters literally and supports recent browsing', async () => {
+    for (const q of ['%%', '__']) {
+      const res = await desk.get('/api/v1/guests').query({ q }).expect(200);
+      expect(res.body).toEqual([]);
+    }
+    const [guest] = await sql<{ id: string; mobile: string }>(`SELECT id, mobile FROM guests WHERE merged_into_id IS NULL LIMIT 1`);
+    if (guest) {
+      const res = await desk.get('/api/v1/guests').query({ q: guest.mobile }).expect(200);
+      expect(res.body[0].mobile).toBe(guest.mobile);
+    }
+    expect((await desk.get('/api/v1/guests').expect(200)).body.length).toBeGreaterThan(0);
+  });
+
   it('still finds by mobile, part of a name and booking number', async () => {
     const created = await post(owner, '/reservations', {
       ...booking({ roomTypeId: f.type('DLX'), arrival: '2026-12-01', departure: '2026-12-03' }),

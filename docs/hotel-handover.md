@@ -22,7 +22,7 @@ Sheets setup can wait until the hotel creates its private blank sheet. Operator 
 2. Share the blank sheet with the key's `client_email` as **Editor**. Keep the sheet private.
 3. In Railway's resortos service, save `GOOGLE_SERVICE_ACCOUNT_JSON` as the complete JSON key and `GOOGLE_SHEETS_ID` as the ID between `/d/` and `/edit` in the sheet URL. Keys never belong in chat, source control, or the browser.
 4. Deploy, open **Records → Google Sheets**, and click **Sync now**. Check the result in the sheet. Background jobs refresh it every five minutes.
-5. Keep your own notes in separate tabs. Tabs starting with `ResortOS ` used by this integration are owned by the mirror and their cell values are replaced on every sync. Bookings, guest directory, payments, invoices, expenses and daily summaries are copied; ID images, signatures and Form C/passport details are not.
+5. Keep your own notes in separate tabs. Tabs starting with `ResortOS ` used by this integration are owned by the mirror and their cell values are replaced on every sync. Bookings, guest names and masked mobiles, payments, invoices, expenses and daily summaries are copied; Full phones, email, addresses, notes, flags, ID images, signatures and Form C/passport details are not.
 
 A sync failure does not block bookings. The status shows the last attempt and its error; the next scheduled sync retries. Current limit: 24,999 data rows per mirrored tab; exceeding it reports an error rather than silently dropping records. This connection supports one hotel per deployment.
 

@@ -184,7 +184,7 @@ export function CheckoutDialog({ stay, open, onClose, onDone }: {
               <Line k={`Billed to ${invoice.data.buyer.name}${invoice.data.buyer.gstin ? ` · ${invoice.data.buyer.gstin}` : ''}`} v="" />
               <Line k="Taxable value" v={formatINR(invoice.data.taxableTotal)} />
               {invoice.data.groups.filter((g) => Number(g.ratePercent) > 0).map((g) => (
-                <Line key={g.ratePercent} k={`CGST + SGST at ${Number(g.ratePercent)}%`} v={formatINR(money(g.cgst).plus(g.sgst).toFixed(2))} />
+                <Line key={g.ratePercent} k={`${Number(g.igst) ? 'IGST' : 'CGST + SGST'} at ${Number(g.ratePercent)}%`} v={formatINR(money(g.cgst).plus(g.sgst).plus(g.igst).toFixed(2))} />
               ))}
               {Number(invoice.data.roundOff) !== 0 && <Line k="Round off" v={formatINR(invoice.data.roundOff)} />}
               <Line k="Invoice total" v={formatINR(invoice.data.grandTotal)} strong />
