@@ -27,17 +27,17 @@ describe('double-booking protection (spec §13)', () => {
   });
 
   it('many concurrent unassigned bookings never exceed room-type capacity', async () => {
-    // Pool Villa has 2 rooms.
+    // Executive has 2 rooms (101, 107).
     const attempts = Array.from({ length: 6 }, () =>
-      post(desk, '/reservations', booking({ roomTypeId: f.type('VILLA'), arrival: '2026-11-10', departure: '2026-11-12', adults: 4 })));
+      post(desk, '/reservations', booking({ roomTypeId: f.type('EXE'), arrival: '2026-11-10', departure: '2026-11-12', adults: 2 })));
     const results = await Promise.all(attempts);
     expect(results.filter((r) => r.status === 201)).toHaveLength(2);
     expect(results.filter((r) => r.status === 409)).toHaveLength(4);
   });
 
   it('allows checkout and new arrival in the same room on the same day', async () => {
-    await post(desk, '/reservations', booking({ roomTypeId: f.type('STD'), roomId: f.room('103'), arrival: '2026-10-20', departure: '2026-10-22' })).expect(201);
-    await post(desk, '/reservations', booking({ roomTypeId: f.type('STD'), roomId: f.room('103'), arrival: '2026-10-22', departure: '2026-10-23' })).expect(201);
+    await post(desk, '/reservations', booking({ roomTypeId: f.type('DLX'), roomId: f.room('103'), arrival: '2026-10-20', departure: '2026-10-22' })).expect(201);
+    await post(desk, '/reservations', booking({ roomTypeId: f.type('DLX'), roomId: f.room('103'), arrival: '2026-10-22', departure: '2026-10-23' })).expect(201);
   });
 
   it('the database itself rejects overlapping allocations, even bypassing the API', async () => {
@@ -53,7 +53,7 @@ describe('double-booking protection (spec §13)', () => {
 describe('idempotency (spec §51)', () => {
   it('double-click with the same key creates one booking', async () => {
     const k = key();
-    const body = booking({ roomTypeId: f.type('PCOT'), arrival: '2026-12-01', departure: '2026-12-03' });
+    const body = booking({ roomTypeId: f.type('PRE'), arrival: '2026-12-01', departure: '2026-12-03' });
     const [a, b] = await Promise.all([post(desk, '/reservations', body, k), post(desk, '/reservations', body, k)]);
     const ok = [a, b].filter((r) => r.status === 201);
     expect(ok.length).toBeGreaterThanOrEqual(1);
@@ -66,7 +66,7 @@ describe('idempotency (spec §51)', () => {
   });
 
   it('rejects mutations without a key', async () => {
-    const res = await post(desk, '/reservations', booking({ roomTypeId: f.type('PCOT'), arrival: '2026-12-01', departure: '2026-12-02' }), null);
+    const res = await post(desk, '/reservations', booking({ roomTypeId: f.type('PRE'), arrival: '2026-12-01', departure: '2026-12-02' }), null);
     expect(res.status).toBe(400);
   });
 });
@@ -83,7 +83,7 @@ describe('cancellation (spec §15)', () => {
   });
 
   it('refuses money options when nothing was paid', async () => {
-    const created = await post(desk, '/reservations', booking({ roomTypeId: f.type('STD'), arrival: '2026-10-11', departure: '2026-10-12' })).expect(201);
+    const created = await post(desk, '/reservations', booking({ roomTypeId: f.type('DLX'), arrival: '2026-10-11', departure: '2026-10-12' })).expect(201);
     const res = await post(desk, `/reservations/${created.body.id}/cancel`, { reason: 'guest_request', moneyOption: 'refund' });
     expect(res.status).toBe(400);
   });
@@ -97,13 +97,13 @@ describe('cancellation (spec §15)', () => {
 
 describe('validation', () => {
   it('rejects past arrival, over-occupancy and duplicate OTA references', async () => {
-    const past = await post(desk, '/reservations', booking({ roomTypeId: f.type('STD'), arrival: '2026-09-10', departure: '2026-09-12' }));
+    const past = await post(desk, '/reservations', booking({ roomTypeId: f.type('DLX'), arrival: '2026-09-10', departure: '2026-09-12' }));
     expect(past.status).toBe(400);
-    const crowd = await post(desk, '/reservations', booking({ roomTypeId: f.type('STD'), arrival: '2026-10-01', departure: '2026-10-02', adults: 5 }));
+    const crowd = await post(desk, '/reservations', booking({ roomTypeId: f.type('DLX'), arrival: '2026-10-01', departure: '2026-10-02', adults: 5 }));
     expect(crowd.status).toBe(400);
     const ota = { source: 'agoda', otaReference: 'AG-99887766' };
-    await post(desk, '/reservations', booking({ roomTypeId: f.type('STD'), arrival: '2026-10-03', departure: '2026-10-04', extra: ota })).expect(201);
-    const dup = await post(desk, '/reservations', booking({ roomTypeId: f.type('STD'), arrival: '2026-10-05', departure: '2026-10-06', extra: ota }));
+    await post(desk, '/reservations', booking({ roomTypeId: f.type('DLX'), arrival: '2026-10-03', departure: '2026-10-04', extra: ota })).expect(201);
+    const dup = await post(desk, '/reservations', booking({ roomTypeId: f.type('DLX'), arrival: '2026-10-05', departure: '2026-10-06', extra: ota }));
     expect(dup.status).toBe(409);
   });
 });

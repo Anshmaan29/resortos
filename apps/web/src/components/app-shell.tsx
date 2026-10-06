@@ -1,7 +1,7 @@
 'use client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { BedDouble, Building2, Lock, CalendarDays, ChevronDown, ClipboardCheck, ClipboardList, FileText, Globe, Home, Landmark, LogOut, MoonStar, Palmtree, Plus, Search, Settings, UserRound, Wallet, WifiOff } from 'lucide-react';
+import { BedDouble, Building2, Lock, BookUser, CalendarDays, ChevronDown, ClipboardCheck, ClipboardList, FileText, Globe, Home, Landmark, LogOut, MoonStar, Palmtree, Plus, Search, Settings, Sparkles, SprayCan, UserRound, Wallet, Wrench, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -19,6 +19,9 @@ const NAV = [
   { href: '/in-house', label: 'In house', icon: BedDouble, phone: true },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays, phone: false },
   { href: '/rooms', label: 'Rooms', icon: BedDouble, phone: false },
+  { href: '/housekeeping', label: 'Housekeeping', icon: SprayCan, phone: false },
+  { href: '/form-c', label: 'Form C', icon: BookUser, phone: false },
+  { href: '/maintenance', label: 'Maintenance', icon: Wrench, phone: false },
   { href: '/shifts', label: 'Shift', icon: Wallet, phone: false },
   { href: '/night-audit', label: 'Night audit', icon: MoonStar, phone: false },
   { href: '/review', label: 'To review', icon: ClipboardCheck, phone: false, owner: true },
@@ -26,6 +29,8 @@ const NAV = [
   { href: '/invoices', label: 'Invoices', icon: FileText, phone: false, owner: true },
   { href: '/companies', label: 'Companies', icon: Building2, phone: false, owner: true },
   { href: '/ota', label: 'OTA payouts', icon: Globe, phone: false, owner: true },
+  { href: '/expenses', label: 'Expenses', icon: Wallet, phone: false, owner: true },
+  { href: '/records', label: 'Records', icon: Sparkles, phone: false, owner: true },
   { href: '/settings', label: 'Settings', icon: Settings, phone: false },
 ];
 

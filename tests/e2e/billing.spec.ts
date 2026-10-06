@@ -12,7 +12,7 @@ async function loginAs(page: Page, username: string, password: string) {
 }
 
 /**
- * The seeded in-house bookings predate stay rows, so the stay for room C1 is created here the same
+ * The seeded in-house bookings predate stay rows, so the stay for room 201 is created here the same
  * way the API suites create theirs: a confirmed draft and a stay for the booking already in the room.
  */
 async function stayInRoom(number: string): Promise<string> {
@@ -56,7 +56,7 @@ test('a stay with food and an activity, paid card + UPI, checks out with a tax i
   await page.getByRole('button', { name: 'Open shift' }).click();
   await expect(page.getByText('Shift opened')).toBeVisible();
 
-  const stayId = await stayInRoom('C1');
+  const stayId = await stayInRoom('201');
   await page.goto(`/stays/${stayId}`);
 
   const addCharge = async (type: string, name: string, quantity: string, rate: string) => {
@@ -92,7 +92,7 @@ test('a stay with food and an activity, paid card + UPI, checks out with a tax i
   await expect(page.getByRole('definition').filter({ hasText: /^₹0$/ })).toBeVisible();
 
   await page.getByRole('button', { name: 'Check out' }).click();
-  const checkout = page.getByRole('dialog', { name: 'Check out room C1?' });
+  const checkout = page.getByRole('dialog', { name: 'Check out room 201?' });
   await expect(checkout.getByText('Tax invoice to be issued')).toBeVisible();
   await expect(checkout.getByText('Nothing is blocking this checkout.')).toBeVisible();
   await checkout.getByRole('button', { name: 'Issue invoice and check out' }).click();

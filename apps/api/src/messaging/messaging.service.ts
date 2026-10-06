@@ -51,7 +51,7 @@ export interface QueueRequest {
 }
 
 const mapMessage = (r: MessageRow) => ({
-  id: r.id, templateKey: r.template_key, templateLabel: TEMPLATE_LABELS[r.template_key], channel: r.channel, language: r.language,
+  id: r.id, templateKey: r.template_key, templateLabel: TEMPLATE_LABELS[r.template_key as keyof typeof TEMPLATE_LABELS] ?? (r.template_key as string === 'daily_summary' ? 'Owner daily summary' : r.template_key), channel: r.channel, language: r.language,
   recipient: r.recipient, trigger: r.trigger, subject: r.subject, body: r.body, status: r.status,
   skipReason: r.skip_reason, lastError: r.last_error, attempts: r.attempts, sendAfter: r.send_after,
   queuedAt: r.queued_at, sentAt: r.sent_at, deliveredAt: r.delivered_at, failedAt: r.failed_at, resendOf: r.resend_of,
@@ -454,6 +454,26 @@ export class MessagingService {
       );
       return mapMessage(rows[0]!);
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Owner daily summary (§42) — sent after the night audit closes a day
+  // ---------------------------------------------------------------------------
+
+  /**
+   * One row per date and recipient (`messages_once_per_cause`), body already rendered by the handler
+   * — the summary is computed numbers, not a template with variables. It goes out immediately: the
+   * audit has just closed the day, and quiet hours are for guest-facing messages.
+   */
+  async queueDailySummary(q: Queryable, req: { propertyId: string; recipient: string; businessDate: string; subject: string; body: string }): Promise<string | null> {
+    const { rows } = await q.query<{ id: string }>(
+      `INSERT INTO messages (property_id, template_key, channel, language, recipient, trigger, source_key, subject, body, status, send_after)
+       VALUES ($1, 'daily_summary', 'email', 'en', $2, 'schedule', $3, $4, $5, 'queued', now())
+       ON CONFLICT ON CONSTRAINT messages_once_per_cause DO NOTHING
+       RETURNING id`,
+      [req.propertyId, req.recipient, `daily_summary:${req.businessDate}`, req.subject, req.body],
+    );
+    return rows[0]?.id ?? null;
   }
 
   // ---------------------------------------------------------------------------

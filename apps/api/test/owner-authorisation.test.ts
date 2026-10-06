@@ -17,7 +17,7 @@ beforeAll(async () => {
 afterAll(async () => { await app.close(); });
 
 const lowRate = (rate: string, arrival = '2027-02-02', departure = '2027-02-03', mobile = '9811100001') => ({
-  ...booking({ roomTypeId: f.type('DLX'), arrival, departure, nightlyRate: rate }),
+  ...booking({ roomTypeId: f.type('EXE'), arrival, departure, nightlyRate: rate }),
   guest: { firstName: 'Pin', lastName: 'Test', mobile },
 });
 

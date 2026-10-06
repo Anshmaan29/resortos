@@ -134,7 +134,7 @@ describe('OTA bookings', () => {
   let reservationId: string;
   beforeAll(async () => {
     const created = await post(owner, '/reservations', {
-      ...booking({ roomTypeId: f.type('PCOT'), roomId: f.room('C2'), arrival: '2026-09-20', departure: '2026-09-22', extra: { source: 'booking_com', otaReference: 'BDC-99812' } }),
+      ...booking({ roomTypeId: f.type('PRE'), roomId: f.room('108'), arrival: '2026-09-20', departure: '2026-09-22', extra: { source: 'booking_com', otaReference: 'BDC-99812' } }),
     }).expect(201);
     reservationId = created.body.id;
   });
@@ -146,7 +146,7 @@ describe('OTA bookings', () => {
   });
 
   it('only on a booking that came from an OTA', async () => {
-    const direct = await post(owner, '/reservations', booking({ roomTypeId: f.type('PCOT'), roomId: f.room('C3'), arrival: '2026-09-20', departure: '2026-09-21' })).expect(201);
+    const direct = await post(owner, '/reservations', booking({ roomTypeId: f.type('PRE'), roomId: f.room('209'), arrival: '2026-09-20', departure: '2026-09-21' })).expect(201);
     await desk.put(`/api/v1/reservations/${direct.body.id}/ota`).set('x-resortos', '1')
       .send({ paymentMode: 'prepaid_to_ota', grossAmount: '100' }).expect(400);
   });

@@ -38,14 +38,6 @@ const ACCOUNT_KIND_WORDS: Record<string, string> = {
   cash: 'a cash account', upi: 'a UPI account', bank: 'a bank account', card_pos: 'the card machine', other: 'another account',
 };
 
-const SELECT_EXPENSES = `
-  SELECT e.*, c.name AS category_name, a.name AS account_name, u.full_name AS paid_by_name,
-         EXISTS (SELECT 1 FROM expenses x WHERE x.reverses_expense_id = e.id) AS reversed
-    FROM expenses e
-    JOIN expense_categories c ON c.id = e.category_id
-    JOIN payment_accounts a ON a.id = e.payment_account_id
-    JOIN users u ON u.id = e.paid_by`;
-
 /**
  * Money paid out (spec §39).
  *
@@ -102,7 +94,12 @@ export class ExpensesService {
     return this.db.tx({}, async (q) => {
       const [rows, byCategory] = await gather(q, [
         () => q.query<ExpenseRow>(
-          `${SELECT_EXPENSES}
+          `SELECT e.*, c.name AS category_name, a.name AS account_name, u.full_name AS paid_by_name,
+                  EXISTS (SELECT 1 FROM expenses x WHERE x.reverses_expense_id = e.id) AS reversed
+             FROM expenses e
+             JOIN expense_categories c ON c.id = e.category_id
+             JOIN payment_accounts a ON a.id = e.payment_account_id
+             JOIN users u ON u.id = e.paid_by
             WHERE e.property_id = $1 AND e.expense_date BETWEEN $2::date AND $3::date
               AND ($4::uuid IS NULL OR e.category_id = $4)
             ORDER BY e.expense_date DESC, e.paid_at DESC`,
@@ -181,7 +178,16 @@ export class ExpensesService {
   }
 
   private async load(q: Queryable, propertyId: string, id: string) {
-    const { rows } = await q.query<ExpenseRow>(`${SELECT_EXPENSES} WHERE e.id = $1 AND e.property_id = $2`, [id, propertyId]);
+    const { rows } = await q.query<ExpenseRow>(
+      `SELECT e.*, c.name AS category_name, a.name AS account_name, u.full_name AS paid_by_name,
+              EXISTS (SELECT 1 FROM expenses x WHERE x.reverses_expense_id = e.id) AS reversed
+         FROM expenses e
+         JOIN expense_categories c ON c.id = e.category_id
+         JOIN payment_accounts a ON a.id = e.payment_account_id
+         JOIN users u ON u.id = e.paid_by
+        WHERE e.id = $1 AND e.property_id = $2`,
+      [id, propertyId],
+    );
     if (!rows[0]) throw notFound('Expense');
     return rows[0];
   }

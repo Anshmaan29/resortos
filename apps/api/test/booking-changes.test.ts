@@ -32,19 +32,19 @@ describe('estimate with GST', () => {
     const res = await post(desk, '/reservations/estimate', {
       arrival: '2026-10-06', departure: '2026-10-07', rooms: [{ roomTypeId: f.type('DLX'), adults: 2, mealPlan: 'CP' }],
     }, null).expect(200);
-    expect(res.body.rooms[0]).toMatchObject({ roomTotal: '4000.00', mealTotal: '800.00', total: '4800.00' });
-    // Room ₹4,000 at 5% (≤ ₹7,500 slab) + breakfast ₹800 as food at 5%
-    expect(res.body.tax).toMatchObject({ available: true, taxTotal: '240.00', grandTotal: '5040.00', usesPlaceholderRates: true });
+    expect(res.body.rooms[0]).toMatchObject({ roomTotal: '2000.00', extrasTotal: '500.00', mealTotal: '800.00', total: '3300.00' });
+    // Room ₹2,000 (single) + extra adult ₹500 + breakfast ₹800 as food, all at 5% (≤ ₹7,500 slab)
+    expect(res.body.tax).toMatchObject({ available: true, taxTotal: '165.00', grandTotal: '3465.00', usesPlaceholderRates: true });
   });
 });
 
 describe('edit booking (same validation, limits and audit as create)', () => {
   it('changing notes keeps the agreed rates even if the rate calendar changed', async () => {
-    const created = await post(desk, '/reservations', booking({ roomTypeId: f.type('STD'), arrival: '2026-11-03', departure: '2026-11-05' })).expect(201);
+    const created = await post(desk, '/reservations', booking({ roomTypeId: f.type('DLX'), arrival: '2026-11-03', departure: '2026-11-05' })).expect(201);
     const total = created.body.estimate.taxableTotal;
     const [plan] = await sql(`SELECT id FROM rate_plans WHERE is_default`);
     await sql(`INSERT INTO rate_calendar (property_id, rate_plan_id, room_type_id, label, start_date, end_date, rate, priority)
-               SELECT property_id, $1, $2, 'Test surge', '2026-11-01', '2026-11-10', 9999, 50 FROM room_types WHERE id = $2`, [plan.id, f.type('STD')]);
+               SELECT property_id, $1, $2, 'Test surge', '2026-11-01', '2026-11-10', 9999, 50 FROM room_types WHERE id = $2`, [plan.id, f.type('DLX')]);
     try {
       const edited = await patch(desk, created.body.id, editBody(created.body, { specialRequests: 'Late arrival' })).expect(200);
       expect(edited.body.estimate.taxableTotal).toBe(total);
@@ -59,7 +59,7 @@ describe('edit booking (same validation, limits and audit as create)', () => {
   });
 
   it('rejects a stale version', async () => {
-    const created = await post(desk, '/reservations', booking({ roomTypeId: f.type('STD'), arrival: '2026-11-12', departure: '2026-11-13' })).expect(201);
+    const created = await post(desk, '/reservations', booking({ roomTypeId: f.type('DLX'), arrival: '2026-11-12', departure: '2026-11-13' })).expect(201);
     await patch(desk, created.body.id, editBody(created.body, { specialRequests: 'first' })).expect(200);
     const stale = await patch(desk, created.body.id, editBody(created.body, { specialRequests: 'second' }));
     expect(stale.status).toBe(409);
@@ -77,26 +77,26 @@ describe('edit booking (same validation, limits and audit as create)', () => {
   });
 
   it('does not count the booking against itself when the type is full', async () => {
-    const a = await post(desk, '/reservations', booking({ roomTypeId: f.type('VILLA'), arrival: '2026-12-20', departure: '2026-12-22', adults: 4 })).expect(201);
-    await post(desk, '/reservations', booking({ roomTypeId: f.type('VILLA'), arrival: '2026-12-20', departure: '2026-12-22', adults: 4 })).expect(201);
-    await patch(desk, a.body.id, editBody(a.body, {}, { adults: 3 })).expect(200);
+    const a = await post(desk, '/reservations', booking({ roomTypeId: f.type('EXE'), arrival: '2026-12-20', departure: '2026-12-22', adults: 2 })).expect(201);
+    await post(desk, '/reservations', booking({ roomTypeId: f.type('EXE'), arrival: '2026-12-20', departure: '2026-12-22', adults: 2 })).expect(201);
+    await patch(desk, a.body.id, editBody(a.body, {}, { adults: 1 })).expect(200);
   });
 
   it('a new below-minimum rate needs owner approval again; an unchanged approved rate does not', async () => {
-    const lowBody = { ...booking({ roomTypeId: f.type('STD'), arrival: '2026-11-25', departure: '2026-11-26', nightlyRate: '2000' }) };
+    const lowBody = { ...booking({ roomTypeId: f.type('DLX'), arrival: '2026-11-25', departure: '2026-11-26', nightlyRate: '1500' }) };
     const pending = await post(desk, '/reservations', lowBody);
     await approve(desk, pending.body.details.authorisationId, f.ownerId).expect(200);
     const created = await post(desk, '/reservations', { ...lowBody, ownerAuthorisationId: pending.body.details.authorisationId }).expect(201);
 
     await patch(desk, created.body.id, editBody(created.body, { specialRequests: 'Needs cot' })).expect(200);
     const current = await desk.get(`/api/v1/reservations/${created.body.id}`).expect(200);
-    const lower = await patch(desk, created.body.id, editBody(current.body, {}, { nightlyRate: '1800' }));
+    const lower = await patch(desk, created.body.id, editBody(current.body, {}, { nightlyRate: '1400' }));
     expect(lower.body.code).toBe('OWNER_PIN_REQUIRED');
-    expect(lower.body.details.description).toBe('Rate ₹1,800 is below the minimum ₹2,600');
+    expect(lower.body.details.description).toBe('Rate ₹1,400 is below the minimum ₹1,600');
   });
 
   it('writes before and after to the audit log and refuses cancelled bookings', async () => {
-    const created = await post(desk, '/reservations', booking({ roomTypeId: f.type('STD'), arrival: '2026-11-15', departure: '2026-11-16' })).expect(201);
+    const created = await post(desk, '/reservations', booking({ roomTypeId: f.type('DLX'), arrival: '2026-11-15', departure: '2026-11-16' })).expect(201);
     await patch(desk, created.body.id, editBody(created.body, { departure: '2026-11-17' })).expect(200);
     const [entry] = await sql(`SELECT before_values, after_values FROM audit_logs WHERE entity_id = $1 AND action = 'reservation.updated'`, [created.body.id]);
     expect(entry.before_values.departure).toBe('2026-11-16');
@@ -113,14 +113,14 @@ describe('edit booking (same validation, limits and audit as create)', () => {
 
 describe('rebook (never un-cancel)', () => {
   it('creates a new linked booking and leaves the cancelled one cancelled', async () => {
-    const original = await post(desk, '/reservations', booking({ roomTypeId: f.type('PCOT'), arrival: '2026-10-14', departure: '2026-10-16' })).expect(201);
-    const notCancelled = await post(desk, '/reservations', { ...booking({ roomTypeId: f.type('PCOT'), arrival: '2026-10-20', departure: '2026-10-21' }), rebookedFromId: original.body.id });
+    const original = await post(desk, '/reservations', booking({ roomTypeId: f.type('PRE'), arrival: '2026-10-14', departure: '2026-10-16' })).expect(201);
+    const notCancelled = await post(desk, '/reservations', { ...booking({ roomTypeId: f.type('PRE'), arrival: '2026-10-20', departure: '2026-10-21' }), rebookedFromId: original.body.id });
     expect(notCancelled.body.code).toBe('INVALID_TRANSITION');
 
     await post(desk, `/reservations/${original.body.id}/cancel`, { reason: 'change_of_plans' }).expect(200);
     const rebooked = await post(desk, '/reservations', {
       guestId: original.body.guest.id, source: original.body.source, arrival: '2026-10-20', departure: '2026-10-22',
-      rooms: [{ roomTypeId: f.type('PCOT'), adults: 2 }], rebookedFromId: original.body.id,
+      rooms: [{ roomTypeId: f.type('PRE'), adults: 2 }], rebookedFromId: original.body.id,
     }).expect(201);
     expect(rebooked.body.number).not.toBe(original.body.number);
     expect(rebooked.body.rebookedFrom).toEqual({ id: original.body.id, number: original.body.number });
@@ -134,9 +134,9 @@ describe('rebook (never un-cancel)', () => {
 
 describe('booking detail', () => {
   it('explains why check-in is not possible yet', async () => {
-    const future = await post(desk, '/reservations', booking({ roomTypeId: f.type('STD'), arrival: '2026-10-28', departure: '2026-10-29' })).expect(201);
+    const future = await post(desk, '/reservations', booking({ roomTypeId: f.type('DLX'), arrival: '2026-10-28', departure: '2026-10-29' })).expect(201);
     expect(future.body.checkIn).toEqual({ ready: false, blockers: ['Check-in opens on the arrival day, 28 Oct 2026'], notes: ['Assign a room first — you can do this during check-in'] });
-    const today = await post(owner, '/reservations', booking({ roomTypeId: f.type('STD'), roomId: f.room('103'), arrival: '2026-09-16', departure: '2026-09-17' })).expect(201);
+    const today = await post(owner, '/reservations', booking({ roomTypeId: f.type('DLX'), roomId: f.room('103'), arrival: '2026-09-16', departure: '2026-09-17' })).expect(201);
     expect(today.body.checkIn).toEqual({ ready: true, blockers: [], notes: [] });
   });
 });

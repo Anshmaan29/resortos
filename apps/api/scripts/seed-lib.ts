@@ -68,11 +68,13 @@ export async function seed(connectionString: string, opts: { businessDate?: stri
       [propertyId, DEMO_CREDENTIALS.receptionist.username, await hashSecret(DEMO_CREDENTIALS.receptionist.password), ownerId],
     );
 
+    // The hotel's own price list (single occupancy = base rate at base_occupancy 1, double = base +
+    // extra adult; the booking quote shows both from these two numbers). Min rates are the discount
+    // floor the owner sets in settings — 80% of single here, editable.
     const types = [
-      { code: 'STD', name: 'Standard', base: 2, max: 3, rate: '3200.00', min: '2600.00', ea: '800.00', ec: '500.00', rooms: ['101', '102', '103', '104'] },
-      { code: 'DLX', name: 'Deluxe', base: 2, max: 3, rate: '4000.00', min: '3200.00', ea: '1000.00', ec: '600.00', rooms: ['201', '202', '203', '204', '205'] },
-      { code: 'PCOT', name: 'Premium Cottage', base: 2, max: 4, rate: '6500.00', min: '5200.00', ea: '1200.00', ec: '800.00', rooms: ['C1', 'C2', 'C3'] },
-      { code: 'VILLA', name: 'Pool Villa', base: 4, max: 6, rate: '12500.00', min: '10000.00', ea: '1500.00', ec: '1000.00', rooms: ['V1', 'V2'] },
+      { code: 'EXE', name: 'Executive', base: 1, max: 2, rate: '4000.00', min: '3200.00', ea: '1000.00', ec: '1000.00', rooms: ['101', '107'] },
+      { code: 'PRE', name: 'Premium', base: 1, max: 3, rate: '2500.00', min: '2000.00', ea: '500.00', ec: '600.00', rooms: ['102', '104', '106', '108', '204', '206', '208', '209', '210'] },
+      { code: 'DLX', name: 'Delux', base: 1, max: 3, rate: '2000.00', min: '1600.00', ea: '500.00', ec: '500.00', rooms: ['103', '105', '201', '202', '203', '205', '207'] },
     ];
     const roomTypeIds: Record<string, string> = {};
     const roomIds: Record<string, string> = {};
@@ -84,13 +86,11 @@ export async function seed(connectionString: string, opts: { businessDate?: stri
       );
       roomTypeIds[t.code] = rows[0].id;
       for (const [j, number] of t.rooms.entries()) {
-        const unit = t.code === 'PCOT' ? 'cottage' : t.code === 'VILLA' ? 'villa' : 'room';
-        const view = t.code === 'VILLA' ? 'pool' : t.code === 'PCOT' ? 'hill' : j % 2 ? 'garden' : 'pool';
-        const floor = /^\d/.test(number) ? number[0] : null;
+        const floor = number[0]!;
         const { rows: r } = await client.query(
-          `INSERT INTO rooms (property_id, room_type_id, number, unit_type, view, building, floor, sort_order, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-          [propertyId, rows[0].id, number, unit, view, unit === 'room' ? 'Main block' : 'Cottages', floor, j, ownerId],
+          `INSERT INTO rooms (property_id, room_type_id, number, unit_type, building, floor, sort_order, created_by)
+           VALUES ($1,$2,$3,'room','Main block',$4,$5,$6) RETURNING id`,
+          [propertyId, rows[0].id, number, floor, j, ownerId],
         );
         roomIds[number] = r[0].id;
       }
@@ -101,18 +101,11 @@ export async function seed(connectionString: string, opts: { businessDate?: stri
          ($1,'EP','Room only',0,0), ($1,'CP','Room + breakfast',400,250), ($1,'MAP','Breakfast + one main meal',900,550), ($1,'AP','All meals',1400,800)`,
       [propertyId],
     );
-    const { rows: rp } = await client.query(
-      `INSERT INTO rate_plans (property_id, code, name, kind, is_default) VALUES ($1, 'BAR', 'Best available rate', 'standard', true) RETURNING id`,
+    await client.query(
+      `INSERT INTO rate_plans (property_id, code, name, kind, is_default) VALUES ($1, 'BAR', 'Best available rate', 'standard', true)`,
       [propertyId],
     );
-    const weekendRates: Record<string, string> = { STD: '3800.00', DLX: '4800.00', PCOT: '7800.00', VILLA: '14500.00' };
-    for (const [code, rate] of Object.entries(weekendRates)) {
-      await client.query(
-        `INSERT INTO rate_calendar (property_id, rate_plan_id, room_type_id, label, start_date, end_date, days_of_week, rate, priority, created_by)
-         VALUES ($1,$2,$3,'Weekend',$4,$5,'{5,6}',$6,10,$7)`,
-        [propertyId, rp[0].id, roomTypeIds[code], addDays(today, -30), addDays(today, 365), rate, ownerId],
-      );
-    }
+    // No rate-calendar rows: the price list is flat, and the owner adds seasons/weekends in settings.
 
     // Illustrative GST configuration — MUST be confirmed by the resort's CA before go-live (spec §30).
     await client.query(
@@ -174,20 +167,23 @@ export async function seed(connectionString: string, opts: { businessDate?: stri
       }
       await client.query(`UPDATE guests SET is_vip = true, special_note = 'Anniversary — arrange cake' WHERE id = $1`, [guestIds[2]]);
 
+      // Demo bookings sit on rooms the API/e2e suites never check into (101, 105, 201, 204, 207, 210),
+      // so their fixtures always find the rooms they book free.
       const bookings: { guest: number; room: string; type: string; from: number; nights: number; status: 'confirmed' | 'checked_in' | 'tentative'; source: string; ota?: string; adults: number }[] = [
-        { guest: 0, room: '204', type: 'DLX', from: 0, nights: 2, status: 'confirmed', source: 'phone', adults: 2 },
-        { guest: 1, room: '102', type: 'STD', from: -2, nights: 2, status: 'checked_in', source: 'walk_in', adults: 2 },
-        { guest: 2, room: 'C1', type: 'PCOT', from: -1, nights: 3, status: 'checked_in', source: 'direct', adults: 2 },
-        { guest: 3, room: '201', type: 'DLX', from: 1, nights: 3, status: 'confirmed', source: 'booking_com', ota: '4471829301', adults: 2 },
-        { guest: 4, room: 'V1', type: 'VILLA', from: 3, nights: 2, status: 'tentative', source: 'whatsapp', adults: 4 },
-        { guest: 5, room: '101', type: 'STD', from: -1, nights: 4, status: 'checked_in', source: 'makemytrip', ota: 'NH71029384', adults: 1 },
+        { guest: 0, room: '204', type: 'PRE', from: 0, nights: 2, status: 'confirmed', source: 'phone', adults: 2 },
+        { guest: 1, room: '105', type: 'PRE', from: -2, nights: 2, status: 'checked_in', source: 'walk_in', adults: 2 },
+        { guest: 2, room: '201', type: 'DLX', from: -1, nights: 3, status: 'checked_in', source: 'direct', adults: 2 },
+        { guest: 3, room: '207', type: 'DLX', from: 1, nights: 3, status: 'confirmed', source: 'booking_com', ota: '4471829301', adults: 2 },
+        { guest: 4, room: '210', type: 'PRE', from: 3, nights: 2, status: 'tentative', source: 'whatsapp', adults: 2 },
+        { guest: 5, room: '101', type: 'EXE', from: -1, nights: 4, status: 'checked_in', source: 'makemytrip', ota: 'NH71029384', adults: 1 },
       ];
       let n = 0;
       for (const b of bookings) {
         n += 1;
         const arrival = addDays(today, b.from);
         const departure = addDays(arrival, b.nights);
-        const typeRate = types.find((t) => t.code === b.type)!.rate;
+        const t = types.find((x) => x.code === b.type)!;
+        const extraAdultNights = (b.adults - t.base) * Number(t.ea);
         const { rows: res } = await client.query(
           `INSERT INTO reservations (property_id, number, primary_guest_id, source, ota_reference, arrival, departure, status, created_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
@@ -197,13 +193,13 @@ export async function seed(connectionString: string, opts: { businessDate?: stri
         const { rows: rr } = await client.query(
           `INSERT INTO reservation_rooms (property_id, reservation_id, room_type_id, room_id, arrival, departure, adults, meal_plan, nightly_rate, status, created_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,'CP',$8,$9,$10) RETURNING id`,
-          [propertyId, res[0].id, roomTypeIds[b.type], roomIds[b.room], arrival, departure, b.adults, typeRate, rrStatus, ownerId],
+          [propertyId, res[0].id, roomTypeIds[b.type], roomIds[b.room], arrival, departure, b.adults, t.rate, rrStatus, ownerId],
         );
         for (const night of eachNight(arrival, departure)) {
           await client.query(
-            `INSERT INTO reservation_room_nights (reservation_room_id, night_date, property_id, room_rate, meal_amount, rate_source)
-             VALUES ($1,$2,$3,$4,$5,'base')`,
-            [rr[0].id, night, propertyId, typeRate, String(400 * b.adults)],
+            `INSERT INTO reservation_room_nights (reservation_room_id, night_date, property_id, room_rate, extra_person_amount, meal_amount, rate_source)
+             VALUES ($1,$2,$3,$4,$5,$6,'base')`,
+            [rr[0].id, night, propertyId, t.rate, String(extraAdultNights), String(400 * b.adults)],
           );
         }
         await client.query(
@@ -231,10 +227,12 @@ export async function seed(connectionString: string, opts: { businessDate?: stri
         );
       }
       await client.query(`INSERT INTO reference_counters (property_id, name, last_number) VALUES ($1, 'reservation', $2)`, [propertyId, n]);
-      // A realistic room board
-      await client.query(`UPDATE rooms SET housekeeping_status = 'dirty' WHERE number IN ('102', '203')`);
-      await client.query(`UPDATE rooms SET housekeeping_status = 'cleaning' WHERE number = '103'`);
-      await client.query(`UPDATE rooms SET housekeeping_status = 'inspected' WHERE number IN ('204', 'C2')`);
+      // A realistic room board. The dirty/cleaning rooms are the demo guests' own (a task with an
+      // open status would otherwise sit on a room the test fixtures pick as their first free room,
+      // and swallow the checkout task they assert on).
+      await client.query(`UPDATE rooms SET housekeeping_status = 'dirty' WHERE number IN ('105', '201')`);
+      await client.query(`UPDATE rooms SET housekeeping_status = 'cleaning' WHERE number = '101'`);
+      await client.query(`UPDATE rooms SET housekeeping_status = 'inspected' WHERE number = '204'`);
       await client.query(`UPDATE rooms SET service_status = 'out_of_order' WHERE number = '104'`);
       await client.query(
         `INSERT INTO room_out_of_order (property_id, room_id, start_date, end_date, reason, created_by) VALUES ($1,$2,$3,$4,'AC compressor replacement',$5)`,

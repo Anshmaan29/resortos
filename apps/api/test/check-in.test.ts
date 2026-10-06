@@ -271,9 +271,9 @@ describe('checkout (status change with extension points, spec §22)', () => {
 
 describe('resuming uploads', () => {
   it('phone status shows only its own documents; a fresh upload link for the same pending document can be issued', async () => {
-    const created = await post(owner, '/reservations', { ...booking({ roomTypeId: f.type('PCOT'), roomId: f.room('C3'), arrival: '2026-09-16', departure: '2026-09-17' }), guest: { firstName: 'Resume', lastName: 'Test', mobile: '9829066601' } }).expect(201);
+    const created = await post(owner, '/reservations', { ...booking({ roomTypeId: f.type('PRE'), roomId: f.room('209'), arrival: '2026-09-16', departure: '2026-09-17' }), guest: { firstName: 'Resume', lastName: 'Test', mobile: '9829066601' } }).expect(201);
     const d = await post(desk, '/check-in-drafts', { reservationId: created.body.id }, null).expect(200);
-    expect(d.body.reservation).toMatchObject({ number: created.body.number, guestName: 'Resume Test', rooms: [{ roomNumber: 'C3', adults: 2 }] });
+    expect(d.body.reservation).toMatchObject({ number: created.body.number, guestName: 'Resume Test', rooms: [{ roomNumber: '209', adults: 2 }] });
     const session = await post(desk, `/check-in-drafts/${d.body.id}/capture-sessions`, {}, null).expect(201);
     const claim = await phone().post(`/api/v1/capture/${session.body.token}/claim`).set('x-resortos', '1').expect(200);
     const dev = claim.body.deviceSecret;
@@ -296,7 +296,7 @@ describe('resuming uploads', () => {
 
 describe('idempotent document creation', () => {
   it('retrying with the same client upload id returns the same document; a different photo under that id is refused', async () => {
-    const created = await post(owner, '/reservations', { ...booking({ roomTypeId: f.type('PCOT'), roomId: f.room('C2'), arrival: '2026-09-16', departure: '2026-09-17' }), guest: { firstName: 'Retry', lastName: 'Test', mobile: '9829066602' } }).expect(201);
+    const created = await post(owner, '/reservations', { ...booking({ roomTypeId: f.type('PRE'), roomId: f.room('108'), arrival: '2026-09-16', departure: '2026-09-17' }), guest: { firstName: 'Retry', lastName: 'Test', mobile: '9829066602' } }).expect(201);
     const d = await post(desk, '/check-in-drafts', { reservationId: created.body.id }, null).expect(200);
     const bytes = jpeg(300);
     const body = { source: 'desk_camera', clientUploadId: '0b8f2a7c-7c1e-4a5b-9d51-6c0e1f2a3b4c', docType: 'guest_photo', occupantKey: 'r0a0', contentType: 'image/jpeg', sizeBytes: bytes.length, sha256: sha(bytes) };

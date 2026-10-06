@@ -42,7 +42,7 @@ async function stayWithNight(room: string, type: string, rate: string, mobile: s
   const bill = (await desk.get(`/api/v1/stays/${stay!.id}/bill`).expect(200)).body;
   await sql(
     `INSERT INTO folio_lines (property_id, folio_id, business_date, line_type, name, quantity, unit_rate, amount, tax_category, source, room_id, created_by)
-     SELECT f.property_id, f.id, '2026-09-16', 'room_night', 'Room — Deluxe', 1, $2, $2, 'accommodation', 'night_audit', $3, u.id
+     SELECT f.property_id, f.id, '2026-09-16', 'room_night', 'Room — Delux', 1, $2, $2, 'accommodation', 'night_audit', $3, u.id
        FROM folios f, users u WHERE f.id = $1 AND u.role = 'owner'`,
     [bill.id, rate, stay!.room_id],
   );
@@ -102,7 +102,7 @@ describe('the receptionist limit', () => {
   let folioId: string;
   let stayId: string;
   beforeAll(async () => {
-    ({ folioId, stayId } = await stayWithNight('C2', 'PCOT', '6000.00', '9820055004'));
+    ({ folioId, stayId } = await stayWithNight('108', 'PRE', '6000.00', '9820055004'));
     await post(desk, `/folios/${folioId}/charges`, { lineType: 'food', name: 'Dinner', quantity: 1, unitRate: '2000' }).expect(200);
   });
 
@@ -148,7 +148,7 @@ describe('the receptionist limit', () => {
 
 describe('the database', () => {
   it('refuses a discount larger than its charge, a discount of a discount, and editing either', async () => {
-    const { folioId } = await stayWithNight('103', 'STD', '3000.00', '9820055005');
+    const { folioId } = await stayWithNight('103', 'DLX', '3000.00', '9820055005');
     const [line] = await sql<{ id: string; room_id: string }>(`SELECT id, room_id FROM folio_lines WHERE folio_id = $1`, [folioId]);
     const insert = (amount: string, target: string) => sql(
       `INSERT INTO folio_lines (property_id, folio_id, business_date, line_type, name, quantity, unit_rate, amount, tax_category,

@@ -731,6 +731,37 @@ export const expenseCorrectionSchema = expenseSchema.extend({
 });
 export type ExpenseCorrectionInput = z.infer<typeof expenseCorrectionSchema>;
 
+// ---------- maintenance (spec §38) ----------
+export const maintenanceTicketCreateSchema = z.object({
+  roomId: zId.optional(),
+  area: z.string().trim().min(2).max(120).optional(),
+  title: z.string().trim().min(3, 'What needs fixing?').max(160),
+  description: z.string().trim().max(2000).optional(),
+  priority: z.enum(['low', 'normal', 'high']).optional(),
+  assignedTo: zId.nullable().optional(),
+});
+export type MaintenanceTicketInput = z.infer<typeof maintenanceTicketCreateSchema>;
+
+export const maintenanceTicketPatchSchema = z.object({
+  version: z.coerce.number().int().min(1),
+  description: z.string().trim().max(2000).optional(),
+  priority: z.enum(['low', 'normal', 'high']).optional(),
+  assignedTo: zId.nullable().optional(),
+  cost: zNonNegativeMoney.nullable().optional(),
+  resolutionNote: z.string().trim().min(3, 'Say what was done').max(1000).optional(),
+  status: z.enum(['open', 'in_progress', 'resolved', 'closed']).optional(),
+});
+export type MaintenanceTicketPatch = z.infer<typeof maintenanceTicketPatchSchema>;
+
+export const maintenanceScheduleCreateSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  area: z.string().trim().max(120).optional(),
+  roomId: zId.optional(),
+  everyDays: z.coerce.number().int().min(1).max(3650),
+  nextDue: zIsoDate.optional(),
+});
+export type MaintenanceScheduleInput = z.infer<typeof maintenanceScheduleCreateSchema>;
+
 export const expenseCategorySchema = z.object({
   name: z.string().trim().min(2).max(40),
   isActive: z.boolean().default(true),

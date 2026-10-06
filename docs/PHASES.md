@@ -162,4 +162,22 @@ Test suite (all against real PostgreSQL, no database mocks): see `docs/testing.m
 | Runbook | ✅ `ops/runbooks/restore.md` — keys, bucket, IAM, the nightly job, the restore test, and recovering for real. |
 | Real provider, real key, real drill | ⬜ Needs an account. Checklist and the restore-test log: `docs/production-readiness.md`. |
 | Layers 1 and 2 (PITR, second region) | ⬜ Provider settings; no provider yet. |
-### Phase 3 — not started
+### Phase 3 — operations, compliance and owner data (Sprint C)
+
+| Milestone | State |
+|---|---|
+| 3.3 Housekeeping | ✅ Done — housekeeping tasks per room, kept in step with room status by the database (migration 0021); checkout and stayover tasks (stayover step registered in night audit); board with assignment, priority, notes, start/complete/stop/skip; a cleaner's own "My tasks" screen with no guest data. Web: `/housekeeping` (adapts by role). |
+| 3.3 Expenses | ✅ Done — append-only expenses into payment accounts, correction = reversal + right entry, cash out of the taker's open shift, categories owner-managed, monthly report. Web: `/expenses`. |
+| 3.3 Maintenance | ✅ Done — tickets with the one legal path open → in progress → resolved (note + cost) → closed enforced by the database (migration 0022), room "under maintenance"/out-of-order from the ticket, preventive schedules the night audit opens tickets for (`maintenance_due` step). Web: `/maintenance`. |
+| 3.5 Compliance (Form C + police register) | ✅ Done — Form C records open by database trigger at check-in for foreign nationals, 24-hour countdown, portal copy-summary, submit gated on completeness (API + DB), departure update after checkout; police register derived live from stays in the station's columns. Web: `/form-c`, register on screen in Records. Tests: `compliance.test.ts`. |
+| 3.1 Records & exports | ✅ Done — owner Records area (`/records`) with date-range presets; every record as Excel (deterministic zero-dependency `.xlsx` writer) and CSV: bookings, guests, stays, payments, invoices, expenses, daily summaries, Form C, police register (also PDF); GSTR-1-ready CSV (B2B, B2C per rate, notes) and Tally voucher XML; every download audit-logged (§46). Tests: `exports.test.ts`. |
+| 3.4 Owner daily summary | ✅ Done — plain-text email after night audit (occupancy, revenue by line, collections by method, pending dues, cash difference, needs-a-look, tomorrow) to configurable recipients (`daily_summary_recipients`), once per date via the messages cause-key. Tests: `daily-summary.test.ts`. |
+| 3.2 Google mirror (Sheets/Drive) | ⬜ Not started — needs a Google Cloud project and OAuth setup with the owner. |
+| 3.5 remainder (DPDP consents & data requests, retention jobs, guest flags UI) | ⬜ Not started — consents at check-in exist (draft `consents`); request/erasure workflows pending. |
+| 3.6 Data safety ops (Data Safety panel, weekly automated restore tests, integrity monitoring) | ⬜ Not started — backup/restore tooling + runbook exist (2G); panel and scheduling pending. |
+| 3.7 Revenue intelligence | ⬜ Not started. |
+| 3.8 Migration & hardening (import wizard, load tests, VAPT, training, pilot) | ⬜ Not started. |
+
+### The property's own room configuration
+
+The demo seed now carries the hotel's real room structure (18 rooms): **Executive** (101, 107) at ₹4,000 single / ₹5,000 double, **Premium** (9 rooms) at ₹2,500 / ₹3,000, **Delux** (7 rooms) at ₹2,000 / ₹2,500. Occupancy pricing maps single → `base_rate` at `base_occupancy` 1 and double → base + `extra_adult_rate`. Test fixtures and e2e specs were migrated to the same configuration, so development, tests and demos all mirror the hotel. Production still starts empty and is configured through Settings (the seed refuses to run outside local development/test).

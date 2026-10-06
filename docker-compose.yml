@@ -1,4 +1,7 @@
 # Local development only. Production uses managed PostgreSQL (RDS Mumbai) — spec §53, §77.
+# `name` pins the compose project: the folder was renamed ("resortos" → "resortos zcode") and the
+# project name would otherwise follow it, orphaning the existing containers and volumes.
+name: resortos
 services:
   postgres:
     image: postgres:16-alpine

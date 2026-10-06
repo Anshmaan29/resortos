@@ -1,0 +1,61 @@
+{
+  "unposted_room_checkout": {
+    "status": 200,
+    "invoiceTotals": [
+      "105.00"
+    ],
+    "agreedNightRates": [
+      "2500.00",
+      "2500.00"
+    ]
+  },
+  "returned_deposit_collections_delta": 1000,
+  "reversed_payment_collections_delta": 123,
+  "voided_food_revenue_delta": 300,
+  "maintenance_ticket_replay": {
+    "firstId": "73d155f1-6c89-4bf0-804b-c243f75e83f5",
+    "replayId": "1bdbd934-ad29-4235-b335-f742017e227d"
+  },
+  "maintenance_schedule_replay": {
+    "firstId": "011ca1c7-1051-46b7-93f7-6d7a514d083f",
+    "replayId": "1373264f-436c-40a5-8de4-82ff6c2d5a03"
+  },
+  "room_preventive_schedule": {
+    "error": "new row for relation \"maintenance_tickets\" violates check constraint \"maintenance_tickets_target\""
+  },
+  "schedule_room_edit": {
+    "expectedRoomId": "bff0952e-35fa-42a5-be58-21ce9b1455a3",
+    "actualRoomId": "435f61ef-63cd-4757-9d95-388da0194efb"
+  },
+  "inactive_maintenance_assignee_status": 201,
+  "gstr_cgst_reconciliation": {
+    "invoiceLedger": "7.51",
+    "exported": 7.5
+  },
+  "tally_dates": [
+    "16-09-2026",
+    "16-09-2026",
+    "16-09-2026",
+    "16-09-2026",
+    "16-09-2026"
+  ],
+  "tally_keeps_reversed_payment": true,
+  "future_bookings_export_rows": 9,
+  "future_stays_export_rows": 3,
+  "payments_csv_marks_reversals": false,
+  "corrected_expense_csv_sum": 1450,
+  "police_register_100_rows_pages": 73,
+  "police_midnight_arrival": "16 Sep 2026",
+  "local_read_burst": {
+    "requests": 50,
+    "elapsedMs": 61,
+    "p95Ms": 58,
+    "statuses": {
+      "200": 50
+    }
+  },
+  "other_property_assignee": {
+    "status": 201,
+    "exposedName": "Other Property Audit Staff"
+  }
+}

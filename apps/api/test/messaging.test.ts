@@ -44,7 +44,7 @@ async function book(extra: object = {}, guest: object = {}) {
   const arrival = new Date(Date.UTC(2026, 9, 1 + night)).toISOString().slice(0, 10);
   const departure = new Date(Date.UTC(2026, 9, 2 + night)).toISOString().slice(0, 10);
   const created = await post(owner, '/reservations', {
-    ...booking({ roomTypeId: f.type('PCOT'), arrival, departure, extra }),
+    ...booking({ roomTypeId: f.type('PRE'), arrival, departure, extra }),
     guest: { firstName: 'Mala', lastName: 'Rao', mobile: String(mobile), email: `mala${mobile}@example.com`, ...guest },
   }).expect(201);
   return created.body.id as string;
@@ -107,7 +107,7 @@ describe('booking confirmation', () => {
 
   it('is not sent to a walk-in being checked in today, nor for a tentative booking', async () => {
     const walkIn = await post(owner, '/reservations', {
-      ...booking({ roomTypeId: f.type('STD'), arrival: TEST_BUSINESS_DATE, departure: '2026-09-17' }),
+      ...booking({ roomTypeId: f.type('DLX'), arrival: TEST_BUSINESS_DATE, departure: '2026-09-17' }),
       guest: { firstName: 'Walk', lastName: 'In', mobile: String((mobile += 1)), email: 'walk@example.com' },
     }).expect(201);
     const tentative = await book({ status: 'tentative' });

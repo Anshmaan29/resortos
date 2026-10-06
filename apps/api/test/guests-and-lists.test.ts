@@ -35,11 +35,11 @@ describe('purpose of visit', () => {
   });
 
   it('is optional, and the database refuses a purpose that is not on the list', async () => {
-    const created = await post(owner, '/reservations', booking({ roomTypeId: f.type('STD'), arrival: '2026-11-05', departure: '2026-11-06' })).expect(201);
+    const created = await post(owner, '/reservations', booking({ roomTypeId: f.type('DLX'), arrival: '2026-11-05', departure: '2026-11-06' })).expect(201);
     expect((await owner.get(`/api/v1/reservations/${created.body.id}`)).body.purpose).toBeNull();
 
     const bad = await post(owner, '/reservations', {
-      ...booking({ roomTypeId: f.type('STD'), arrival: '2026-11-07', departure: '2026-11-08' }), purpose: 'honeymoon',
+      ...booking({ roomTypeId: f.type('DLX'), arrival: '2026-11-07', departure: '2026-11-08' }), purpose: 'honeymoon',
     });
     expect(bad.status).toBe(400);
     await expect(sql(`UPDATE reservations SET purpose = 'honeymoon' WHERE id = $1`, [created.body.id]))
