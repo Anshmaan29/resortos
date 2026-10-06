@@ -1,7 +1,7 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { formatDate, formatINR, TAX_CATEGORIES } from '@resortos/shared';
 import { Button } from '@/components/ui/button';
 import { DateField } from '@/components/ui/date-field';
@@ -9,7 +9,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Field, Input, Select } from '@/components/ui/field';
 import { ErrorBanner, Skeleton } from '@/components/ui/surface';
 import { Pill } from '@/components/ui/status';
-import { api } from '@/lib/api';
+import { api, newIdempotencyKey } from '@/lib/api';
 import { useProperty } from '@/lib/session';
 import { Row, Section, useSave } from './common';
 
@@ -62,8 +62,9 @@ export function TaxSettings() {
 
 function AddRule({ onClose }: { onClose: () => void }) {
   const property = useProperty();
+  const key = useRef(newIdempotencyKey());
   const [f, setF] = useState({ taxCategory: 'accommodation', unitValueAbove: '', unitValueUpTo: '', ratePercent: '', sac: '', effectiveFrom: property.data?.businessDate ?? '', effectiveTo: '', note: '' });
-  const save = useSave(() => api('/tax-rules', { method: 'POST', body: Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '')) }),
+  const save = useSave(() => api('/tax-rules', { method: 'POST', idempotencyKey: key.current, body: Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '')) }),
     { invalidate: [['tax-rules']], success: 'Rule added', onDone: onClose });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   return (
@@ -89,7 +90,8 @@ function AddRule({ onClose }: { onClose: () => void }) {
 
 function CloseRule({ rule, onClose }: { rule: TaxRule; onClose: () => void }) {
   const [date, setDate] = useState('');
-  const save = useSave(() => api(`/tax-rules/${rule.id}/close`, { method: 'POST', body: { effectiveTo: date } }), { invalidate: [['tax-rules']], success: 'Rule closed', onDone: onClose });
+  const key = useRef(newIdempotencyKey());
+  const save = useSave(() => api(`/tax-rules/${rule.id}/close`, { method: 'POST', idempotencyKey: key.current, body: { effectiveTo: date } }), { invalidate: [['tax-rules']], success: 'Rule closed', onDone: onClose });
   return (
     <Dialog open onClose={onClose} title="Close this rule" description="The rule applies up to and including this date. Add the new rule from the next day."
       footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="danger" loading={save.isPending} disabled={!date} onClick={() => save.mutate(undefined)}>Close rule</Button></>}>

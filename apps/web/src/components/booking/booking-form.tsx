@@ -5,7 +5,7 @@ import { AlertTriangle, BedDouble, Check, Crown, Minus, Plus, Search, Trash2, Us
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import {
-  addDays, BOOKING_SOURCE_LABELS, BOOKING_SOURCES, createReservationSchema, formatDate, formatINR, formatMobile, guestSchema, MEAL_PLAN_CODES,
+  addDays, BOOKING_SOURCE_LABELS, BOOKING_SOURCES, createReservationSchema, formatDate, formatINR, formatMobile, guestSchema,
   money, nightsBetween, OTA_SOURCES, updateReservationSchema, VISIT_PURPOSE_LABELS, VISIT_PURPOSES,
   type BookingSource, type MealPlanCode, type VisitPurpose,
 } from '@resortos/shared';
@@ -35,7 +35,7 @@ interface RoomLine {
 
 type GuestChoice = Pick<Guest, 'id' | 'fullName' | 'mobile' | 'city' | 'isVip'> & { stays?: number };
 
-const newLine = (roomTypeId = ''): RoomLine => ({ key: crypto.randomUUID(), roomTypeId, roomId: '', adults: 2, childAges: [], mealPlan: 'CP', manualRate: '' });
+const newLine = (roomTypeId = ''): RoomLine => ({ key: crypto.randomUUID(), roomTypeId, roomId: '', adults: 2, childAges: [], mealPlan: 'EP', manualRate: '' });
 const validRate = (v: string) => (/^\d+(\.\d{1,2})?$/.test(v) ? v : undefined);
 
 function useDebounced<T>(value: T, ms = 300) {
@@ -68,7 +68,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
   const [lines, setLines] = useState<RoomLine[]>(() => initial
     ? initial.rooms.filter((r) => mode === 'rebook' || r.status === 'reserved').map((r) => ({
         key: crypto.randomUUID(), reservationRoomId: mode === 'edit' ? r.id : undefined, roomTypeId: r.roomTypeId,
-        roomId: mode === 'edit' ? r.roomId ?? '' : '', adults: r.adults, childAges: r.childAges, mealPlan: r.mealPlan, manualRate: '',
+        roomId: mode === 'edit' ? r.roomId ?? '' : '', adults: r.adults, childAges: r.childAges, mealPlan: mode === 'edit' ? r.mealPlan : 'EP', manualRate: '',
       }))
     : [newLine()]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -437,11 +437,7 @@ function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short
             )}
           </div>
         </div>
-        <Field label="Meal plan">{(id) => (
-          <Select id={id} value={line.mealPlan} onChange={(e) => onChange({ mealPlan: e.target.value as MealPlanCode })}>
-            {MEAL_PLAN_CODES.map((m) => <option key={m} value={m}>{MEAL_LABEL[m]}</option>)}
-          </Select>
-        )}</Field>
+        {line.mealPlan !== 'EP' && <p className="text-sm text-text-3">Existing booking includes {MEAL_LABEL[line.mealPlan]}. Its agreed meal charges are kept.</p>}
         <Field label="Room rate per night" hint={line.reservationRoomId ? 'Leave empty to keep the agreed rate' : 'Leave empty to use the rate calendar'}>{(id, d) => (
           <div className="relative">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-2">₹</span>

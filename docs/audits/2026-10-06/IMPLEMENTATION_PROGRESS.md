@@ -27,7 +27,7 @@ Operational regression results and observations are in `progress-evidence/`. The
 
 ## Configuration stays simple
 
-Owners can change room types/base/minimum/extra-person rates, dated rates, meals, charge items, tax rules and payment accounts through Settings. Receptionists can agree booking rates within their limits; a below-floor rate requires owner approval. A later settings change does not rewrite the price already agreed with a guest or the tax snapshot on an issued invoice. No production room inventory, room prices or tax rates are inserted by the new provisioning command.
+Owners can change room types/base/minimum/extra-person rates, dated rates, meals, charge items, tax rules and payment accounts through Settings. Receptionists can also add/close dated GST rules through Settings, with idempotency, audit and outbox records. Receptionists can agree booking rates within their limits; a below-floor rate requires owner approval. A later settings change does not rewrite the price already agreed with a guest or the tax snapshot on an issued invoice. No production room inventory, room prices or tax rates are inserted by the new provisioning command.
 
 Guest messages now has one sender setup panel: name, sender address, reply address, email on/off and daily-summary recipients. It shows whether the server uses Resend, practice mode or no provider, whether jobs run, and whether delivery webhooks are configured. Keys are never returned to the browser.
 
@@ -59,3 +59,13 @@ The larger specification still includes guest merge and import reconciliation, s
 - Both pinned storage images built and their readiness/bucket setup passed on a separate disposable local container.
 
 Full GitHub CI passed for `ea741ca` ([run](https://github.com/Anshmaan29/resortos/actions/runs/37436341571)), including all 445 suite tests, 25 audit checks and 14 browser journeys. The duplicate PR run exposed the owner-PIN race above; the follow-up change must also pass CI. Local checks are evidence for the covered paths, not proof of real email delivery, actual Tally import, off-site production recovery or external VAPT.
+
+## User preference follow-up — simple meals and receptionist GST
+
+New bookings, rebookings and express check-in now use room-only pricing. The normal forms no longer ask for EP/CP/MAP/AP. Food requested by a guest is entered in Bill → Add charge as a name, quantity and price; it is not added automatically. Existing bookings retain any meals already agreed with the guest, and owner meal-plan settings are collapsed under existing meal-plan settings.
+
+Owner and receptionist can manage dated GST rules in Settings. Cleaner access is excluded. Tax-rule creates/closures now require idempotency keys and record audit/outbox events in the same transaction. The existing invoice snapshots and closure checks remain: changing settings does not rewrite issued invoices. Rates still need to be chosen according to the property's accountant-confirmed treatment.
+
+Domain entry in the supplied Resend screenshot is `voittoventures.com`; the screenshot alone does not establish DNS verification. No live sending, DNS changes or paid hosting resources were configured in this follow-up.
+
+Follow-up validation: production build and workspace typecheck passed; **446 suite tests** (307 API, 41 shared, 98 web), **25 operational audit checks**, and **15 desktop/mobile browser journeys** passed. The new browser journey saves and reloads a receptionist-created 7.25% dated GST rule. Both prior-head GitHub runs for `0946abe` passed ([push](https://github.com/Anshmaan29/resortos/actions/runs/37438142439), [PR](https://github.com/Anshmaan29/resortos/actions/runs/37438150273)); CI for this follow-up is pending when recorded.

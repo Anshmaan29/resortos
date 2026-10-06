@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { MEAL_PLAN_CODES, ratePlanUpdateSchema, rateQuoteQuerySchema, taxRuleSchema, zId, zIsoDate, zNonNegativeMoney } from '@resortos/shared';
-import { CurrentActor, Roles } from '../common/decorators';
+import { CurrentActor, IdempotencyKey, Roles } from '../common/decorators';
 import type { Actor } from '../common/request-context';
 import { parse } from '../common/zod';
 import { DbService } from '../db/db.service';
@@ -63,7 +63,7 @@ export class RatesController {
   }
 
   @Get('tax-rules')
-  @Roles('owner')
+  @Roles('owner', 'receptionist')
   taxRules(@CurrentActor() actor: Actor) {
     return this.rates.listTaxRules(actor.user.propertyId);
   }
@@ -82,16 +82,16 @@ export class RatesController {
   }
 
   @Post('tax-rules')
-  @Roles('owner')
-  createTaxRule(@CurrentActor() actor: Actor, @Body() body: unknown) {
-    return this.rates.createTaxRule(actor, parse(taxRuleSchema, body));
+  @Roles('owner', 'receptionist')
+  createTaxRule(@CurrentActor() actor: Actor, @IdempotencyKey() key: string | undefined, @Body() body: unknown) {
+    return this.rates.createTaxRule(actor, parse(taxRuleSchema, body), key);
   }
 
   @Post('tax-rules/:id/close')
-  @Roles('owner')
+  @Roles('owner', 'receptionist')
   @HttpCode(200)
-  closeTaxRule(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() body: unknown) {
+  closeTaxRule(@CurrentActor() actor: Actor, @IdempotencyKey() key: string | undefined, @Param('id') id: string, @Body() body: unknown) {
     const { effectiveTo } = parse(z.object({ effectiveTo: zIsoDate }), body);
-    return this.rates.closeTaxRule(actor, parse(zId, id), effectiveTo);
+    return this.rates.closeTaxRule(actor, parse(zId, id), effectiveTo, key);
   }
 }

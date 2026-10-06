@@ -1,6 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { bootAppOnOwnDatabase, login, post, type Agent } from './helpers';
+import { bootAppOnOwnDatabase, key, login, post, type Agent } from './helpers';
 import { TEST_BUSINESS_DATE } from './global-setup';
 
 /** Owner settings added in Sprint B (spec §4.5, §9–§11, §30, §34, §36, §40, §5.3). */
@@ -52,11 +52,36 @@ describe('rate plans and tax rules', () => {
     const rules = (await owner.get('/api/v1/tax-rules').expect(200)).body;
     const laundry = rules.find((r: any) => r.taxCategory === 'laundry');
     // Overlaps the seeded open-ended laundry rule.
-    await post(owner, '/tax-rules', { taxCategory: 'laundry', ratePercent: '12', sac: '999712', effectiveFrom: '2027-01-01' }, null).expect(409);
-    await post(owner, `/tax-rules/${laundry.id}/close`, { effectiveTo: '2026-12-31' }, null).expect(200);
-    await post(owner, '/tax-rules', { taxCategory: 'laundry', ratePercent: '12', sac: '999712', effectiveFrom: '2027-01-01', note: 'Confirmed by CA' }, null).expect(201);
-    await post(owner, `/tax-rules/${laundry.id}/close`, { effectiveTo: '2027-06-30' }, null).expect(400);
-    await post(desk, '/tax-rules', { taxCategory: 'other', ratePercent: '5', sac: '999799', effectiveFrom: '2030-01-01' }, null).expect(403);
+    await post(owner, '/tax-rules', { taxCategory: 'laundry', ratePercent: '12', sac: '999712', effectiveFrom: '2027-01-01' }).expect(409);
+    await post(owner, `/tax-rules/${laundry.id}/close`, { effectiveTo: '2026-12-31' }).expect(200);
+    await post(owner, '/tax-rules', { taxCategory: 'laundry', ratePercent: '12', sac: '999712', effectiveFrom: '2027-01-01', note: 'Confirmed by CA' }).expect(201);
+    await post(owner, `/tax-rules/${laundry.id}/close`, { effectiveTo: '2027-06-30' }).expect(400);
+    await desk.get('/api/v1/tax-rules').expect(200);
+  });
+
+  it('lets a receptionist change dated GST rules, with replay-safe writes and a recorded actor', async () => {
+    const rules = (await desk.get('/api/v1/tax-rules').expect(200)).body;
+    const activity = rules.find((r: any) => r.taxCategory === 'activity');
+    const closeKey = key();
+    await post(desk, `/tax-rules/${activity.id}/close`, { effectiveTo: '2039-12-31' }, closeKey).expect(200);
+    await post(desk, `/tax-rules/${activity.id}/close`, { effectiveTo: '2039-12-31' }, closeKey).expect(200);
+    const input = { taxCategory: 'activity', ratePercent: '7.25', sac: activity.sac, effectiveFrom: '2040-01-01' };
+    await post(desk, '/tax-rules', input, null).expect(400);
+    await post(desk, '/tax-rules', { ...input, ratePercent: '-1' }).expect(400);
+    const createKey = key();
+    const created = await post(desk, '/tax-rules', input, createKey).expect(201);
+    const replay = await post(desk, '/tax-rules', input, createKey).expect(201);
+    expect(replay.body).toEqual(created.body);
+    const mismatch = await post(desk, '/tax-rules', { ...input, ratePercent: '8' }, createKey).expect(422);
+    expect(mismatch.body.code).toBe('IDEMPOTENCY_MISMATCH');
+    const [row] = await sql<{ rate_percent: string; role: string; changes: string; events: string }>(
+      `SELECT t.rate_percent, u.role,
+              (SELECT count(*) FROM audit_logs WHERE entity_id=t.id AND action='tax_rule.created')::text AS changes,
+              (SELECT count(*) FROM outbox_events WHERE aggregate_id=t.id AND topic='tax_rule.created')::text AS events
+         FROM tax_rules t JOIN users u ON u.id=t.created_by WHERE t.id=$1`, [created.body.id]);
+    expect(row).toEqual({ rate_percent: '7.25', role: 'receptionist', changes: '1', events: '1' });
+    const [closure] = await sql<{ count: string }>(`SELECT count(*)::text FROM audit_logs WHERE entity_id=$1 AND action='tax_rule.closed'`, [activity.id]);
+    expect(closure!.count).toBe('1');
   });
 });
 

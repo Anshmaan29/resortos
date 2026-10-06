@@ -12,7 +12,7 @@ Priority: **Data safety → Correctness → Security → Usability → Reliabili
 7.  Money: NUMERIC(14,2) in DB, `@resortos/shared` money helpers (decimal.js) in code, strings in API. The pg driver returns NUMERIC/DATE as strings — keep it that way.
 8.  Invoice numbers come from `document_counters`, never a SEQUENCE.
 9.  Finalized invoices are immutable (DB trigger); corrections via credit/debit notes.
-10. Tax rates come from dated `tax_rules`; never hard-code rates. The GST engine lives in `packages/shared/src/gst.ts`.
+10. Tax rates come from dated `tax_rules`; never hard-code rates. Owner and receptionist can configure these rules (user preference); changes are audited and never rewrite issued invoices. The GST engine lives in `packages/shared/src/gst.ts`.
 11. Documents: verified checksum before a check-in can be confirmed; signed short-lived URLs only; every view audit-logged.
     **No ID type is treated specially.** Aadhaar is captured, cropped and stored exactly like a
     driving licence or passport — unmasked, one flow, no extra step. On-device masking was built and

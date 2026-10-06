@@ -42,3 +42,26 @@ test('@phone full navigation reaches maintenance and compliance',async({page})=>
   await expect(page).toHaveURL(/\/maintenance$/);
   await page.screenshot({path:'/tmp/resortos-phone-maintenance.png',fullPage:true});
 });
+
+
+test('receptionist changes GST using dated rules in settings', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/settings?tab=tax');
+  const laundry = page.getByText('Laundry · 18%', { exact: true }).locator('..').locator('..');
+  await laundry.getByRole('button', { name: 'Close', exact: true }).click();
+  const close = page.getByRole('dialog', { name: 'Close this rule' });
+  await close.getByLabel('Last day it applies').fill('31/12/2029');
+  await close.getByRole('button', { name: 'Close rule', exact: true }).click();
+  await expect(page.getByText('Rule closed', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Add rule', exact: true }).click();
+  const add = page.getByRole('dialog', { name: 'Add a GST rule' });
+  await add.getByLabel('For', { exact: true }).selectOption('laundry');
+  await add.getByRole('textbox', { name: 'GST %', exact: true }).fill('7.25');
+  await add.getByRole('textbox', { name: 'SAC', exact: true }).fill('999712');
+  await add.getByRole('textbox', { name: 'From', exact: true }).fill('01/01/2030');
+  await add.getByRole('button', { name: 'Add rule', exact: true }).click();
+  await expect(page.getByText('Rule added', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Laundry · 7.25%', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Policies & printing' })).toHaveCount(0);
+});

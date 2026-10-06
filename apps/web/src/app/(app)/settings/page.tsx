@@ -18,8 +18,8 @@ const SECTIONS: { key: string; label: string; icon: ComponentType<{ className?: 
   { key: 'property', label: 'Property', icon: Building, owner: true, component: PropertySettings },
   { key: 'policies', label: 'Policies & printing', icon: Settings2, owner: true, component: PolicySettings },
   { key: 'rooms', label: 'Rooms & room types', icon: Bed, owner: true, component: RoomsSettings },
-  { key: 'rates', label: 'Rates & meal plans', icon: Tags, owner: true, component: RatesSettings },
-  { key: 'tax', label: 'GST rules', icon: Percent, owner: true, component: TaxSettings },
+  { key: 'rates', label: 'Room rates', icon: Tags, owner: true, component: RatesSettings },
+  { key: 'tax', label: 'GST rules', icon: Percent, owner: false, component: TaxSettings },
   { key: 'staff', label: 'Staff & limits', icon: Users, owner: true, component: StaffSettings },
   { key: 'charges', label: 'Charge items', icon: Receipt, owner: true, component: ChargeItemsSettings },
   { key: 'accounts', label: 'Payment accounts', icon: CreditCard, owner: true, component: PaymentAccountsSettings },
@@ -33,12 +33,12 @@ function SettingsInner() {
   const params = useSearchParams();
   const router = useRouter();
   if (!me.data) return <Skeleton className="h-96" />;
-  const visible = SECTIONS.filter((s) => !s.owner || me.data!.role === 'owner');
+  const visible = SECTIONS.filter((s) => s.key === 'tax' ? ['owner', 'receptionist'].includes(me.data!.role) : !s.owner || me.data!.role === 'owner');
   const active = visible.find((s) => s.key === params.get('tab')) ?? visible[0]!;
   const Active = active.component;
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader title="Settings" description={me.data.role === 'owner' ? 'How the resort is set up. Every change is recorded in the audit log.' : 'Your own PIN for switching in on a shared desk.'} />
+      <PageHeader title="Settings" description={me.data.role === 'owner' ? 'How the resort is set up. Every change is recorded in the audit log.' : me.data.role === 'receptionist' ? 'GST rules and your PIN. Every change is recorded in the audit log.' : 'Your PIN for switching in on a shared desk.'} />
       <div className="grid gap-5 lg:grid-cols-[220px_1fr]">
         <nav aria-label="Settings sections" className="flex gap-1 overflow-x-auto lg:flex-col">
           {visible.map((s) => {

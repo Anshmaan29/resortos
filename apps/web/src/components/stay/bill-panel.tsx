@@ -362,7 +362,7 @@ function AddChargeDialog({ bill, stayId, open, onClose }: { bill: Bill; stayId: 
           {(id) => <Textarea id={id} rows={2} value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} />}
         </Field>
 
-        <p className="text-xs text-text-3">GST is worked out from the type and the date — you never pick a rate.</p>
+        <p className="text-xs text-text-3">GST uses the rule for this charge type and date. Change rates in Settings → GST rules.</p>
       </div>
     </Dialog>
   );

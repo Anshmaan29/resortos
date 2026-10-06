@@ -48,6 +48,7 @@ test('below-minimum rate: Owner PIN typed on the physical keyboard, override sho
   await page.getByLabel('First name').fill('Kavya');
   await page.getByLabel('Last name').fill('Reddy');
   await page.getByLabel('Mobile').fill('9849012345');
+  await expect(page.getByLabel('Meal plan')).toHaveCount(0);
   await page.getByLabel('Room rate per night').fill('2000');
   await expect(page.getByText(/Below the minimum rate of ₹3,200/)).toBeVisible();
   await expect(page.getByText('Estimated total incl. GST')).toBeVisible();
@@ -75,9 +76,9 @@ test('below-minimum rate: Owner PIN typed on the physical keyboard, override sho
   // whatever today is — matching a fixed date here would fail on every other day of the year.
   await expect(page.getByText(/Rate ₹2,000 is below the minimum ₹3,200\. Authorised by Vikram Rathore \(Owner\), \d{1,2} \w{3}, \d{1,2}:\d{2} [AP]M, requested by Priya Sharma\./)).toBeVisible();
   await expect(page.getByText('+91 98490 12345')).toBeVisible();
-  await expect(page.getByText(/Room ₹2,000 · extra guests ₹1,000 · breakfast ₹800/)).toBeVisible(); // single ₹2,000 + extra adult + CP breakfast
+  await expect(page.getByText(/Room ₹2,000 · extra guests ₹1,000/)).toBeVisible(); // Room only: single ₹2,000 plus the second adult
   await expect(page.getByText('Estimated total incl. GST')).toBeVisible();
-  await expect(page.getByText('₹3,990')).toBeVisible(); // ₹3,800 at 5% GST
+  await expect(page.getByText('₹3,150')).toBeVisible(); // ₹3,000 at the configured 5% demo GST
   await expect(page.getByText('Assign a room first')).toBeVisible();
 });
 

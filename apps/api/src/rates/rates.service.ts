@@ -3,6 +3,8 @@ import {
   computeTax, Decimal, eachNight, ERROR_CODES, money, nightsBetween, TaxRuleError, toMoneyString,
   type IsoDate, type MealPlanCode, type MoneyString, type TaxableLine, type TaxGroup, type TaxRule, type TaxRuleInput,
 } from '@resortos/shared';
+import { IdempotencyService } from '../common/idempotency.service';
+import { OutboxService } from '../common/outbox.service';
 import { AuditService } from '../common/audit.service';
 import { AppError, notFound } from '../common/errors';
 import type { Actor } from '../common/request-context';
@@ -77,7 +79,7 @@ export interface Quote {
  */
 @Injectable()
 export class RatesService {
-  constructor(private readonly db: DbService, private readonly audit: AuditService) {}
+  constructor(private readonly db: DbService, private readonly audit: AuditService, private readonly idem: IdempotencyService, private readonly outbox: OutboxService) {}
 
   async childPolicy(q: Queryable, propertyId: string): Promise<ChildPolicy> {
     const { rows } = await q.query<{ value: ChildPolicy }>(`SELECT value FROM settings WHERE property_id = $1 AND key = 'child_policy'`, [propertyId]);
@@ -361,8 +363,8 @@ export class RatesService {
    * A new dated tax rule (spec §30.1). Overlapping dates and value bands are refused by the
    * `no_overlapping_tax_rules` exclusion constraint, so two rules can never apply to one line.
    */
-  async createTaxRule(actor: Actor, input: TaxRuleInput) {
-    return this.db.tx({ userId: actor.user.id }, async (q) => {
+  async createTaxRule(actor: Actor, input: TaxRuleInput, key?: string) {
+    return this.db.tx({ userId: actor.user.id }, async (q) => (await this.idem.run(q, actor, key, { method: 'POST', path: '/tax-rules', body: input }, async () => {
       const { rows } = await q.query<IdRow>(
         `INSERT INTO tax_rules (property_id, tax_category, unit_value_above, unit_value_up_to, rate_percent, sac, effective_from, effective_to, note, origin, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'configured',$10) RETURNING id`,
@@ -370,8 +372,9 @@ export class RatesService {
           input.effectiveFrom, input.effectiveTo ?? null, input.note ?? null, actor.user.id],
       );
       await this.audit.record(q, actor, { action: 'tax_rule.created', entityType: 'tax_rule', entityId: rows[0]!.id, after: input });
+      await this.outbox.emit(q, actor.user.propertyId, 'tax_rule.created', { type: 'tax_rule', id: rows[0]!.id });
       return { id: rows[0]!.id };
-    });
+    })).body);
   }
 
   /**
@@ -379,8 +382,8 @@ export class RatesService {
    * invoice used would not change that invoice — it keeps its own rates — but the rule's history
    * would then disagree with it, so a rule cannot be closed before a night already invoiced under it.
    */
-  async closeTaxRule(actor: Actor, id: string, effectiveTo: string) {
-    return this.db.tx({ userId: actor.user.id }, async (q) => {
+  async closeTaxRule(actor: Actor, id: string, effectiveTo: string, key?: string) {
+    return this.db.tx({ userId: actor.user.id }, async (q) => (await this.idem.run(q, actor, key, { method: 'POST', path: `/tax-rules/${id}/close`, body: { effectiveTo } }, async () => {
       const { rows } = await q.query<TaxRuleRow>(`SELECT * FROM tax_rules WHERE id = $1 AND property_id = $2 FOR UPDATE`, [id, actor.user.propertyId]);
       const rule = rows[0];
       if (!rule) throw notFound('Tax rule');
@@ -399,7 +402,8 @@ export class RatesService {
       }
       await q.query(`UPDATE tax_rules SET effective_to = $2 WHERE id = $1`, [id, effectiveTo]);
       await this.audit.record(q, actor, { action: 'tax_rule.closed', entityType: 'tax_rule', entityId: id, before: { effectiveTo: rule.effective_to }, after: { effectiveTo } });
+      await this.outbox.emit(q, actor.user.propertyId, 'tax_rule.closed', { type: 'tax_rule', id }, { effectiveTo });
       return { ok: true };
-    });
+    })).body);
   }
 }
