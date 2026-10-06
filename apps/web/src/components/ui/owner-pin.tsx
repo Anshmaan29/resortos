@@ -20,7 +20,7 @@ export function OwnerPinDialog({ open, reason, error, busy, onCancel, onSubmit }
   const ownerId = selectedOwnerId || owners.data?.[0]?.id || '';
   const [pin, setPin] = useState('');
   // Keyboard events can arrive before React commits the last digit. Keep the input
-  // current synchronously so a fast Enter submits all six digits, rather than five.
+  // current synchronously so a fast Enter includes the last digit.
   const pinRef = useRef('');
   const state = useRef({ ownerId, busy, onSubmit });
   state.current = { ownerId, busy, onSubmit };
@@ -34,7 +34,7 @@ export function OwnerPinDialog({ open, reason, error, busy, onCancel, onSubmit }
   const removeDigit = useCallback(() => updatePin(pinRef.current.slice(0, -1)), [updatePin]);
   const submit = useCallback(() => {
     const s = state.current;
-    if (pinRef.current.length === 6 && s.ownerId && !s.busy) s.onSubmit(s.ownerId, pinRef.current);
+    if (pinRef.current.length >= 4 && pinRef.current.length <= 6 && s.ownerId && !s.busy) s.onSubmit(s.ownerId, pinRef.current);
   }, []);
 
   useLayoutEffect(() => {
@@ -66,7 +66,8 @@ export function OwnerPinDialog({ open, reason, error, busy, onCancel, onSubmit }
         {owners.isPending && <p className="text-center text-sm text-text-3" role="status">Loading owners…</p>}
         {owners.isError && <p className="text-center text-sm text-danger" role="alert">Could not load owners. Close this dialog and try again.</p>}
         {owners.data?.length === 0 && <p className="text-center text-sm text-danger">No owner has set a PIN yet. The owner can do this action from their own login.</p>}
-        <div className="flex gap-2.5" role="status" aria-label={`${pin.length} of 6 digits entered`}>
+        <p className="text-sm text-text-2">Enter your 4–6 digit owner PIN.</p>
+        <div className="flex gap-2.5" role="status" aria-label={`${pin.length} digits entered; owner PIN accepts 4 to 6 digits`}>
           {Array.from({ length: 6 }, (_, i) => (
             <span key={i} className={cn('h-3.5 w-3.5 rounded-full border-2 transition-colors', i < pin.length ? 'border-brand bg-brand' : 'border-border-strong')} />
           ))}
@@ -83,7 +84,7 @@ export function OwnerPinDialog({ open, reason, error, busy, onCancel, onSubmit }
         <p className="text-xs text-text-3">You can also type the PIN on the keyboard and press Enter.</p>
         <div className="flex w-full gap-2">
           <Button variant="outline" className="flex-1" onClick={onCancel}>Cancel</Button>
-          <Button className="flex-1" disabled={pin.length !== 6 || !ownerId} loading={busy} onClick={submit}>Authorise</Button>
+          <Button className="flex-1" disabled={pin.length < 4 || pin.length > 6 || !ownerId} loading={busy} onClick={submit}>Authorise</Button>
         </div>
       </div>
     </Dialog>

@@ -29,6 +29,19 @@ async function pendingFor(body: object) {
 }
 
 describe('owner authorisation lifecycle', () => {
+  it('sets and uses a four-digit owner PIN while rejecting weak and malformed PINs', async () => {
+    for (const pin of ['123', '1234567', '12ab', '1111', '1234', '4321']) {
+      const response = await post(owner, '/auth/owner-pin', { password: 'Aravali#Hills26', pin }, null);
+      expect(response.status).toBeGreaterThanOrEqual(400);
+    }
+    await post(owner, '/auth/owner-pin', { password: 'Aravali#Hills26', pin: '7294' }, null).expect(200);
+    try {
+      const id = await pendingFor(lowRate('2000', '2027-04-02', '2027-04-03', '9811100010'));
+      await approve(desk, id, f.ownerId, '7294').expect(200);
+    } finally {
+      await post(owner, '/auth/owner-pin', { password: 'Aravali#Hills26', pin: '482916' }, null).expect(200);
+    }
+  });
   it('explains exactly what needs approval', async () => {
     const res = await post(desk, '/reservations', lowRate('2000'));
     expect(res.body.code).toBe('OWNER_PIN_REQUIRED');

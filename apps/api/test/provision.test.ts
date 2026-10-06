@@ -14,7 +14,7 @@ const config = {
   businessDate:'2026-10-06', owner:{fullName:'Provision Test Owner',username:'provision.owner',email:'owner@example.com'},
 };
 const password='Example#Only26';
-const pin='729461';
+const pin='7294';
 beforeAll(async () => {
   const server = new Client({connectionString:MIGRATOR_URL});
   await server.connect();
@@ -56,5 +56,7 @@ describe('first owner provisioning', () => {
   it('refuses a common password and predictable PIN before provisioning', async()=>{
     await expect(provisionFirstOwner(url,config,'password123','729461')).rejects.toThrow(/too common/);
     await expect(provisionFirstOwner(url,config,password,'123456')).rejects.toThrow(/sequence/);
+    await expect(provisionFirstOwner(url,config,password,'1234')).rejects.toThrow(/sequence/);
+    await expect(provisionFirstOwner(url,config,password,'1111')).rejects.toThrow(/same digit/);
   });
 });

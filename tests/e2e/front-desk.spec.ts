@@ -42,7 +42,7 @@ test('dates are entered as DD/MM/YYYY with our own picker, independent of browse
   await expect(departure).toHaveValue('21/09/2026');
 });
 
-test('below-minimum rate: Owner PIN typed on the physical keyboard, override shown on the booking', async ({ page }) => {
+test('below-minimum rate: four-digit Owner PIN typed on the physical keyboard, override shown on the booking', async ({ page, request }) => {
   await receptionist(page);
   await page.goto('/reservations/new');
   await page.getByLabel('First name').fill('Kavya');
@@ -65,13 +65,22 @@ test('below-minimum rate: Owner PIN typed on the physical keyboard, override sho
     for (const key of [...'000000', 'Enter']) window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
   });
   await expect(pad.getByText('Owner PIN is incorrect.')).toBeVisible();
-  await page.keyboard.type('48291');
-  await page.keyboard.press('Backspace');
-  await page.keyboard.type('16');
-  await expect(pad.getByRole('status')).toHaveAttribute('aria-label', '6 of 6 digits entered');
-  await page.keyboard.press('Enter');
-
-  await page.waitForURL(/\/reservations\/[0-9a-f-]{36}$/);
+  // The owner sets a shorter PIN through the actual password-protected API.
+  expect((await request.post('/api/v1/auth/login', { headers: { 'x-resortos': '1' }, data: { login: 'owner', password: 'Aravali#Hills26' } })).ok()).toBe(true);
+  const setPin = (pin: string) => request.post('/api/v1/auth/owner-pin', { headers: { 'x-resortos': '1' }, data: { password: 'Aravali#Hills26', pin } });
+  expect((await setPin('7294')).ok()).toBe(true);
+  try {
+    await page.keyboard.type('7295');
+    await page.keyboard.press('Backspace');
+    await expect(pad.getByRole('button', { name: 'Authorise' })).toBeDisabled();
+    // The last digit and Enter in one task must submit all four digits.
+    await page.evaluate(() => {
+      for (const key of ['4', 'Enter']) window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    });
+    await page.waitForURL(/\/reservations\/[0-9a-f-]{36}$/);
+  } finally {
+    expect((await setPin('482916')).ok()).toBe(true);
+  }
   // The override records the real time it happened, not the seeded business date, so the day is
   // whatever today is — matching a fixed date here would fail on every other day of the year.
   await expect(page.getByText(/Rate ₹2,000 is below the minimum ₹3,200\. Authorised by Vikram Rathore \(Owner\), \d{1,2} \w{3}, \d{1,2}:\d{2} [AP]M, requested by Priya Sharma\./)).toBeVisible();

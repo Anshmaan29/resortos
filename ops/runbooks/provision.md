@@ -2,7 +2,7 @@
 
 Use a new PostgreSQL database after migrations. This operator command refuses any database already containing a property, and concurrent attempts cannot create two initial properties. It writes a live property and owner with Argon2id password/PIN hashes, an audit entry and an outbox event. It inserts no demo guests, room prices or GST rates.
 
-Set `MIGRATION_DATABASE_URL`, `PROVISION_OWNER_PASSWORD` and `PROVISION_OWNER_PIN` securely in the local environment. Do not put passwords/PINs in the JSON file, command arguments or Git. The password must meet the same rules as normal accounts and the owner PIN must contain six nontrivial digits.
+Set `MIGRATION_DATABASE_URL`, `PROVISION_OWNER_PASSWORD` and `PROVISION_OWNER_PIN` securely in the local environment. Do not put passwords/PINs in the JSON file, command arguments or Git. The password must meet the same rules as normal accounts and the owner PIN must contain 4–6 nontrivial digits.
 
 Prepare a local JSON file with this shape, using the property's actual details:
 

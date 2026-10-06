@@ -23,7 +23,7 @@ A *known device* is a browser that has logged in successfully before (`rsos_devi
 
 ## Owner PIN (spec §4.5)
 
-- Separate from the password, 6 digits, trivial PINs rejected, stored with Argon2id.
+- Separate from the password, 4–6 digits, trivial PINs rejected, stored with Argon2id.
 - A receptionist's action beyond their limits creates a **pending authorisation** holding the exact values computed by the server. The owner types the PIN on that screen; the approval is valid for **2 minutes**, usable **once**, only by the same staff member, and only if the retried request produces the **identical scope hash** (same booking, room, dates, rate …). Database triggers stop an approval from being re-approved, extended or rewritten.
 - Every use is written to `owner_overrides` and shown on the booking: *"Rate ₹2,000 is below the minimum ₹2,600. Authorised by … (Owner), 16 Sep, 5:42 PM."*
 

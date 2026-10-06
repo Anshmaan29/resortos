@@ -78,7 +78,7 @@ export const changePasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 
-export const pinSchema = z.string().regex(/^\d{6}$/, 'PIN must be 6 digits');
+export const pinSchema = z.string().regex(/^\d{4,6}$/, 'PIN must be 4 to 6 digits');
 export const staffPinSchema = z.string().regex(/^\d{4,6}$/, 'PIN must be 4–6 digits');
 
 
