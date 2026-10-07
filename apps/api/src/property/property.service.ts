@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
-  addDays, ERROR_CODES, roomDisplayState, isSellable, type HousekeepingStatus, type OccupancyStatus, type PropertySettingsInput, type PropertyPoliciesInput,
+  addDays, todayIn, ERROR_CODES, roomDisplayState, isSellable, type HousekeepingStatus, type OccupancyStatus, type PropertySettingsInput, type PropertyPoliciesInput,
   type RoomInput, type RoomTypeInput, type ServiceStatus,
 } from '@resortos/shared';
 import { AuditService } from '../common/audit.service';
@@ -9,6 +9,11 @@ import { OutboxService } from '../common/outbox.service';
 import type { Actor } from '../common/request-context';
 import { DbService, type Queryable } from '../db/db.service';
 import type { IdRow, PropertyRow, RoomRow, RoomTypeRow } from '../db/rows';
+
+/** Live reception follows the property's calendar. Demo hotels keep their replay date. */
+export function propertyToday(property: Pick<PropertyRow, 'data_origin' | 'timezone' | 'current_business_date'>, now = new Date()): string {
+  return property.data_origin === 'demo' ? property.current_business_date : todayIn(property.timezone, now);
+}
 
 const mapRoomType = (r: RoomTypeRow) => ({
   id: r.id, code: r.code, name: r.name, description: r.description, baseOccupancy: r.base_occupancy,
@@ -20,10 +25,39 @@ const mapRoomType = (r: RoomTypeRow) => ({
 export class PropertyService {
   constructor(private readonly db: DbService, private readonly audit: AuditService, private readonly outbox: OutboxService) {}
 
+  /** Missing setup is visible before the desk reaches a blocked payment or checkout. */
+  async setupStatus(propertyId: string) {
+    const { rows } = await this.db.query<{
+      rooms_tax: boolean; food_tax: boolean; cash: boolean; upi: boolean; rate_floors: boolean; reception: boolean;
+    }>(`SELECT
+      EXISTS (SELECT 1 FROM tax_rules t WHERE t.property_id=p.id AND t.tax_category='accommodation'
+        AND p.current_business_date >= t.effective_from AND (t.effective_to IS NULL OR p.current_business_date <= t.effective_to)
+        AND t.origin='configured') AS rooms_tax,
+      EXISTS (SELECT 1 FROM tax_rules t WHERE t.property_id=p.id AND t.tax_category='food'
+        AND p.current_business_date >= t.effective_from AND (t.effective_to IS NULL OR p.current_business_date <= t.effective_to)
+        AND t.origin='configured') AS food_tax,
+      EXISTS (SELECT 1 FROM payment_accounts a WHERE a.property_id=p.id AND a.kind='cash' AND a.is_active) AS cash,
+      EXISTS (SELECT 1 FROM payment_accounts a WHERE a.property_id=p.id AND a.kind='upi' AND a.is_active) AS upi,
+      NOT EXISTS (SELECT 1 FROM room_types t WHERE t.property_id=p.id AND t.is_active AND t.min_rate=0) AS rate_floors,
+      EXISTS (SELECT 1 FROM users u WHERE u.property_id=p.id AND u.role='receptionist' AND u.is_active) AS reception
+      FROM properties p WHERE p.id=$1`, [propertyId]);
+    if (!rows[0]) throw notFound('Property');
+    const r = rows[0];
+    return { roomTaxConfigured: r.rooms_tax, foodTaxConfigured: r.food_tax, cashConfigured: r.cash,
+      upiConfigured: r.upi, rateFloorsConfigured: r.rate_floors, receptionistConfigured: r.reception };
+  }
+
   async businessDate(q: Queryable, propertyId: string): Promise<string> {
     const { rows } = await q.query<{ current_business_date: string }>(`SELECT current_business_date FROM properties WHERE id = $1`, [propertyId]);
     if (!rows[0]) throw notFound('Property');
     return rows[0].current_business_date;
+  }
+
+  async today(q: Queryable, propertyId: string): Promise<string> {
+    const { rows } = await q.query<Pick<PropertyRow, 'data_origin' | 'timezone' | 'current_business_date'>>(
+      `SELECT data_origin, timezone, current_business_date FROM properties WHERE id = $1`, [propertyId]);
+    if (!rows[0]) throw notFound('Property');
+    return propertyToday(rows[0]);
   }
 
   async getProperty(propertyId: string) {
@@ -34,7 +68,7 @@ export class PropertyService {
       id: p.id, name: p.name, legalName: p.legal_name, addressLine1: p.address_line1, addressLine2: p.address_line2,
       city: p.city, stateCode: p.state_code, pinCode: p.pin_code, gstin: p.gstin, phone: p.phone, email: p.email,
       checkInTime: String(p.check_in_time).slice(0, 5), checkOutTime: String(p.check_out_time).slice(0, 5),
-      timezone: p.timezone, businessDate: p.current_business_date, isPractice: p.is_practice, version: p.version,
+      timezone: p.timezone, today: propertyToday(p), businessDate: p.current_business_date, isPractice: p.is_practice, version: p.version,
       policies: {
         receptionistCanRunNightAudit: p.receptionist_can_run_night_audit, cashDifferenceThreshold: p.cash_difference_threshold,
         reviewDiscountPercent: p.review_discount_percent, invoiceTerms: p.invoice_terms, invoiceBankDetails: p.invoice_bank_details,
@@ -43,6 +77,8 @@ export class PropertyService {
         quietHoursStart: String(p.quiet_hours_start).slice(0, 5), quietHoursEnd: String(p.quiet_hours_end).slice(0, 5),
         checkoutReminderTime: String(p.checkout_reminder_time).slice(0, 5), reminderSkipSameDay: p.reminder_skip_same_day,
         receptionPhone: p.reception_phone, wifiDetails: p.wifi_details, locationLink: p.location_link, deskLockMinutes: p.desk_lock_minutes,
+        housekeepingStayovers: p.housekeeping_stayovers, housekeepingInspection: p.housekeeping_inspection,
+        policeRegisterColumns: p.police_register_columns,
       },
     };
   }
@@ -59,13 +95,16 @@ export class PropertyService {
                 invoice_terms=$6, invoice_bank_details=$7, print_mask_mobile=$8, receipt_paper=$9, email_enabled=$10,
                 email_from_name=$11, email_from_address=$12, email_reply_to=$13, quiet_hours_start=$14, quiet_hours_end=$15,
                 checkout_reminder_time=$16, reminder_skip_same_day=$17, reception_phone=$18, wifi_details=$19, location_link=$20,
-                desk_lock_minutes=$21
+                desk_lock_minutes=$21, housekeeping_stayovers=COALESCE($22, housekeeping_stayovers),
+                housekeeping_inspection=COALESCE($23, housekeeping_inspection),
+                police_register_columns=COALESCE($24::text[], police_register_columns)
           WHERE id = $1 AND version = $2`,
         [actor.user.propertyId, input.version, input.receptionistCanRunNightAudit, input.cashDifferenceThreshold, input.reviewDiscountPercent,
           input.invoiceTerms ?? null, input.invoiceBankDetails ?? null, input.printMaskMobile, input.receiptPaper, input.emailEnabled,
           input.emailFromName ?? null, input.emailFromAddress ?? null, input.emailReplyTo ?? null, input.quietHoursStart, input.quietHoursEnd,
           input.checkoutReminderTime, input.reminderSkipSameDay, input.receptionPhone ?? null, input.wifiDetails ?? null,
-          input.locationLink ?? null, input.deskLockMinutes],
+          input.locationLink ?? null, input.deskLockMinutes, input.housekeepingStayovers ?? null, input.housekeepingInspection ?? null,
+          input.policeRegisterColumns ?? null],
       );
       if (!rowCount) throw staleVersion();
       const { version: _v, ...after } = input;
@@ -141,7 +180,7 @@ export class PropertyService {
    * never stored, so it cannot drift from bookings (spec §10).
    */
   async listRooms(propertyId: string, date?: string) {
-    const day = date ?? (await this.businessDate(this.db, propertyId));
+    const day = date ?? (await this.today(this.db, propertyId));
     const { rows } = await this.db.query<RoomRow & {
       room_type_name: string; room_type_code: string; alloc_status: 'reserved' | 'checked_in' | null; start_date: string | null; end_date: string | null;
       reservation_id: string | null; reservation_number: string | null; guest_name: string | null; is_vip: boolean | null; out_of_order_today: boolean;

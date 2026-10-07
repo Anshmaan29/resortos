@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ID_TYPES_WITH_BACK, type DocumentType, type IdType } from '@resortos/shared';
 import { CaptureSlot } from '@/components/capture/capture-slot';
-import { slotState } from '@/lib/capture/slot-state';
+import { slotState, statusForSlot } from '@/lib/capture/slot-state';
 import { Select } from '@/components/ui/field';
 import { api, ApiError } from '@/lib/api';
 import { preloadOpenCv } from '@/lib/capture/opencv';
@@ -31,6 +31,8 @@ export default function PhoneCapturePage() {
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const [online, setOnline] = useState(true);
+  const secretInMemoryOnly = useRef(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [memoryOnly, setMemoryOnly] = useState(false);
   const [items, setItems] = useState<QueueItem[]>([]);
   // Remembered on the phone so a refresh never hides the ID slots.
@@ -38,7 +40,7 @@ export default function PhoneCapturePage() {
     if (typeof window === 'undefined') return {};
     try { return JSON.parse(localStorage.getItem(`rsos-capture-ids:${token}`) ?? '{}'); } catch { return {}; }
   });
-  useEffect(() => { localStorage.setItem(`rsos-capture-ids:${token}`, JSON.stringify(idChoice)); }, [idChoice, token]);
+  useEffect(() => { try { localStorage.setItem(`rsos-capture-ids:${token}`, JSON.stringify(idChoice)); } catch { /* Some phone browsers block storage. */ } }, [idChoice, token]);
   const queueRef = useRef<UploadQueue | null>(null);
 
   const headers = useMemo(() => (secret ? { 'x-capture-device': secret } : undefined), [secret]);
@@ -54,10 +56,11 @@ export default function PhoneCapturePage() {
   // Claim once; after a refresh, reuse the stored device secret.
   useEffect(() => {
     preloadOpenCv();
-    const stored = localStorage.getItem(storageKey);
+    let stored: string | null = null;
+    try { stored = localStorage.getItem(storageKey); } catch { secretInMemoryOnly.current = true; setMemoryOnly(true); }
     if (stored) { setSecret(stored); return; }
     api<{ deviceSecret: string; expiresAt: string; occupants: Occupant[] }>(`/capture/${token}/claim`, { method: 'POST', body: {} })
-      .then((res) => { localStorage.setItem(storageKey, res.deviceSecret); setSecret(res.deviceSecret); setOccupants(res.occupants); setExpiresAt(new Date(res.expiresAt).getTime()); })
+      .then((res) => { try { localStorage.setItem(storageKey, res.deviceSecret); } catch { secretInMemoryOnly.current = true; setMemoryOnly(true); } setSecret(res.deviceSecret); setOccupants(res.occupants); setExpiresAt(new Date(res.expiresAt).getTime()); })
       .catch((err) => { if (!closed(err)) setPhase({ kind: 'closed', message: 'Could not connect. Check the network and scan the QR code again.' }); });
   }, [token, storageKey, closed]);
 
@@ -65,12 +68,13 @@ export default function PhoneCapturePage() {
     if (!headers) return;
     try {
       const s = await api<{ expiresAt: string; occupants: Occupant[]; documents: ServerDoc[] }>(`/capture/${token}/status`, { method: 'POST', body: {}, headers });
+      setConnectionError(null);
       setOccupants(s.occupants);
       setDocs(s.documents);
       setExpiresAt(new Date(s.expiresAt).getTime());
       setPhase((p) => (p.kind === 'connecting' ? { kind: 'ready' } : p));
     } catch (err) {
-      if (!closed(err) && phase.kind === 'connecting' && !navigator.onLine) setPhase({ kind: 'ready' }); // offline after refresh: queue still works
+      if (!closed(err)) { setConnectionError('Could not reach the desk. Checking again… Keep this page open.'); if (phase.kind === 'connecting' && !navigator.onLine) setPhase({ kind: 'ready' }); } // offline after refresh: queue still works
     }
   }, [headers, token, closed, phase.kind]);
 
@@ -95,7 +99,7 @@ export default function PhoneCapturePage() {
     const queue = new UploadQueue(token, transport);
     queueRef.current = queue;
     const stop = queue.start();
-    const unsubscribe = queue.subscribe((list) => { setItems(list); setMemoryOnly(queue.isMemoryOnly); void refreshStatus(); });
+    const unsubscribe = queue.subscribe((list) => { setItems(list); setMemoryOnly(queue.isMemoryOnly || secretInMemoryOnly.current); void refreshStatus(); });
     return () => { stop(); unsubscribe(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [headers, token]);
@@ -122,8 +126,7 @@ export default function PhoneCapturePage() {
   }
 
   const latestItem = (slotKey: string) => [...items].reverse().find((i) => i.slotKey === slotKey);
-  const serverStatus = (occupantKey: string, docType: DocumentType) =>
-    [...docs].reverse().find((d) => d.occupantKey === occupantKey && d.docType === docType)?.status;
+
   const pendingOnDevice = items.filter((i) => i.status !== 'done' && i.status !== 'failed').length;
   const adults = occupants.filter((o) => !o.isChild);
 
@@ -140,6 +143,7 @@ export default function PhoneCapturePage() {
         )}
       </header>
 
+      {connectionError && online && <p role="status" className="rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">{connectionError}</p>}
       <AnimatePresence>
         {!online && (
           <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} role="status"
@@ -196,7 +200,7 @@ export default function PhoneCapturePage() {
                 {slots.filter((s) => s.show).map((s) => {
                   const slotKey = `${o.key}:${s.docType}`;
                   const item = latestItem(slotKey);
-                  const state = slotState(serverStatus(o.key, s.docType), item, item ? queueRef.current?.progressOf(item.id) ?? 0 : 0);
+                  const state = slotState(statusForSlot(docs, o.key, s.docType, item), item, item ? queueRef.current?.progressOf(item.id) ?? 0 : 0);
                   return (
                     <CaptureSlot key={slotKey} label={s.label} hint={s.hint} docType={s.docType} idType={s.docType === 'guest_photo' ? null : idType} state={state} item={item}
                       allowFiles={s.docType !== 'guest_photo'}

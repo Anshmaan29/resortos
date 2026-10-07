@@ -6,6 +6,18 @@ import type { CheckoutBlocker, CheckoutContext, CheckoutStep } from '../stays/ch
 import { FolioService } from './folio.service';
 import { InvoicesService } from './invoices.service';
 import { PaymentsService } from './payments.service';
+import { RoomNightPostingStep } from './room-night.step';
+
+@Injectable()
+export class RoomChargesCheckoutStep implements CheckoutStep {
+  readonly name = 'room_charges';
+  readonly order = 10;
+  constructor(private readonly posting: RoomNightPostingStep) {}
+  async check({ q, actor, stay, businessDate }: CheckoutContext): Promise<CheckoutBlocker[]> {
+    await this.posting.prepareCheckout(q, actor, stay.id, businessDate);
+    return [];
+  }
+}
 
 /**
  * Billing's part of checkout (spec §22), registered on the extension points 1.8 left for it:

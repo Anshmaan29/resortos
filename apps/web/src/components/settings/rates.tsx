@@ -61,6 +61,8 @@ export function RatesSettings() {
         ))}
       </Section>
 
+      <details>
+        <summary className="cursor-pointer text-sm text-text-3">Existing meal-plan settings</summary>
       <Section title="Meal plans" description="Per person per night, added to the room rate.">
         {MEAL_PLAN_CODES.map((code) => {
           const m = meals.data!.find((x) => x.code === code);
@@ -75,6 +77,8 @@ export function RatesSettings() {
           );
         })}
       </Section>
+
+      </details>
 
       {planEdit && <RatePlanDialog plan={planEdit === 'new' ? null : planEdit} onClose={() => setPlanEdit(null)} />}
       {adding && today && <CalendarDialog plans={plans.data.filter((p) => p.isActive)} today={today} onClose={() => setAdding(false)} />}

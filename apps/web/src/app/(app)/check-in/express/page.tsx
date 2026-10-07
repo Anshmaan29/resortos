@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { ArrowRight, Zap } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { addDays, formatDate, formatINR, MEAL_PLAN_CODES, MEAL_PLAN_LABELS, nightsBetween, type MealPlanCode } from '@resortos/shared';
+import { addDays, formatDate, formatINR, nightsBetween } from '@resortos/shared';
 import { Button } from '@/components/ui/button';
 import { DateField } from '@/components/ui/date-field';
 import { Field, Input, Select } from '@/components/ui/field';
@@ -23,13 +23,13 @@ import type { Availability, Quote, ReservationDetail } from '@/lib/types';
 export default function ExpressCheckInPage() {
   const router = useRouter();
   const property = useProperty();
-  const today = property.data?.businessDate ?? '';
+  const today = property.data?.today ?? '';
   const [departure, setDeparture] = useState('');
   const [guest, setGuest] = useState({ firstName: '', lastName: '', mobile: '', email: '', preferredLanguage: 'en' as 'en' | 'hi' });
   const [roomTypeId, setRoomTypeId] = useState('');
   const [roomId, setRoomId] = useState('');
   const [adults, setAdults] = useState('2');
-  const [mealPlan, setMealPlan] = useState<MealPlanCode>('EP');
+  const mealPlan = 'EP';
   const [rate, setRate] = useState('');
   const key = useRef(newIdempotencyKey());
   useEffect(() => { if (today && !departure) setDeparture(addDays(today, 1)); }, [today, departure]);
@@ -91,8 +91,6 @@ export default function ExpressCheckInPage() {
             <div className="grid gap-4 sm:grid-cols-3">
               <Field label="Leaving on" required error={fields.departure}>{(id) => <DateField id={id} value={departure} onChange={setDeparture} min={addDays(today, 1)} />}</Field>
               <Field label="Adults" required>{(id) => <Input id={id} inputMode="numeric" value={adults} onChange={(e) => setAdults(e.target.value.replace(/\D/g, ''))} />}</Field>
-              <Field label="Meal plan">{(id) => (
-                <Select id={id} value={mealPlan} onChange={(e) => setMealPlan(e.target.value as MealPlanCode)}>{MEAL_PLAN_CODES.map((m) => <option key={m} value={m}>{MEAL_PLAN_LABELS[m]}</option>)}</Select>)}</Field>
             </div>
             <p className="mb-2 mt-5 text-sm font-medium text-text-2">Room type</p>
             {availability.isLoading ? <Skeleton className="h-20" /> : (

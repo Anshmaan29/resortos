@@ -1,8 +1,8 @@
 import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Put, Query, Req } from '@nestjs/common';
-import { zId } from '@resortos/shared';
+import { emailSettingsSchema, zId } from '@resortos/shared';
 import { z } from 'zod';
 import { APP_CONFIG, type AppConfig } from '../config';
-import { CurrentActor, Public, Roles } from '../common/decorators';
+import { CurrentActor, IdempotencyKey, Public, Roles } from '../common/decorators';
 import { AppError, forbidden } from '../common/errors';
 import type { Actor, AppRequest } from '../common/request-context';
 import { parse } from '../common/zod';
@@ -18,6 +18,16 @@ const languageSchema = z.enum(['en', 'hi']);
 export class MessagingController {
   constructor(private readonly messaging: MessagingService, @Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
+  @Get('email-settings')
+  @Roles('owner')
+  emailSettings(@CurrentActor() actor: Actor) { return this.messaging.emailSettings(actor.user.propertyId); }
+
+  @Put('email-settings')
+  @Roles('owner')
+  saveEmailSettings(@CurrentActor() actor: Actor, @IdempotencyKey() key: string | undefined, @Body() body: unknown) {
+    return this.messaging.saveEmailSettings(actor, parse(emailSettingsSchema, body), key);
+  }
+
   /** Messages for a booking or a stay, newest first — the "Messages" panel. */
   @Get('messages')
   list(@CurrentActor() actor: Actor, @Query() query: unknown) {
@@ -28,17 +38,17 @@ export class MessagingController {
 
   @Post('messages/:id/resend')
   @HttpCode(200)
-  resend(@CurrentActor() actor: Actor, @Param('id') id: string) {
-    return this.messaging.resend(actor, parse(zId, id));
+  resend(@CurrentActor() actor: Actor, @IdempotencyKey() key: string | undefined, @Param('id') id: string) {
+    return this.messaging.resend(actor, parse(zId, id),key);
   }
 
   /** Send a message for a booking now, e.g. the confirmation again after the guest added an email. */
   @Post('messages/send')
   @HttpCode(200)
-  sendNow(@CurrentActor() actor: Actor, @Body() body: unknown) {
+  sendNow(@CurrentActor() actor: Actor, @IdempotencyKey() key: string | undefined, @Body() body: unknown) {
     const input = parse(z.object({ templateKey: keySchema, reservationId: zId.optional(), stayId: zId.optional() })
       .refine((v) => v.reservationId || v.stayId, 'Choose a booking or a stay'), body);
-    return this.messaging.sendNow(actor, input.templateKey, input);
+    return this.messaging.sendNow(actor, input.templateKey, input,key);
   }
 
   // ---------------- templates (owner settings) ----------------

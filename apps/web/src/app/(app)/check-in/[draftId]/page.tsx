@@ -82,7 +82,7 @@ export default function CheckInPage() {
       <AnimatePresence mode="wait">
         <motion.div key={step} {...stepIn}>
           {step === 1 && <GuestsStep draft={d} data={data} onChange={change} />}
-          {step === 2 && <RoomStep draft={d} data={data} businessDate={property.data.businessDate} onChange={change} />}
+          {step === 2 && <RoomStep draft={d} data={data} businessDate={property.data.today} onChange={change} />}
           {step === 3 && <DocumentsStep draft={d} data={data} onChange={change} onRefresh={refresh} queue={queue} />}
           {step === 4 && <RegistrationStep draft={d} data={data} property={property.data} onChange={change} onRefresh={refresh} queue={queue} />}
           {step === 5 && <ConfirmStep draft={d} data={data} reservation={reservation.data} />}
@@ -99,7 +99,7 @@ export default function CheckInPage() {
           {step < 5 ? (
             <Button onClick={() => go(step + 1)}>Next<ArrowRight className="h-4 w-4" /></Button>
           ) : (
-            <Button size="lg" loading={confirm.isPending} disabled={d.problems.length > 0 || dirty.current || saveState === 'saving'}
+            <Button size="lg" loading={confirm.isPending} disabled={uploading || d.problems.length > 0 || dirty.current || saveState === 'saving'}
               title={d.problems[0]?.message} onClick={() => confirm.mutate()}>
               <Check className="h-5 w-5" />Confirm check-in
             </Button>

@@ -11,7 +11,7 @@ export interface PropertyPolicies {
 }
 export interface Property {
   id: string; name: string; legalName: string; addressLine1: string; addressLine2: string | null; city: string; stateCode: string;
-  pinCode: string; gstin: string | null; phone: string; email: string | null; businessDate: string; checkInTime: string; checkOutTime: string;
+  pinCode: string; gstin: string | null; phone: string; email: string | null; today: string; businessDate: string; checkInTime: string; checkOutTime: string;
   timezone: string; isPractice: boolean; version: number; policies: PropertyPolicies;
 }
 export interface RoomType { id: string; code: string; name: string; baseOccupancy: number; maxOccupancy: number; baseRate: string; minRate: string; extraAdultRate: string; extraChildRate: string; isActive: boolean; version: number }
@@ -99,7 +99,7 @@ export interface CheckoutPreview {
 }
 export interface GrcVersion {
   id: string; number: string; version: number; supersedesId: string | null; sizeBytes: number; sha256: string;
-  signatureMethod: 'touchscreen' | 'phone' | 'paper_scan'; signedAt: string; noticeVersion: string; generatedAt: string; reason: string | null;
+  signatureMethod: 'touchscreen' | 'phone' | 'paper_scan' | 'not_collected'; signedAt: string | null; noticeVersion: string; generatedAt: string; reason: string | null;
 }
 export interface GrcList { stayId: string; current: GrcVersion | null; versions: GrcVersion[] }
 

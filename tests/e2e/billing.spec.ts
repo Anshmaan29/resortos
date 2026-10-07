@@ -12,7 +12,7 @@ async function loginAs(page: Page, username: string, password: string) {
 }
 
 /**
- * The seeded in-house bookings predate stay rows, so the stay for room C1 is created here the same
+ * The seeded in-house bookings predate stay rows, so the stay for room 201 is created here the same
  * way the API suites create theirs: a confirmed draft and a stay for the booking already in the room.
  */
 async function stayInRoom(number: string): Promise<string> {
@@ -56,7 +56,7 @@ test('a stay with food and an activity, paid card + UPI, checks out with a tax i
   await page.getByRole('button', { name: 'Open shift' }).click();
   await expect(page.getByText('Shift opened')).toBeVisible();
 
-  const stayId = await stayInRoom('C1');
+  const stayId = await stayInRoom('201');
   await page.goto(`/stays/${stayId}`);
 
   const addCharge = async (type: string, name: string, quantity: string, rate: string) => {
@@ -92,8 +92,20 @@ test('a stay with food and an activity, paid card + UPI, checks out with a tax i
   await expect(page.getByRole('definition').filter({ hasText: /^₹0$/ })).toBeVisible();
 
   await page.getByRole('button', { name: 'Check out' }).click();
-  const checkout = page.getByRole('dialog', { name: 'Check out room C1?' });
+  const checkout = page.getByRole('dialog', { name: 'Check out room 201?' });
   await expect(checkout.getByText('Tax invoice to be issued')).toBeVisible();
+  // Checkout completes elapsed agreed room charges before settlement. The earlier
+  // card/UPI payments covered the incidental charges only.
+  await expect(checkout.getByText(/is still to pay\./)).toBeVisible();
+  await checkout.getByRole('button', { name: 'Record payment', exact: true }).click();
+  const finalPayment = page.getByRole('dialog', { name: 'Record a payment' });
+  await finalPayment.getByLabel('How was it paid').selectOption({ label: 'UPI' });
+  await finalPayment.getByLabel('Where did it go').selectOption({ label: 'UPI QR at desk' });
+  const completeBill = await (await page.request.get(`/api/v1/stays/${stayId}/bill`)).json();
+  await finalPayment.getByLabel('Amount').fill(completeBill.balance);
+  await finalPayment.getByLabel(/Approval code|UTR/).fill('UTR-ROOM-SETTLEMENT');
+  await finalPayment.getByRole('button', { name: /^Record ₹/ }).click();
+  await expect(finalPayment).not.toBeVisible();
   await expect(checkout.getByText('Nothing is blocking this checkout.')).toBeVisible();
   await checkout.getByRole('button', { name: 'Issue invoice and check out' }).click();
 

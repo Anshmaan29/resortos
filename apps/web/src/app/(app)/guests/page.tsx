@@ -16,13 +16,13 @@ export default function GuestsPage() {
 
   const results = useQuery({
     queryKey: ['guests', q],
-    enabled: q.length >= 2,
+    enabled: q.length === 0 || q.length >= 2,
     queryFn: () => api<Guest[]>('/guests', { query: { q } }),
   });
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader title="Guests" description="Search by name, mobile, booking number or vehicle number." />
+      <PageHeader title="Guests" description="Recent guests. Search by name, mobile, booking number or vehicle number." />
 
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-3" aria-hidden />
@@ -39,7 +39,7 @@ export default function GuestsPage() {
 
       {q.length > 0 && q.length < 2 && <p className="text-sm text-text-3">Type at least two characters.</p>}
 
-      {results.isLoading && q.length >= 2 && <div className="flex flex-col gap-2"><Skeleton className="h-16" /><Skeleton className="h-16" /></div>}
+      {results.isLoading && (q.length === 0 || q.length >= 2) && <div className="flex flex-col gap-2"><Skeleton className="h-16" /><Skeleton className="h-16" /></div>}
       {results.isError && <ErrorBanner message={(results.error as Error).message} onRetry={() => results.refetch()} />}
 
       {results.data && results.data.length === 0 && (

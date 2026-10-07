@@ -35,11 +35,11 @@ describe('purpose of visit', () => {
   });
 
   it('is optional, and the database refuses a purpose that is not on the list', async () => {
-    const created = await post(owner, '/reservations', booking({ roomTypeId: f.type('STD'), arrival: '2026-11-05', departure: '2026-11-06' })).expect(201);
+    const created = await post(owner, '/reservations', booking({ roomTypeId: f.type('DLX'), arrival: '2026-11-05', departure: '2026-11-06' })).expect(201);
     expect((await owner.get(`/api/v1/reservations/${created.body.id}`)).body.purpose).toBeNull();
 
     const bad = await post(owner, '/reservations', {
-      ...booking({ roomTypeId: f.type('STD'), arrival: '2026-11-07', departure: '2026-11-08' }), purpose: 'honeymoon',
+      ...booking({ roomTypeId: f.type('DLX'), arrival: '2026-11-07', departure: '2026-11-08' }), purpose: 'honeymoon',
     });
     expect(bad.status).toBe(400);
     await expect(sql(`UPDATE reservations SET purpose = 'honeymoon' WHERE id = $1`, [created.body.id]))
@@ -63,6 +63,19 @@ describe('guest search (spec §16)', () => {
     const spaced = vehicle.registration.replace(/^(..)(..)(..)/, '$1 $2 $3 ');
     const loose = await desk.get('/api/v1/guests').query({ q: spaced }).expect(200);
     expect(loose.body.map((g: { fullName: string }) => g.fullName)).toContain(vehicle.guest);
+  });
+
+  it('matches typed wildcard characters literally and supports recent browsing', async () => {
+    for (const q of ['%%', '__']) {
+      const res = await desk.get('/api/v1/guests').query({ q }).expect(200);
+      expect(res.body).toEqual([]);
+    }
+    const [guest] = await sql<{ id: string; mobile: string }>(`SELECT id, mobile FROM guests WHERE merged_into_id IS NULL LIMIT 1`);
+    if (guest) {
+      const res = await desk.get('/api/v1/guests').query({ q: guest.mobile }).expect(200);
+      expect(res.body[0].mobile).toBe(guest.mobile);
+    }
+    expect((await desk.get('/api/v1/guests').expect(200)).body.length).toBeGreaterThan(0);
   });
 
   it('still finds by mobile, part of a name and booking number', async () => {

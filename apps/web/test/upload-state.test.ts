@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BLOCKED_MESSAGE, isBlocked } from '../src/lib/capture/upload-queue';
-import { slotState } from '../src/lib/capture/slot-state';
+import { slotState, statusForSlot } from '../src/lib/capture/slot-state';
 
 /**
  * What the phone shows while a photo is on its way — and, more importantly, what it shows when the
@@ -48,3 +48,10 @@ describe('what the slot says', () => {
     expect(slotState('verified', item({ attempts: 5, error: BLOCKED_MESSAGE }), 0)).toEqual({ kind: 'received' });
   });
 });
+
+ it('does not mark a new retake as received based on the previous photo', () => {
+   const old = { id: 'old', occupantKey: 'r0a0', docType: 'id_front', status: 'verified' as const };
+   expect(statusForSlot([old], 'r0a0', 'id_front', item({ status: 'queued' }))).toBeUndefined();
+   expect(statusForSlot([old], 'r0a0', 'id_front', item({ documentId: 'new', status: 'uploading' }))).toBeUndefined();
+   expect(statusForSlot([old, { ...old, id: 'new' }], 'r0a0', 'id_front', item({ documentId: 'new', status: 'verifying' }))).toBe('verified');
+ });

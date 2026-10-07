@@ -6,6 +6,8 @@ export interface Point { x: number; y: number }
 export type Corners = [Point, Point, Point, Point];
 export const MAX_SIDE = 2000;
 export const TARGET_BYTES = 600_000;
+export const FACE_TARGET_BYTES = 200_000;
+export const FACE_MAX_SIDE = 1200;
 
 /** Decodes a photo with its EXIF orientation applied (iPhone photos are often rotated). */
 export async function decodeImage(blob: Blob): Promise<HTMLCanvasElement> {
@@ -13,17 +15,23 @@ export async function decodeImage(blob: Blob): Promise<HTMLCanvasElement> {
   try {
     bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
   } catch {
+    const url = URL.createObjectURL(blob);
+    try {
     bitmap = await new Promise<HTMLImageElement>((ok, fail) => {
       const img = new Image();
       img.onload = () => ok(img);
       img.onerror = () => fail(new Error('This file is not a photo this browser can open. Try taking the photo again.'));
-      img.src = URL.createObjectURL(blob);
+      img.src = url;
     });
+    } finally { URL.revokeObjectURL(url); }
   }
   const canvas = document.createElement('canvas');
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
-  canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
+  // Bound the working canvas before drawing: a 48 MP phone image otherwise keeps
+  // another ~192 MB allocation alive throughout cropping and OpenCV processing.
+  const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   if ('close' in bitmap) bitmap.close();
   return canvas;
 }
@@ -194,8 +202,8 @@ export function straighten(cv: CV | null, source: HTMLCanvasElement, c: Corners)
  * Re-encodes to JPEG, longest side ≤ 2000 px, stepping quality/size down to stay under ~600 KB.
  * Drawing to a canvas and re-encoding drops all EXIF metadata, including GPS location.
  */
-export async function encodeJpeg(source: HTMLCanvasElement, maxBytes = TARGET_BYTES): Promise<Blob> {
-  let canvas = scaleToFit(source, MAX_SIDE);
+export async function encodeJpeg(source: HTMLCanvasElement, maxBytes = TARGET_BYTES, maxSide = MAX_SIDE): Promise<Blob> {
+  let canvas = scaleToFit(source, maxSide);
   for (const quality of [0.82, 0.74, 0.66, 0.58]) {
     const blob = await toBlob(canvas, 'image/jpeg', quality);
     if (blob.size <= maxBytes) return blob;
@@ -205,7 +213,9 @@ export async function encodeJpeg(source: HTMLCanvasElement, maxBytes = TARGET_BY
     const blob = await toBlob(canvas, 'image/jpeg', 0.66);
     if (blob.size <= maxBytes) return blob;
   }
-  return toBlob(canvas, 'image/jpeg', 0.6);
+  const last = await toBlob(canvas, 'image/jpeg', 0.6);
+  if (last.size <= maxBytes) return last;
+  throw new Error('This photo is too detailed to save clearly at a small size. Move closer to the document and retake.');
 }
 
 /**

@@ -83,7 +83,7 @@ export default function InvoicePage() {
         </div>
         <dl className="flex flex-col gap-1 border-t border-border p-4 text-sm">
           {i.groups.filter((g) => Number(g.ratePercent) > 0).map((g) => (
-            <div key={g.ratePercent} className="flex justify-between"><dt className="text-text-2">CGST + SGST at {Number(g.ratePercent)}% on {formatINR(g.taxableValue)}</dt><dd className="tabular-nums">{formatINR(money(g.cgst).plus(g.sgst).toFixed(2))}</dd></div>
+            <div key={g.ratePercent} className="flex justify-between"><dt className="text-text-2">{Number(g.igst) ? 'IGST' : 'CGST + SGST'} at {Number(g.ratePercent)}% on {formatINR(g.taxableValue)}</dt><dd className="tabular-nums">{formatINR(money(g.cgst).plus(g.sgst).plus(g.igst).toFixed(2))}</dd></div>
           ))}
           {Number(i.roundOff) !== 0 && <div className="flex justify-between"><dt className="text-text-2">Round off</dt><dd className="tabular-nums">{formatINR(i.roundOff)}</dd></div>}
           <div className="flex justify-between border-t border-border pt-2 text-base font-semibold"><dt>Total</dt><dd className="tabular-nums">{formatINR(i.grandTotal)}</dd></div>

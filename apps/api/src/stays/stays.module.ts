@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { DepositCheckoutStep, InvoiceCheckoutStep, SettlementCheckoutStep } from '../folios/checkout.steps';
+import { DepositCheckoutStep, InvoiceCheckoutStep, SettlementCheckoutStep, RoomChargesCheckoutStep } from '../folios/checkout.steps';
 import { FoliosModule } from '../folios/folios.module';
 import { PropertyModule } from '../property/property.module';
 import { RatesModule } from '../rates/rates.module';
@@ -23,9 +23,9 @@ import { StaysService } from './stays.service';
     // The steps live with the bill they read; this is only where checkout is told they exist.
     {
       provide: CHECKOUT_STEPS,
-      useFactory: (deposit: DepositCheckoutStep, settlement: SettlementCheckoutStep, invoice: InvoiceCheckoutStep): CheckoutStep[] =>
-        [deposit, settlement, invoice],
-      inject: [DepositCheckoutStep, SettlementCheckoutStep, InvoiceCheckoutStep],
+      useFactory: (room: RoomChargesCheckoutStep, deposit: DepositCheckoutStep, settlement: SettlementCheckoutStep, invoice: InvoiceCheckoutStep): CheckoutStep[] =>
+        [room, deposit, settlement, invoice],
+      inject: [RoomChargesCheckoutStep, DepositCheckoutStep, SettlementCheckoutStep, InvoiceCheckoutStep],
     },
   ],
 })

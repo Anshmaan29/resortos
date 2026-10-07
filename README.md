@@ -3,7 +3,7 @@
 Cloud resort management system for Indian resorts — front desk, billing with GST, owner data access,
 and strict data safety. Built to the ResortOS Master Specification v4.
 
-**Status:** Phase 1 (Foundation & Front Desk) in progress — see [`docs/PHASES.md`](docs/PHASES.md).
+**Status:** Reception, billing, documents and owner records are implemented; hotel acceptance and accountant-confirmed tax setup remain before handover. See [`docs/hotel-handover.md`](docs/hotel-handover.md) and [`docs/PHASES.md`](docs/PHASES.md).
 Testing: [`docs/testing.md`](docs/testing.md) · Security: [`docs/security.md`](docs/security.md) · Go-live: [`docs/production-readiness.md`](docs/production-readiness.md)
 
 ## Stack

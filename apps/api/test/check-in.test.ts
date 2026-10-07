@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -170,9 +170,41 @@ describe('confirm check-in (spec §18.3, §19.6)', () => {
       "Meera Joshi's ID (back) is still uploading",
       "Arjun Joshi's ID (front) is missing",
       'guest photo of Meera Joshi is missing',
-      'Guest signature is missing',
       'The guest must accept the stay and legal-compliance notice',
     ]));
+  });
+
+  it('uses only the latest retake and blocks a pending replacement despite an older verified ID', async () => {
+    const old = await deskDocument(draft.id, 'id_front', { idType: 'driving_licence', occupantKey: 'r0a0' });
+    const bytes = jpeg();
+    const payload = { source: 'desk_camera', docType: 'id_front', idType: 'driving_licence', occupantKey: 'r0a0',
+      contentType: 'image/jpeg', sizeBytes: bytes.length, sha256: sha(bytes), clientUploadId: randomUUID() };
+    const replacement = await post(desk, `/check-in-drafts/${draft.id}/documents`, payload, null).expect(201);
+    const pending = await desk.get(`/api/v1/check-in-drafts/${draft.id}`).expect(200);
+    expect(pending.body.documents.filter((d: any) => d.docType === 'id_front' && d.occupantKey === 'r0a0').map((d: any) => d.id)).toEqual([replacement.body.documentId]);
+    expect(pending.body.problems.map((p: any) => p.message)).toContain("Meera Joshi's ID (front) is still uploading");
+    const retry = await post(desk, `/check-in-drafts/${draft.id}/documents`, payload, null).expect(201);
+    expect(retry.body.documentId).toBe(replacement.body.documentId);
+    expect((await putFile(replacement.body.upload, bytes)).status).toBe(200);
+    await post(desk, `/check-in-drafts/${draft.id}/documents/${replacement.body.documentId}/confirm`, {}, null).expect(200);
+    const current = await desk.get(`/api/v1/check-in-drafts/${draft.id}`).expect(200);
+    expect(current.body.documents.some((d: any) => d.id === old.id)).toBe(false);
+    draft.replacementId = replacement.body.documentId;
+    draft.oldDocumentId = old.id;
+  });
+
+  it('late completion of an older retake cannot replace the newest upload', async () => {
+    const bytes = jpeg();
+    const old = await post(desk, `/check-in-drafts/${draft.id}/documents`, {
+      source: 'desk_camera', docType: 'id_front', idType: 'driving_licence', occupantKey: 'r0a0',
+      contentType: 'image/jpeg', sizeBytes: bytes.length, sha256: sha(bytes),
+    }, null).expect(201);
+    const latest = await deskDocument(draft.id, 'id_front', { idType: 'driving_licence', occupantKey: 'r0a0' });
+    expect((await putFile(old.body.upload, bytes)).status).toBe(200);
+    await post(desk, `/check-in-drafts/${draft.id}/documents/${old.body.documentId}/confirm`, {}, null).expect(200);
+    const current = await desk.get(`/api/v1/check-in-drafts/${draft.id}`).expect(200);
+    expect(current.body.documents.filter((d: any) => d.docType === 'id_front' && d.occupantKey === 'r0a0').map((d: any) => d.id)).toEqual([latest.id]);
+    draft.replacementId = latest.id;
   });
 
   it('confirms once all documents are verified; a double click does not check in twice', async () => {
@@ -205,7 +237,22 @@ describe('confirm check-in (spec §18.3, §19.6)', () => {
     expect(stay.body.occupants.map((o: any) => o.idLast4)).toEqual(['4321', 'Z9K1']);
     expect(stay.body.vehicles[0].registration).toBe('RJ27CB1234');
     expect(stay.body.documents.filter((d: any) => d.status === 'verified').length).toBe(5);
+    expect(stay.body.documents.some((d: any) => d.id === draft.replacementId)).toBe(true);
+    const [oldDocument] = await sql(`SELECT stay_id FROM guest_documents WHERE id = $1`, [draft.oldDocumentId]);
+    expect(oldDocument.stay_id).toBeNull();
     draft.stayId = stay.body.id;
+  });
+
+  it('hides historical duplicate captures in stay and guest history without mixing guests', async () => {
+    // Simulate a stay confirmed by the older app, which attached every verified retake.
+    await sql(`UPDATE guest_documents SET stay_id = $1 WHERE id = $2`, [draft.stayId, draft.oldDocumentId]);
+    const stay = await desk.get(`/api/v1/stays/${draft.stayId}`).expect(200);
+    expect(stay.body.documents.filter((d: any) => d.docType === 'id_front' && d.occupantKey === 'r0a0').map((d: any) => d.id)).toEqual([draft.replacementId]);
+    expect(stay.body.documents.filter((d: any) => d.docType === 'id_front' && d.occupantKey === 'r0a1')).toHaveLength(1);
+    const [row] = await sql(`SELECT primary_guest_id FROM stays WHERE id = $1`, [draft.stayId]);
+    const guest = await desk.get(`/api/v1/guests/${row.primary_guest_id}`).expect(200);
+    expect(guest.body.documents.some((d: any) => d.id === draft.oldDocumentId)).toBe(false);
+    expect(guest.body.documents.some((d: any) => d.id === draft.replacementId)).toBe(true);
   });
 
   it('document images open only through a short-lived signed link, and every view is logged', async () => {
@@ -220,6 +267,12 @@ describe('confirm check-in (spec §18.3, §19.6)', () => {
     expect((await fetch(link.body.url.replace(/X-Amz-Expires=\d+/, 'X-Amz-Expires=86400'))).status).toBe(403);
     const [log] = await sql(`SELECT count(*)::int AS n FROM document_access_log WHERE document_id = $1`, [doc.id]);
     expect(log.n).toBe(1);
+    const download = await desk.get(`/api/v1/documents/${doc.id}/download`).expect(302);
+    const saved = await fetch(download.headers.location!);
+    expect(saved.status).toBe(200);
+    expect(saved.headers.get('content-disposition')).toContain('attachment; filename="document-');
+    const [access] = await sql(`SELECT purpose FROM document_access_log WHERE document_id=$1 ORDER BY id DESC LIMIT 1`, [doc.id]);
+    expect(access.purpose).toBe('download');
   });
 });
 
@@ -253,8 +306,11 @@ describe('checkout (status change with extension points, spec §22)', () => {
 
   it('checks the guest out, frees and dirties the room, and cannot run twice', async () => {
     const preview = await desk.get(`/api/v1/stays/${draft.stayId}/checkout-preview`).expect(200);
-    // Billing's steps are registered (2.3–2.6); an empty bill has nothing for any of them to block.
-    expect(preview.body).toMatchObject({ blockers: [], earlyDeparture: true, steps: ['deposit', 'settlement', 'invoice'] });
+    expect(preview.body).toMatchObject({ earlyDeparture: true, steps: ['room_charges', 'deposit', 'settlement', 'invoice'] });
+    expect(preview.body.blockers).toEqual([expect.objectContaining({ step: 'settlement' })]);
+    const bill = (await desk.get(`/api/v1/stays/${draft.stayId}/bill`).expect(200)).body;
+    const [account] = await sql<{ id: string }>("SELECT id FROM payment_accounts WHERE kind = 'upi' LIMIT 1");
+    await post(desk, `/folios/${bill.id}/payments`, { method: 'upi', paymentAccountId: account!.id, amount: bill.balance, reference: 'CHECKIN-CHECKOUT' }).expect(200);
 
     const out = await post(desk, `/stays/${draft.stayId}/checkout`, {}).expect(200);
     expect(out.body).toMatchObject({ status: 'checked_out', earlyDeparture: true, businessDateOut: '2026-09-16' });
@@ -271,9 +327,9 @@ describe('checkout (status change with extension points, spec §22)', () => {
 
 describe('resuming uploads', () => {
   it('phone status shows only its own documents; a fresh upload link for the same pending document can be issued', async () => {
-    const created = await post(owner, '/reservations', { ...booking({ roomTypeId: f.type('PCOT'), roomId: f.room('C3'), arrival: '2026-09-16', departure: '2026-09-17' }), guest: { firstName: 'Resume', lastName: 'Test', mobile: '9829066601' } }).expect(201);
+    const created = await post(owner, '/reservations', { ...booking({ roomTypeId: f.type('PRE'), roomId: f.room('209'), arrival: '2026-09-16', departure: '2026-09-17' }), guest: { firstName: 'Resume', lastName: 'Test', mobile: '9829066601' } }).expect(201);
     const d = await post(desk, '/check-in-drafts', { reservationId: created.body.id }, null).expect(200);
-    expect(d.body.reservation).toMatchObject({ number: created.body.number, guestName: 'Resume Test', rooms: [{ roomNumber: 'C3', adults: 2 }] });
+    expect(d.body.reservation).toMatchObject({ number: created.body.number, guestName: 'Resume Test', rooms: [{ roomNumber: '209', adults: 2 }] });
     const session = await post(desk, `/check-in-drafts/${d.body.id}/capture-sessions`, {}, null).expect(201);
     const claim = await phone().post(`/api/v1/capture/${session.body.token}/claim`).set('x-resortos', '1').expect(200);
     const dev = claim.body.deviceSecret;
@@ -296,7 +352,7 @@ describe('resuming uploads', () => {
 
 describe('idempotent document creation', () => {
   it('retrying with the same client upload id returns the same document; a different photo under that id is refused', async () => {
-    const created = await post(owner, '/reservations', { ...booking({ roomTypeId: f.type('PCOT'), roomId: f.room('C2'), arrival: '2026-09-16', departure: '2026-09-17' }), guest: { firstName: 'Retry', lastName: 'Test', mobile: '9829066602' } }).expect(201);
+    const created = await post(owner, '/reservations', { ...booking({ roomTypeId: f.type('PRE'), roomId: f.room('108'), arrival: '2026-09-16', departure: '2026-09-17' }), guest: { firstName: 'Retry', lastName: 'Test', mobile: '9829066602' } }).expect(201);
     const d = await post(desk, '/check-in-drafts', { reservationId: created.body.id }, null).expect(200);
     const bytes = jpeg(300);
     const body = { source: 'desk_camera', clientUploadId: '0b8f2a7c-7c1e-4a5b-9d51-6c0e1f2a3b4c', docType: 'guest_photo', occupantKey: 'r0a0', contentType: 'image/jpeg', sizeBytes: bytes.length, sha256: sha(bytes) };

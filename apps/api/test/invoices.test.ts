@@ -23,7 +23,7 @@ const billOf = async (stayId: string, agent: Agent = desk) => (await agent.get(`
 async function stay(room: string, type: string, nights: { date: string; rate: string }[] = [{ date: '2026-09-16', rate: '4000.00' }]) {
   mobile += 1;
   const created = await post(owner, '/reservations', {
-    ...booking({ roomTypeId: f.type(type), roomId: f.room(room), arrival: '2026-09-16', departure: '2026-09-18' }),
+    ...booking({ roomTypeId: f.type(type), roomId: f.room(room), arrival: '2026-09-16', departure: '2026-09-18', adults: 1 }),
     guest: { firstName: 'Inv', lastName: `Guest${mobile}`, mobile: String(mobile) },
   }).expect(201);
   const [draft] = await sql<{ id: string }>(
@@ -49,7 +49,7 @@ async function stay(room: string, type: string, nights: { date: string; rate: st
   for (const n of nights) {
     await sql(
       `INSERT INTO folio_lines (property_id, folio_id, business_date, line_type, name, quantity, unit_rate, amount, tax_category, source, room_id, created_by)
-       SELECT f.property_id, f.id, $2, 'room_night', 'Room — Deluxe', 1, $3, $3, 'accommodation', 'night_audit', $4, u.id
+       SELECT f.property_id, f.id, $2, 'room_night', 'Room — Delux', 1, $3, $3, 'accommodation', 'night_audit', $4, u.id
          FROM folios f, users u WHERE f.id = $1 AND u.role = 'owner'`,
       [bill.id, n.date, n.rate, s!.room_id],
     );
@@ -58,6 +58,7 @@ async function stay(room: string, type: string, nights: { date: string; rate: st
 }
 
 async function payInFull(folioId: string, stayId: string) {
+  await desk.get(`/api/v1/stays/${stayId}/checkout-preview`).expect(200);
   const bill = await billOf(stayId);
   if (Number(bill.balance) > 0) {
     await post(desk, `/folios/${folioId}/payments`, { method: 'cash', paymentAccountId: cash, amount: bill.balance }).expect(200);
@@ -121,7 +122,7 @@ describe('checkout settles the bill and issues the invoice', () => {
       expect.objectContaining({ ratePercent: '18.00', taxableValue: '3000.00', cgst: '270.00', sgst: '270.00' }),
     ]);
     expect(invoice.grandTotal).toBe('8328.00');
-    expect(invoice.lines.map((l: any) => l.description)).toEqual(['Room — Deluxe · Room 202', 'Paneer Tikka', 'Jeep Safari']);
+    expect(invoice.lines.map((l: any) => l.description)).toEqual(['Room — Delux · Room 202', 'Paneer Tikka', 'Jeep Safari']);
     expect(invoice.placeOfSupply).toBe(invoice.seller.stateCode);
     expect(invoice.paid.reduce((t: number, p: any) => t + Number(p.amount), 0)).toBe(8328);
   });
@@ -142,8 +143,7 @@ describe('checkout settles the bill and issues the invoice', () => {
 describe('numbering (spec §31)', () => {
   it('bills finalised at the same moment get consecutive numbers — no gap, no duplicate', async () => {
     const stays = [];
-    for (const room of ['103', '205', 'C2', 'C3', 'V2']) {
-      const type = room.startsWith('C') ? 'PCOT' : room.startsWith('V') ? 'VILLA' : room.startsWith('1') ? 'STD' : 'DLX';
+    for (const [room, type] of [['103', 'DLX'], ['205', 'DLX'], ['108', 'PRE'], ['209', 'PRE'], ['107', 'EXE']] as const) {
       const s2 = await stay(room, type);
       await payInFull(s2.folioId, s2.stayId);
       stays.push(s2);
@@ -251,7 +251,7 @@ describe('what the invoice is', () => {
     const [{ gstin }] = await sql<{ gstin: string }>(`SELECT gstin FROM properties`) as [{ gstin: string }];
     await sql(`UPDATE properties SET gstin = NULL`);
     try {
-      const s = await stay('102', 'STD', [{ date: '2026-09-16', rate: '3000.00' }]);
+      const s = await stay('102', 'PRE', [{ date: '2026-09-16', rate: '3000.00' }]);
       const preview = (await post(desk, `/folios/${s.folioId}/invoice/preview`, {}, null).expect(200)).body;
       expect(preview.documentType).toBe('bill_of_supply');
       expect(preview.cgstTotal).toBe('0.00');
@@ -267,7 +267,7 @@ describe('what the invoice is', () => {
       `INSERT INTO tax_rules (property_id, tax_category, unit_value_above, unit_value_up_to, rate_percent, sac, effective_from, note, origin)
        SELECT property_id, 'accommodation', NULL, 7500, 12, '996311', '2026-09-17', 'test', origin FROM tax_rules LIMIT 1`,
     );
-    const s = await stay('V1', 'VILLA', [{ date: '2026-09-16', rate: '5000.00' }, { date: '2026-09-17', rate: '5000.00' }]);
+    const s = await stay('107', 'EXE', [{ date: '2026-09-16', rate: '5000.00' }, { date: '2026-09-17', rate: '5000.00' }]);
     const preview = (await post(desk, `/folios/${s.folioId}/invoice/preview`, {}, null).expect(200)).body;
     expect(preview.lines.map((l: any) => l.gstRate)).toEqual(['5.00', '12.00']);
   });

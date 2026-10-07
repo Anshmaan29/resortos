@@ -11,13 +11,14 @@ import type { CheckInDraftRow, GuestDocumentRow, IdRow, ReservationRoomRow, Rese
 import { PropertyService } from '../property/property.service';
 import { ReservationsService } from '../reservations/reservations.service';
 import { documentView } from './capture.service';
+import { latestDocuments } from './document-slots';
 
 export interface CheckInPolicy {
   idRequiredFor: 'all_adults' | 'primary_guest';
   requireGuestPhoto: boolean;
   requireSignature: boolean;
 }
-export const DEFAULT_CHECK_IN_POLICY: CheckInPolicy = { idRequiredFor: 'all_adults', requireGuestPhoto: true, requireSignature: true };
+export const DEFAULT_CHECK_IN_POLICY: CheckInPolicy = { idRequiredFor: 'all_adults', requireGuestPhoto: true, requireSignature: false };
 
 export interface CheckInProblem { path: string; message: string }
 
@@ -37,7 +38,7 @@ export class CheckInService {
   }
 
   private async view(q: Queryable, draft: CheckInDraftRow) {
-    const { rows: docs } = await q.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE draft_id = $1 ORDER BY created_at`, [draft.id]);
+    const { rows: docs } = await q.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE draft_id = $1 ORDER BY created_at, id`, [draft.id]);
     const readiness = await this.problems(q, draft, checkInDraftDataSchema.parse(draft.data));
     const { rows: summary } = await q.query<{ number: string; arrival: string; departure: string; guest_name: string; mobile: string; is_vip: boolean; special_requests: string | null }>(
       `SELECT r.number, r.arrival, r.departure, trim(g.first_name || ' ' || g.last_name) AS guest_name, g.mobile, g.is_vip, r.special_requests
@@ -60,7 +61,7 @@ export class CheckInService {
       },
       id: draft.id, reservationId: draft.reservation_id, reservationRoomIds: draft.reservation_room_ids, step: draft.step,
       data: draft.data, status: draft.status, version: draft.version, updatedAt: draft.updated_at,
-      documents: docs.map(documentView),
+      documents: latestDocuments(docs).map(documentView),
       policy: await this.policy(q, draft.property_id),
       problems: readiness,
     };
@@ -80,7 +81,7 @@ export class CheckInService {
       if (!['confirmed', 'checked_in'].includes(res.status)) {
         throw new AppError(ERROR_CODES.INVALID_TRANSITION, res.status === 'tentative' ? 'Confirm the booking before check-in.' : 'This booking cannot be checked in.');
       }
-      const bd = await this.property.businessDate(q, actor.user.propertyId);
+      const bd = await this.property.today(q, actor.user.propertyId);
       if (res.arrival > bd) throw new AppError(ERROR_CODES.INVALID_TRANSITION, `Check-in opens on the arrival day, ${formatDate(res.arrival)}.`);
       if (res.departure <= bd) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'The stay dates have already passed.');
 
@@ -164,8 +165,9 @@ export class CheckInService {
     const policy = await this.policy(q, draft.property_id);
     const problems: CheckInProblem[] = [];
     const { rows: rooms } = await q.query<ReservationRoomRow>(`SELECT * FROM reservation_rooms WHERE id = ANY($1::uuid[])`, [draft.reservation_room_ids]);
-    const { rows: docs } = await q.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE draft_id = $1`, [draft.id]);
-    const docsFor = (occupantKey: string | null, type: string) => docs.filter((d) => d.doc_type === type && (occupantKey === null || d.occupant_key === occupantKey));
+    const { rows: docs } = await q.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE draft_id = $1 ORDER BY created_at, id`, [draft.id]);
+    const currentDocs = latestDocuments(docs);
+    const docsFor = (occupantKey: string | null, type: string) => currentDocs.filter((d) => d.doc_type === type && d.occupant_key === occupantKey);
 
     const requireDoc = (path: string, label: string, candidates: GuestDocumentRow[]) => {
       if (candidates.some((d) => d.status === 'verified')) return;
@@ -219,7 +221,7 @@ export class CheckInService {
     const { rows: resRows } = await q.query<ReservationRow>(`SELECT * FROM reservations WHERE id = $1 FOR UPDATE`, [draft.reservation_id]);
     const res = resRows[0]!;
     if (!['confirmed', 'checked_in'].includes(res.status)) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This booking cannot be checked in.');
-    const bd = await this.property.businessDate(q, actor.user.propertyId);
+    const bd = await this.property.today(q, actor.user.propertyId);
     if (res.arrival > bd || res.departure <= bd) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'Check-in is only possible between the arrival day and the day before departure.');
 
     const data = checkInDraftDataSchema.parse(draft.data);
@@ -237,6 +239,8 @@ export class CheckInService {
       throw new AppError(ERROR_CODES.VALIDATION, problems[0]!.message.replace(/^./, (c) => c.toUpperCase()), { fields: problems, problems });
     }
 
+    const { rows: documents } = await q.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE draft_id = $1 ORDER BY created_at, id`, [draft.id]);
+    const currentDocumentIds = latestDocuments(documents).filter((d) => d.status === 'verified').map((d) => d.id);
     const stays: { id: string; roomId: string }[] = [];
     for (const roomData of data.rooms) {
       const { rows: fresh } = await q.query<ReservationRoomRow>(`SELECT * FROM reservation_rooms WHERE id = $1`, [roomData.reservationRoomId]);
@@ -267,10 +271,10 @@ export class CheckInService {
         );
       }
       const keys = roomData.occupants.map((o) => o.key);
-      await q.query(`UPDATE guest_documents SET stay_id = $1 WHERE draft_id = $2 AND occupant_key = ANY($3::text[]) AND status = 'verified' AND stay_id IS NULL`, [stayId, draft.id, keys]);
+      await q.query(`UPDATE guest_documents SET stay_id = $1 WHERE draft_id = $2 AND occupant_key = ANY($3::text[]) AND status = 'verified' AND stay_id IS NULL AND id = ANY($4::uuid[])`, [stayId, draft.id, keys, currentDocumentIds]);
     }
     // Draft-level documents (signature) belong to the first stay.
-    await q.query(`UPDATE guest_documents SET stay_id = $1 WHERE draft_id = $2 AND occupant_key IS NULL AND status = 'verified' AND stay_id IS NULL`, [stays[0]!.id, draft.id]);
+    await q.query(`UPDATE guest_documents SET stay_id = $1 WHERE draft_id = $2 AND occupant_key IS NULL AND status = 'verified' AND stay_id IS NULL AND id = ANY($3::uuid[])`, [stays[0]!.id, draft.id, currentDocumentIds]);
 
     if (res.status === 'confirmed') await q.query(`UPDATE reservations SET status = 'checked_in', updated_by = $2 WHERE id = $1`, [res.id, actor.user.id]);
     await q.query(`UPDATE check_in_drafts SET status = 'confirmed', confirmed_at = now(), updated_by = $2 WHERE id = $1`, [draft.id, actor.user.id]);

@@ -69,7 +69,7 @@ export class ResendProvider implements MessageProvider {
     const body = await res.json().catch(() => ({})) as { id?: string; message?: string; name?: string };
     if (res.ok && body.id) return { providerMessageId: body.id };
     // 429 and 5xx are the provider's problem and pass; 4xx means this message will never be accepted.
-    const retryable = res.status === 429 || res.status >= 500;
+    const retryable = res.status === 429 || res.status >= 500 || (res.status === 409 && body.name === 'concurrent_idempotent_requests');
     throw new ProviderError(`Resend ${res.status}: ${body.message ?? body.name ?? 'rejected the message'}`, retryable);
   }
 }

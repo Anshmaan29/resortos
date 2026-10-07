@@ -3,6 +3,7 @@ import { APP_CONFIG, type AppConfig } from '../config';
 import { OUTBOX_HANDLERS, type OutboxHandler } from '../jobs/outbox-handlers';
 import { JobsService, SCHEDULED_JOBS, type ScheduledJob } from '../jobs/jobs.service';
 import { PrintingModule } from '../printing/printing.module';
+import { DailySummaryHandler } from './daily-summary.handler';
 import { GuestMessagesHandler } from './guest-messages.handler';
 import { MessagingController } from './messaging.controller';
 import { MessagingService } from './messaging.service';
@@ -21,6 +22,7 @@ export const MESSAGES_REMINDERS_QUEUE = 'messages.reminders';
   providers: [
     MessagingService,
     GuestMessagesHandler,
+    DailySummaryHandler,
     { provide: MESSAGE_PROVIDERS, useFactory: (config: AppConfig) => providersFor(config), inject: [APP_CONFIG] },
   ],
   exports: [MessagingService, MESSAGE_PROVIDERS],
@@ -29,16 +31,23 @@ export class MessagingModule implements OnModuleInit {
   constructor(
     private readonly messaging: MessagingService,
     private readonly handler: GuestMessagesHandler,
+    private readonly dailySummary: DailySummaryHandler,
     private readonly jobs: JobsService,
     @Inject(OUTBOX_HANDLERS) private readonly handlers: OutboxHandler[],
     @Inject(SCHEDULED_JOBS) private readonly scheduled: ScheduledJob[],
   ) {}
 
   onModuleInit() {
-    // After the handler queues a message, wake the sender rather than waiting for the minute.
+    // After a handler queues a message, wake the sender rather than waiting for the minute.
+    for (const h of [this.handler, this.dailySummary]) {
+      this.handlers.push({
+        name: h.name, topics: h.topics,
+        handle: async (event) => { await h.handle(event); await this.jobs.nudge(MESSAGES_SEND_QUEUE); },
+      });
+    }
     this.handlers.push({
-      name: this.handler.name, topics: this.handler.topics,
-      handle: async (event) => { await this.handler.handle(event); await this.jobs.nudge(MESSAGES_SEND_QUEUE); },
+      name: 'messages-wakeup', topics: ['message.queued'],
+      handle: async () => { await this.jobs.nudge(MESSAGES_SEND_QUEUE); },
     });
     this.scheduled.push(
       { queue: MESSAGES_SEND_QUEUE, cron: '* * * * *', run: async () => {

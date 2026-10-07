@@ -87,7 +87,7 @@ beforeAll(async () => {
   // A guest in room 102 whose departure date is the business date: the audit must not close a date
   // with somebody still in a room they were due to leave.
   // Arrived yesterday, due out today — a stay cannot both start and end on the same business date.
-  await checkInBySql({ room: '103', type: 'STD', arrival: '2026-09-15', departure: '2026-09-16', name: 'Dueout', mobile: '9820022001' });
+  await checkInBySql({ room: '103', type: 'DLX', arrival: '2026-09-15', departure: '2026-09-16', name: 'Dueout', mobile: '9820022001' });
 }, 120_000);
 afterAll(async () => { await app.close(); });
 
@@ -132,7 +132,7 @@ describe('the night audit screen', () => {
     // grows as milestones register steps — 2.2 added room_charges, 2.4 will add the shift check —
     // and it is asserted exactly so that a step appearing or vanishing is never silent.
     expect(body.steps.map((s: any) => s.name)).toEqual([
-      'arrivals_not_checked_in', 'departures_not_checked_out', 'open_shifts', 'room_charges', 'room_status_check', 'integrity_check', 'summary',
+      'arrivals_not_checked_in', 'departures_not_checked_out', 'open_shifts', 'room_charges', 'room_status_check', 'integrity_check', 'stayover_cleaning', 'maintenance_due', 'summary',
     ]);
 
     const refused = await complete(desk, '2026-09-16').expect(400);
@@ -271,7 +271,7 @@ describe('completing the audit', () => {
     expect(done.body.run.businessDate).toBe('2026-09-16');
     expect(done.body.run.completedBy).toBe('Priya Sharma');
     expect(done.body.run.steps.map((s: any) => s.name)).toEqual([
-      'arrivals_not_checked_in', 'departures_not_checked_out', 'open_shifts', 'room_charges', 'room_status_check', 'integrity_check', 'summary',
+      'arrivals_not_checked_in', 'departures_not_checked_out', 'open_shifts', 'room_charges', 'room_status_check', 'integrity_check', 'stayover_cleaning', 'maintenance_due', 'summary',
     ]);
     expect(done.body.run.summary).toMatchObject({
       roomsActive: expect.any(Number), roomsOccupied: expect.any(Number), occupancyPercent: expect.any(Number),
@@ -300,7 +300,7 @@ describe('completing the audit', () => {
     const log = await desk.get('/api/v1/night-audit/log').expect(200);
     expect(log.body).toHaveLength(1);
     expect(log.body[0]).toMatchObject({ businessDate: '2026-09-16', completedBy: 'Priya Sharma' });
-    expect(log.body[0].steps.length).toBe(7);
+    expect(log.body[0].steps.length).toBe(9);
     expect(log.body[0].startedAt).toBeTruthy();
   });
 

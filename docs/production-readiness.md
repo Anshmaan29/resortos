@@ -25,6 +25,10 @@ PASS here; after that it is weekly.
 |---|---|---|---|---|---|---|
 | _none yet_ | | | | | | |
 
+## First production property
+
+Use the restricted empty-database provisioning procedure in `ops/runbooks/provision.md`. It creates a live property/owner without demo data, room prices or tax rules. Finish configuration in Settings and print recovery codes after signing in. This does not satisfy Gate 0 by itself.
+
 ## Demo data can never reach production
 
 - [ ] **GST: every `tax_rules` row with `origin = 'demo_placeholder'` is closed (`effective_to` set) and replaced by rules the resort's CA has confirmed in writing (rates, SAC codes, slab boundaries, food rate, treatment of extra-bed charges). Attach the CA's confirmation.**
@@ -37,7 +41,7 @@ PASS here; after that it is weekly.
 
 - [ ] Sending domain verified in Resend (SPF, DKIM, DMARC)
 - [ ] `RESEND_API_KEY` (sending access only) and `RESEND_WEBHOOK_SECRET` set in production; `MESSAGING_PROVIDER` is not `dev` (boot refuses it)
-- [ ] Test email received from Settings → Guest messages, in English and Hindi
+- [ ] Test email received from Settings → Guest messages, in English and Hindi (practice-mode and queued acknowledgements are not delivery evidence)
 - [ ] Owner has reviewed the wording of all five messages
 
 ## Security

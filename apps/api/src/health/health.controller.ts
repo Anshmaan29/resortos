@@ -26,7 +26,7 @@ export class HealthController {
     return { status: 'ok', latencyMs: Date.now() - started };
   }
 
-  @Public()
+  @Roles('owner')
   @Get('storage')
   async storageHealth() {
     const started = Date.now();

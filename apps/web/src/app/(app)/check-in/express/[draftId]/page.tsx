@@ -31,7 +31,7 @@ export default function ExpressDraftPage() {
   const d = draft.data;
   const sections = [
     { title: 'Guests', body: <GuestsStep draft={d} data={data} onChange={change} /> },
-    { title: 'Room', body: <RoomStep draft={d} data={data} businessDate={property.data.businessDate} onChange={change} /> },
+    { title: 'Room', body: <RoomStep draft={d} data={data} businessDate={property.data.today} onChange={change} /> },
     { title: 'IDs', body: <DocumentsStep draft={d} data={data} onChange={change} onRefresh={refresh} queue={queue} /> },
     { title: 'Registration card and signature', body: <RegistrationStep draft={d} data={data} property={property.data} onChange={change} onRefresh={refresh} queue={queue} /> },
     { title: 'Check', body: <ConfirmStep draft={d} data={data} reservation={reservation.data} /> },
@@ -59,7 +59,7 @@ export default function ExpressDraftPage() {
       <div className="no-print fixed inset-x-0 bottom-16 z-20 border-t border-border bg-surface/95 px-4 py-3 backdrop-blur lg:bottom-0 lg:left-60">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3">
           <p className="text-sm text-text-2">{d.problems.length ? d.problems[0]!.message.charAt(0).toUpperCase() + d.problems[0]!.message.slice(1) : uploading ? 'Uploading documents…' : 'Everything needed is here.'}</p>
-          <Button size="lg" loading={confirm.isPending} disabled={d.problems.length > 0 || dirty.current || saveState === 'saving'} onClick={() => confirm.mutate()}>
+          <Button size="lg" loading={confirm.isPending} disabled={uploading || d.problems.length > 0 || dirty.current || saveState === 'saving'} onClick={() => confirm.mutate()}>
             <Check className="h-5 w-5" />Confirm check-in
           </Button>
         </div>

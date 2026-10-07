@@ -1,8 +1,9 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, BedDouble, CalendarPlus, Crown, DoorOpen, LogIn, LogOut, UserPlus, Zap } from 'lucide-react';
+import { BookUser, ArrowRight, BedDouble, CalendarPlus, Crown, DoorOpen, LogIn, LogOut, UserPlus, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { formatDate, formatINR } from '@resortos/shared';
+import { SetupReminder } from '@/components/setup-reminder';
 import { RoomBoard, RoomLegend } from '@/components/front-desk/room-board';
 import { Button } from '@/components/ui/button';
 import { CountUp } from '@/components/ui/count-up';
@@ -44,6 +45,9 @@ export default function HomePage() {
 
       {desk.isError && <ErrorBanner message={(desk.error as Error).message} onRetry={() => desk.refetch()} />}
 
+      <SetupReminder />
+      <FormCReminder />
+
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Arrivals today" icon={LogIn} value={desk.data?.arrivals.length} tone="var(--st-arriving)" />
         <Kpi label="Departures today" icon={LogOut} value={desk.data?.departures.length} tone="var(--st-due-out)" />
@@ -51,7 +55,7 @@ export default function HomePage() {
         <Kpi label="Ready to sell" icon={DoorOpen} value={desk.data?.roomCounts.ready} tone="var(--st-ready)" suffix={desk.data ? ` of ${desk.data.totalRooms}` : ''} />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader title="Arrivals" description="Expected to check in today"
             action={<Link href="/reservations?view=arrivals" className="text-sm font-medium text-brand hover:underline">All</Link>} />
@@ -121,6 +125,39 @@ function Row({ href, title, meta, right }: { href: string; title: React.ReactNod
         {right}
       </Link>
     </li>
+  );
+}
+
+/**
+ * Foreign guests must be reported within 24 hours of arrival (spec §58.1). The reminder sits on the
+ * desk's home screen while anything is pending, with the countdown on the oldest record.
+ */
+function FormCReminder() {
+  const pending = useQuery({
+    queryKey: ['form-c-pending'], refetchInterval: 60_000,
+    queryFn: () => api<{ pending: number; hoursLeft: number | null }>('/form-c/pending-summary'),
+  });
+  if (!pending.data?.pending) return null;
+  const late = pending.data.hoursLeft !== null && pending.data.hoursLeft < 6;
+  const deadlineText = pending.data.hoursLeft === null
+    ? 'Foreign guests are reported within 24 hours of arrival.'
+    : late
+      ? 'The oldest one is past its 24-hour deadline — submit it now.'
+      : `The oldest one must reach the portal within ${pending.data.hoursLeft} hours.`;
+  return (
+    <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+      <div>
+        <p className="flex items-center gap-2 font-medium">
+          <BookUser className={`h-4 w-4 ${late ? 'text-danger' : 'text-warning'}`} />
+          {pending.data.pending} Form C {pending.data.pending === 1 ? 'report' : 'reports'} waiting
+        </p>
+        <p className="mt-0.5 text-sm text-text-3">
+          {deadlineText}
+          {' '}Foreign guests are reported within 24 hours of arrival.
+        </p>
+      </div>
+      <Link href="/form-c"><Button variant={late ? 'danger' : 'outline'} size="sm">Open Form C</Button></Link>
+    </Card>
   );
 }
 

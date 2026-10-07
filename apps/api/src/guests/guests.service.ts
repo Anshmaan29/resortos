@@ -21,30 +21,31 @@ export class GuestsService {
   /** Search by mobile, name, booking number, OTA reference and vehicle number (spec §16). */
   async search(propertyId: string, term: string) {
     const t = term.trim();
-    if (t.length < 2) return [];
+    if (t && t.length < 2) return [];
     const mobile = normalizeIndianMobile(t);
     const digits = t.replace(/\D/g, '');
+    // LIKE treats these as syntax unless escaped; a person's typed name is literal.
+    const pattern = t.replace(/[\\%_]/g, (c) => `\\${c}`);
     const { rows } = await this.db.query<GuestRow & { stays: string; last_stay: string | null }>(
-      `SELECT DISTINCT ON (g.id) g.*,
+      `SELECT g.*,
               (SELECT count(*) FROM reservations r WHERE r.primary_guest_id = g.id AND r.status = 'checked_out') AS stays,
               (SELECT max(r.departure) FROM reservations r WHERE r.primary_guest_id = g.id AND r.status = 'checked_out') AS last_stay
          FROM guests g
-         LEFT JOIN reservations r ON r.primary_guest_id = g.id
         WHERE g.property_id = $1 AND g.merged_into_id IS NULL AND (
-                ($2::text IS NOT NULL AND g.mobile = $2)
+                $4::text = ''
+             OR ($2::text IS NOT NULL AND g.mobile = $2)
              OR (length($3::text) >= 4 AND g.mobile LIKE '%' || $3)
-             OR lower(g.first_name || ' ' || g.last_name) LIKE '%' || lower($4::text) || '%'
-             OR upper(r.number) = upper($4)
-             OR r.ota_reference = $4
-             -- A car is often all the desk remembers. stay_vehicles is indexed on (property_id, registration).
+             OR lower(g.first_name || ' ' || g.last_name) LIKE '%' || lower($5::text) || '%'
+             OR EXISTS (SELECT 1 FROM reservations r WHERE r.primary_guest_id=g.id AND (upper(r.number)=upper($4) OR r.ota_reference=$4))
              OR EXISTS (
                   SELECT 1 FROM stay_vehicles v JOIN stays st ON st.id = v.stay_id
                    WHERE st.primary_guest_id = g.id AND v.registration = upper(regexp_replace($4, '[^A-Za-z0-9]', '', 'g'))
                 )
         )
-        ORDER BY g.id
+        ORDER BY CASE WHEN g.mobile=$2 THEN 0 WHEN lower(trim(g.first_name || ' ' || g.last_name))=lower($4) THEN 1 ELSE 2 END,
+                 last_stay DESC NULLS LAST, g.created_at DESC, g.id
         LIMIT 20`,
-      [propertyId, mobile, digits, t],
+      [propertyId, mobile, digits, t, pattern],
     );
     return rows.map((r) => ({ ...mapGuest(r), stays: Number(r.stays), lastStay: r.last_stay }));
   }
@@ -99,6 +100,10 @@ export class GuestsService {
         `SELECT d.id, d.doc_type, d.id_type, d.created_at, s.status AS stay_status, rm.number AS room_number
            FROM guest_documents d JOIN stays s ON s.id = d.stay_id JOIN rooms rm ON rm.id = s.room_id
           WHERE s.primary_guest_id = $1 AND d.status = 'verified'
+            AND (d.doc_type NOT IN ('guest_photo', 'id_front', 'id_back', 'id_extra', 'signature')
+              OR NOT EXISTS (SELECT 1 FROM guest_documents newer
+                WHERE newer.stay_id = d.stay_id AND newer.occupant_key IS NOT DISTINCT FROM d.occupant_key
+                  AND newer.doc_type = d.doc_type AND (newer.created_at, newer.id) > (d.created_at, d.id)))
             AND ($2::text = 'owner' OR s.status = 'in_house')
           ORDER BY d.created_at DESC LIMIT 60`,
         [id, role],

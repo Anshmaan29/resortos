@@ -9,7 +9,7 @@ import {
   ACCOUNT_KINDS_FOR_METHOD, ADDABLE_LINE_TYPES, DESK_ENTRY_TYPES, DISCOUNT_REASONS, DESK_PAYMENT_METHODS, PAYMENT_ACCOUNT_KINDS,
   PAYMENT_REFERENCE_LABEL, TAX_CATEGORIES,
   BOOKING_SOURCES, CANCELLATION_MONEY_OPTIONS, CANCELLATION_REASONS, HOUSEKEEPING_STATUSES, MEAL_PLAN_CODES,
-  OTA_SOURCES, ROLES, ROOM_VIEWS, SERVICE_STATUSES, UNIT_TYPES, VISIT_PURPOSES,
+  OTA_SOURCES, POLICE_REGISTER_COLUMNS, ROLES, ROOM_VIEWS, SERVICE_STATUSES, UNIT_TYPES, VISIT_PURPOSES,
 } from './domain';
 
 export const zId = z.string().uuid();
@@ -78,7 +78,7 @@ export const changePasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 
-export const pinSchema = z.string().regex(/^\d{6}$/, 'PIN must be 6 digits');
+export const pinSchema = z.string().regex(/^\d{4,6}$/, 'PIN must be 4 to 6 digits');
 export const staffPinSchema = z.string().regex(/^\d{4,6}$/, 'PIN must be 4–6 digits');
 
 
@@ -176,6 +176,8 @@ export const reservationRoomSchema = z.object({
   childAges: z.array(z.number().int().min(0).max(17)).max(10).default([]),
   /** Manual room rate applied to every night. Omit to use rate plan / calendar prices. */
   nightlyRate: zNonNegativeMoney.optional(),
+  /** Total extra adult/child charge per night; omit for configured prices, zero to waive. */
+  extraPersonRate: zNonNegativeMoney.optional(),
   ratePlanId: zId.optional(),
   mealPlan: z.enum(MEAL_PLAN_CODES).default('EP'),
 });
@@ -657,6 +659,11 @@ export const propertyPoliciesSchema = z.object({
   wifiDetails: optionalText(120),
   locationLink: z.string().trim().url('Enter a full link').startsWith('https://', 'Use an https:// link').optional().or(z.literal('').transform(() => undefined)),
   deskLockMinutes: z.coerce.number().int().min(1).max(60),
+  // Sprint C settings. Optional so that a screen which does not show them leaves them as they are.
+  housekeepingStayovers: z.boolean().optional(),
+  housekeepingInspection: z.boolean().optional(),
+  policeRegisterColumns: z.array(z.enum(POLICE_REGISTER_COLUMNS)).min(1, 'Choose at least one column').max(20)
+    .refine((c) => new Set(c).size === c.length, 'Each column once').optional(),
   version: z.coerce.number().int().min(1),
 }).refine((v) => !v.emailEnabled || v.emailFromAddress, { path: ['emailFromAddress'], message: 'Set the sender address before switching email on' });
 export type PropertyPoliciesInput = z.infer<typeof propertyPoliciesSchema>;
@@ -693,3 +700,131 @@ export const ratePlanUpdateSchema = z.object({
   isActive: z.boolean(),
   isDefault: z.boolean(),
 });
+
+// ---------------------------------------------------------------------------
+// Sprint C: housekeeping (§37), expenses (§39), Form C (§58.1), police register (§58.2)
+// ---------------------------------------------------------------------------
+
+/** Assign, prioritise or annotate a cleaning task. Omitted fields are left as they are. */
+export const housekeepingTaskUpdateSchema = z.object({
+  assignedTo: zId.nullable().optional(),
+  priority: z.enum(['normal', 'high']).optional(),
+  note: z.string().trim().max(500).nullable().optional().transform((v) => (v === '' ? null : v)),
+  version: z.coerce.number().int().min(1),
+});
+export type HousekeepingTaskUpdate = z.infer<typeof housekeepingTaskUpdateSchema>;
+
+export const EXPENSE_METHODS = ['cash', 'upi', 'card', 'bank_transfer', 'cheque'] as const;
+
+/** Money paid out (spec §39). */
+export const expenseSchema = z.object({
+  categoryId: zId,
+  expenseDate: zIsoDate,
+  method: z.enum(EXPENSE_METHODS),
+  paymentAccountId: zId,
+  amount: zPositiveMoney,
+  paidTo: z.string().trim().min(2, 'Who was paid?').max(120),
+  note: optionalText(500),
+});
+export type ExpenseInput = z.infer<typeof expenseSchema>;
+
+export const expenseCorrectionSchema = expenseSchema.extend({
+  reason: z.string().trim().min(3, 'Say what was wrong').max(300),
+});
+export type ExpenseCorrectionInput = z.infer<typeof expenseCorrectionSchema>;
+
+// ---------- maintenance (spec §38) ----------
+export const maintenanceTicketCreateSchema = z.object({
+  roomId: zId.optional(),
+  area: z.string().trim().min(2).max(120).optional(),
+  title: z.string().trim().min(3, 'What needs fixing?').max(160),
+  description: z.string().trim().max(2000).optional(),
+  priority: z.enum(['low', 'normal', 'high']).optional(),
+  assignedTo: zId.nullable().optional(),
+}).refine((v) => (v.roomId != null) !== (v.area != null), { message: 'Choose a room or an area', path: ['area'] });
+export type MaintenanceTicketInput = z.infer<typeof maintenanceTicketCreateSchema>;
+
+export const maintenanceTicketPatchSchema = z.object({
+  version: z.coerce.number().int().min(1),
+  description: z.string().trim().max(2000).optional(),
+  priority: z.enum(['low', 'normal', 'high']).optional(),
+  assignedTo: zId.nullable().optional(),
+  cost: zNonNegativeMoney.nullable().optional(),
+  resolutionNote: z.string().trim().min(3, 'Say what was done').max(1000).optional(),
+  status: z.enum(['open', 'in_progress', 'resolved', 'closed']).optional(),
+});
+export type MaintenanceTicketPatch = z.infer<typeof maintenanceTicketPatchSchema>;
+
+export const maintenanceScheduleCreateSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  area: z.string().trim().max(120).optional(),
+  roomId: zId.optional(),
+  everyDays: z.coerce.number().int().min(1).max(3650),
+  nextDue: zIsoDate.optional(),
+});
+export type MaintenanceScheduleInput = z.infer<typeof maintenanceScheduleCreateSchema>;
+export const maintenanceSchedulePatchSchema = maintenanceScheduleCreateSchema.partial().extend({
+  roomId: zId.nullable().optional(), area: z.string().trim().min(2).max(120).nullable().optional(),
+  isActive: z.boolean().optional(), version: z.coerce.number().int().min(1),
+});
+export type MaintenanceSchedulePatch = z.infer<typeof maintenanceSchedulePatchSchema>;
+
+export const expenseCategorySchema = z.object({
+  name: z.string().trim().min(2).max(40),
+  isActive: z.boolean().default(true),
+  sortOrder: z.coerce.number().int().min(0).max(999).default(0),
+});
+export type ExpenseCategoryInput = z.infer<typeof expenseCategorySchema>;
+
+const upperCode = (min: number, max: number, pattern: RegExp, message: string) =>
+  z.string().trim().toUpperCase().transform((v) => v.replace(/\s+/g, '')).pipe(z.string().min(min, message).max(max, message).regex(pattern, message));
+
+/**
+ * The details the official Form C asks for (spec §58.1). Every field optional while the desk fills
+ * it in over the guest's first day; submitting checks that the form is complete, and so does the
+ * database (constraint `form_c_submitted_complete`).
+ */
+export const formCDetailsSchema = z.object({
+  passportNumber: upperCode(5, 20, /^[A-Z0-9]+$/, 'Passport number: 5 to 20 letters and digits').optional(),
+  passportPlaceOfIssue: optionalText(80),
+  passportIssueDate: zIsoDate.optional(),
+  passportExpiryDate: zIsoDate.optional(),
+  visaNumber: upperCode(3, 30, /^[A-Z0-9-]+$/, 'Visa number: letters, digits and dashes').optional(),
+  visaType: optionalText(40),
+  visaPlaceOfIssue: optionalText(80),
+  visaIssueDate: zIsoDate.optional(),
+  visaExpiryDate: zIsoDate.optional(),
+  arrivalInIndiaDate: zIsoDate.optional(),
+  arrivalPort: optionalText(80),
+  nextDestination: optionalText(120),
+  addressInIndia: optionalText(300),
+  contactInIndia: optionalText(60),
+  homeAddress: optionalText(300),
+  homeContact: optionalText(60),
+  version: z.coerce.number().int().min(1),
+}).refine((v) => !v.passportIssueDate || !v.passportExpiryDate || v.passportExpiryDate > v.passportIssueDate, { path: ['passportExpiryDate'], message: 'Expiry must be after issue' })
+  .refine((v) => !v.visaIssueDate || !v.visaExpiryDate || v.visaExpiryDate > v.visaIssueDate, { path: ['visaExpiryDate'], message: 'Expiry must be after issue' });
+export type FormCDetailsInput = z.infer<typeof formCDetailsSchema>;
+
+/** Fields the official form requires before it can be marked submitted. */
+export const FORM_C_REQUIRED = [
+  'passportNumber', 'passportPlaceOfIssue', 'passportIssueDate', 'passportExpiryDate', 'visaNumber', 'visaType',
+  'visaPlaceOfIssue', 'visaIssueDate', 'visaExpiryDate', 'arrivalInIndiaDate', 'arrivalPort', 'nextDestination',
+  'addressInIndia', 'homeAddress',
+] as const;
+
+export const formCSubmitSchema = z.object({
+  reference: z.string().trim().min(3, 'Enter the reference number from the portal').max(60),
+  version: z.coerce.number().int().min(1),
+});
+
+/** Sender configuration is separate from guest message wording. Secrets stay on the server. */
+export const emailSettingsSchema = z.object({
+  enabled: z.boolean(),
+  fromName: optionalText(80),
+  fromAddress: z.string().trim().email('Enter a sender email address').optional().or(z.literal('').transform(() => undefined)),
+  replyTo: z.string().trim().email('Enter a reply email address').optional().or(z.literal('').transform(() => undefined)),
+  dailySummaryRecipients: z.array(z.string().trim().email()).max(20).transform((v) => [...new Set(v.map((x) => x.toLowerCase()))]),
+  version: z.coerce.number().int().min(1),
+}).refine((v) => !v.enabled || v.fromAddress, { path: ['fromAddress'], message: 'Set the sender address before switching email on' });
+export type EmailSettingsInput = z.infer<typeof emailSettingsSchema>;

@@ -62,10 +62,10 @@ describe('lockout and roles', () => {
     await agent.get('/api/v1/front-desk').expect(200);
   });
 
-  it('keeps receptionists out of owner-only areas', async () => {
+  it('keeps receptionists out of owner-only areas while allowing GST rules', async () => {
     const desk = await login(app, 'receptionist');
     await desk.get('/api/v1/users').expect(403);
-    await desk.get('/api/v1/tax-rules').expect(403);
+    await desk.get('/api/v1/tax-rules').expect(200);
     await post(desk, '/room-types', {}, null).expect(403);
   });
 

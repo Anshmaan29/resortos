@@ -29,7 +29,7 @@ beforeAll(async () => {
     baseRate: '4000.00', minRate: '3200.00', extraAdultRate: '1000.00', extraChildRate: '600.00',
   }, null).expect(201);
   roomTypeId = type.body.id;
-  for (const number of ['G1', 'G2', 'G3', 'G4']) {
+  for (const number of ['G1', 'G2', 'G3', 'G4', 'G5']) {
     const room = await post(owner, '/rooms', { number, roomTypeId, unitType: 'room' }, null).expect(201);
     rooms.push(room.body.id);
   }
@@ -103,7 +103,7 @@ async function phoneDocument(draftId: string, docType: string, bytes: Buffer, co
 interface StayFixture { stayId: string; draftId: string; reservationId: string }
 
 /** Books a room, checks in with every required document, and returns the stay. */
-async function checkIn(options: { room: number; signature: 'touchscreen' | 'phone' | 'paper_scan'; guest?: { firstName: string; lastName: string; mobile: string } }): Promise<StayFixture> {
+async function checkIn(options: { room: number; signature: 'touchscreen' | 'phone' | 'paper_scan' | 'none'; guest?: { firstName: string; lastName: string; mobile: string } }): Promise<StayFixture> {
   const created = await post(owner, '/reservations', {
     ...booking({ roomTypeId, roomId: rooms[options.room], arrival: '2026-09-16', departure: '2026-09-18', adults: 2 }),
     ...(options.guest ? { guest: options.guest } : {}),
@@ -127,7 +127,7 @@ async function checkIn(options: { room: number; signature: 'touchscreen' | 'phon
   // The three ways a guest can sign (spec §20).
   if (options.signature === 'touchscreen') await deskDocument(draftId, 'signature', 'signature_pad', png(), 'image/png');
   else if (options.signature === 'phone') await phoneDocument(draftId, 'signature', png(), 'image/png');
-  else await deskDocument(draftId, 'signature', 'file_upload', png(300, 80), 'image/png');
+  else if (options.signature === 'paper_scan') await deskDocument(draftId, 'signature', 'file_upload', png(300, 80), 'image/png');
 
   const confirmed = await post(desk, `/check-in-drafts/${draftId}/confirm`, {}).expect(200);
   return { stayId: confirmed.body.stays[0].id, draftId, reservationId };
@@ -193,7 +193,7 @@ describe('registration card PDF (spec §20)', () => {
   });
 
   it('refuses a signature image it cannot embed', async () => {
-    await expect(renderGrcPdf({ ...input, signature: { ...input.signature, contentType: 'image/webp' } })).rejects.toThrow(/PNG or JPEG/);
+    await expect(renderGrcPdf({ ...input, signature: { ...input.signature!, contentType: 'image/webp' } })).rejects.toThrow(/PNG or JPEG/);
   });
 });
 
@@ -274,6 +274,14 @@ describe('generating and reprinting a card', () => {
 });
 
 describe('the three ways a guest signs (spec §20)', () => {
+  it('checks in and prints a registration card without pretending an optional signature was collected', async () => {
+    const stay = await checkIn({ room: 4, signature: 'none', guest: { firstName: 'Optional', lastName: 'Signature', mobile: '9829077788' } });
+    const res = await post(desk, `/stays/${stay.stayId}/grc`, {}).expect(200);
+    expect(res.body.grc).toMatchObject({ signatureMethod: 'not_collected', signedAt: null });
+    const rows = await sql(`SELECT signature_document_id, signed_at FROM grc_documents WHERE stay_id=$1`, [stay.stayId]);
+    expect(rows[0]).toMatchObject({ signature_document_id: null, signed_at: null });
+  });
+
   it('records the phone scanner session as the signature method', async () => {
     const stay = await checkIn({ room: 1, signature: 'phone', guest: { firstName: 'Vikram', lastName: 'Rao', mobile: '9829077772' } });
     const res = await post(desk, `/stays/${stay.stayId}/grc`, {}).expect(200);
@@ -310,11 +318,11 @@ describe('a card is not recorded unless its file is safely stored', () => {
     expect(ok.body.grc.version).toBe(1);
   });
 
-  it('refuses to print before the guest has signed', async () => {
+  it('prints an explicitly unsigned registration card for a stay without a signature', async () => {
     const [seeded] = await sql(`SELECT id FROM reservations WHERE number = 'BK-000001'`);
     const started = await post(desk, '/check-in-drafts', { reservationId: seeded.id }, null).expect(200);
     // BK-000001 is the demo booking that arrives on the test business date.
-    // A stay with no signature cannot exist through the API, so check the guard directly.
+    // Existing stays can also have no collected signature.
     const [stay] = await sql(
       `INSERT INTO stays (property_id, reservation_id, reservation_room_id, room_id, primary_guest_id, check_in_draft_id, checked_in_by, business_date_in, expected_departure)
        SELECT d.property_id, d.reservation_id, rr.id, rr.room_id, r.primary_guest_id, d.id, d.created_by, '2026-09-16', rr.departure
@@ -331,7 +339,7 @@ describe('a card is not recorded unless its file is safely stored', () => {
     await sql(`UPDATE reservations SET status = 'checked_in' WHERE id = (SELECT reservation_id FROM stays WHERE id = $1)`, [stay.id]);
 
     const res = await post(desk, `/stays/${stay.id}/grc`, {});
-    expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/signature/i);
+    expect(res.status).toBe(200);
+    expect(res.body.grc).toMatchObject({ signatureMethod: 'not_collected', signedAt: null });
   });
 });

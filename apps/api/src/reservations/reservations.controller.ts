@@ -1,13 +1,14 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { z } from 'zod';
 import {
-  availabilityQuerySchema, BOOKING_SOURCES, cancelReservationSchema, createReservationSchema, noShowSchema, RESERVATION_STATUSES,
+  ERROR_CODES, nightsBetween, availabilityQuerySchema, BOOKING_SOURCES, cancelReservationSchema, createReservationSchema, noShowSchema, RESERVATION_STATUSES,
   reservationEstimateSchema, updateReservationSchema, zId, zIsoDate,
 } from '@resortos/shared';
 import { CurrentActor, IdempotencyKey } from '../common/decorators';
 import { IdempotencyService } from '../common/idempotency.service';
 import type { Actor, AppRequest } from '../common/request-context';
 import { parse } from '../common/zod';
+import { AppError } from '../common/errors';
 import { DbService, type Queryable } from '../db/db.service';
 import { ReservationsService } from './reservations.service';
 
@@ -39,8 +40,12 @@ export class ReservationsController {
 
   @Get('calendar')
   calendar(@CurrentActor() actor: Actor, @Query() query: unknown) {
-    const input = parse(z.object({ from: zIsoDate, days: z.coerce.number().int().min(1).max(62).default(14) }), query);
-    return this.reservations.calendar(actor.user.propertyId, input.from, input.days);
+    const input = parse(z.object({ from: zIsoDate, to: zIsoDate.optional(), days: z.coerce.number().int().min(1).max(62).optional() })
+      .refine((v) => !v.to || !v.days, { message: 'Use either an end date or a number of days', path: ['to'] }), query);
+    // End is exclusive, as in the returned calendar range. Never silently ignore it.
+    const days = input.to ? nightsBetween(input.from, input.to) : input.days ?? 14;
+    if (days < 1 || days > 62) throw new AppError(ERROR_CODES.VALIDATION, 'Choose a calendar range from 1 to 62 days.');
+    return this.reservations.calendar(actor.user.propertyId, input.from, days);
   }
 
   @Get('reservations')

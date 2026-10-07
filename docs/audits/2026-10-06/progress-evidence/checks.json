@@ -1,0 +1,108 @@
+{
+  "numTotalTests": 25,
+  "numPassedTests": 25,
+  "numFailedTests": 0,
+  "success": true,
+  "checks": [
+    {
+      "name": "billing and daily reporting launch requirements cannot finalize a stay with its agreed accommodation charges missing",
+      "status": "passed"
+    },
+    {
+      "name": "billing and daily reporting launch requirements nets a returned security deposit to zero collections",
+      "status": "passed"
+    },
+    {
+      "name": "billing and daily reporting launch requirements removes a reversed payment from collections",
+      "status": "passed"
+    },
+    {
+      "name": "billing and daily reporting launch requirements excludes voided food charges from earned revenue",
+      "status": "passed"
+    },
+    {
+      "name": "maintenance reliability launch requirements replaying one creation key creates one ticket",
+      "status": "passed"
+    },
+    {
+      "name": "maintenance reliability launch requirements replaying one creation key creates one preventive schedule",
+      "status": "passed"
+    },
+    {
+      "name": "maintenance reliability launch requirements a room preventive schedule opens its ticket without aborting night audit",
+      "status": "passed"
+    },
+    {
+      "name": "maintenance reliability launch requirements a schedule edit actually changes the room selected by the owner",
+      "status": "passed"
+    },
+    {
+      "name": "maintenance reliability launch requirements does not assign a ticket to an inactive staff account",
+      "status": "passed"
+    },
+    {
+      "name": "owner exports launch requirements GSTR tax totals reconcile to the issued invoice rather than rounding each line again",
+      "status": "passed"
+    },
+    {
+      "name": "owner exports launch requirements Tally vouchers use the documented YYYYMMDD date format",
+      "status": "passed"
+    },
+    {
+      "name": "owner exports launch requirements Tally receipts exclude money that was reversed",
+      "status": "passed"
+    },
+    {
+      "name": "owner exports launch requirements bookings export respects the selected date range",
+      "status": "passed"
+    },
+    {
+      "name": "owner exports launch requirements stays export respects the selected date range",
+      "status": "passed"
+    },
+    {
+      "name": "owner exports launch requirements marks payment reversals distinctly in the CSV",
+      "status": "passed"
+    },
+    {
+      "name": "owner exports launch requirements does not count both a reversed expense and its correction as positive expense",
+      "status": "passed"
+    },
+    {
+      "name": "compliance dates and local concurrency paginates a 100-row police register without producing mostly empty pages",
+      "status": "passed"
+    },
+    {
+      "name": "compliance dates and local concurrency police register reports the India arrival date at 00:30 IST",
+      "status": "passed"
+    },
+    {
+      "name": "compliance dates and local concurrency serves a burst of 50 authenticated reads without server errors",
+      "status": "passed"
+    },
+    {
+      "name": "security controls and property separation refuses requests without a session",
+      "status": "passed"
+    },
+    {
+      "name": "security controls and property separation refuses owner records to a receptionist",
+      "status": "passed"
+    },
+    {
+      "name": "security controls and property separation refuses unsafe authenticated requests without the CSRF header",
+      "status": "passed"
+    },
+    {
+      "name": "security controls and property separation refuses a maintenance assignee belonging to another property",
+      "status": "passed"
+    },
+    {
+      "name": "elapsed nights and historical receipt corrections charges elapsed nights, excludes unused future nights and days before a late check-in",
+      "status": "passed"
+    },
+    {
+      "name": "elapsed nights and historical receipt corrections retains an earlier-period receipt and exports a later reversal as a balanced payment voucher",
+      "status": "passed"
+    }
+  ]
+}

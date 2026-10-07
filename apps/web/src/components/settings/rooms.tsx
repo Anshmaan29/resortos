@@ -76,7 +76,7 @@ function RoomTypeDialog({ type, onClose }: { type: RoomType | null; onClose: () 
         <Field label="Guests included in the rate" required>{(id) => <Input id={id} inputMode="numeric" value={f.baseOccupancy} onChange={set('baseOccupancy')} />}</Field>
         <Field label="Most guests" required error={save.fields.maxOccupancy}>{(id) => <Input id={id} inputMode="numeric" value={f.maxOccupancy} onChange={set('maxOccupancy')} />}</Field>
         <Field label="Room rate per night" required error={save.fields.baseRate}>{(id) => <Input id={id} inputMode="decimal" value={f.baseRate} onChange={set('baseRate')} />}</Field>
-        <Field label="Minimum rate" required hint="Below this needs Owner PIN" error={belowMin ? 'The room rate cannot be below the minimum' : save.fields.minRate}>{(id) => <Input id={id} inputMode="decimal" value={f.minRate} onChange={set('minRate')} />}</Field>
+        <Field label="Minimum rate" required hint="Below this needs Owner PIN. Set 0 to allow any manually entered price." error={belowMin ? 'The room rate cannot be below the minimum' : save.fields.minRate}>{(id) => <Input id={id} inputMode="decimal" value={f.minRate} onChange={set('minRate')} />}</Field>
         <Field label="Extra adult per night">{(id) => <Input id={id} inputMode="decimal" value={f.extraAdultRate} onChange={set('extraAdultRate')} />}</Field>
         <Field label="Extra child per night">{(id) => <Input id={id} inputMode="decimal" value={f.extraChildRate} onChange={set('extraChildRate')} />}</Field>
         {type && <Toggle label="In use" hint="Switched-off room types cannot be booked" checked={f.isActive} onChange={(v) => setF({ ...f, isActive: v })} />}

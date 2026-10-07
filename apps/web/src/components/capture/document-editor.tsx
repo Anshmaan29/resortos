@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import type { DocumentType } from '@resortos/shared';
 import { Button } from '@/components/ui/button';
 import {
-  decodeImage, defaultCorners, detectDocument, encodeJpeg, makeThumbnail, measureQuality, scaleToFit, straighten,
+  FACE_MAX_SIDE, FACE_TARGET_BYTES, TARGET_BYTES, MAX_SIDE, decodeImage, defaultCorners, detectDocument, encodeJpeg, makeThumbnail, measureQuality, scaleToFit, straighten,
   type Corners, type Point, type Quality,
 } from '@/lib/capture/image';
 import { loadOpenCv, type CV } from '@/lib/capture/opencv';
@@ -79,7 +79,7 @@ export function DocumentEditor({ source, docType, onDone, onRetake }: {
     if (!flat) return;
     setStage('encoding');
     try {
-      onDone({ blob: await encodeJpeg(flat), thumbnail: await makeThumbnail(flat) });
+      onDone({ blob: await encodeJpeg(flat, docType === 'guest_photo' ? FACE_TARGET_BYTES : TARGET_BYTES, docType === 'guest_photo' ? FACE_MAX_SIDE : MAX_SIDE), thumbnail: await makeThumbnail(flat) });
     } catch (err) {
       setError((err as Error).message);
       setStage('review');
@@ -123,6 +123,7 @@ export function DocumentEditor({ source, docType, onDone, onRetake }: {
         {(stage === 'review' || stage === 'encoding') && flat && (
           <motion.div key="review" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-3">
             <PreviewCanvas canvas={flat} />
+            <p className="text-xs text-text-3">Saved as a compressed photo. {needsCorners ? "Check that the ID text is readable before using it." : "Check that the face is clear before using it."}</p>
             {quality && (quality.blurry || quality.tooDark || quality.tooBright) && (
               <div role="alert" className="flex items-start gap-2 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

@@ -20,6 +20,7 @@ export interface PropertyRow {
   email_enabled: boolean; email_from_name: string | null; email_from_address: string | null; email_reply_to: string | null;
   quiet_hours_start: string; quiet_hours_end: string; checkout_reminder_time: string; reminder_skip_same_day: boolean;
   reception_phone: string | null; wifi_details: string | null; location_link: string | null; desk_lock_minutes: number;
+  housekeeping_stayovers: boolean; housekeeping_inspection: boolean; police_register_columns: string[];
 }
 
 export interface UserRow {
@@ -108,7 +109,7 @@ export interface GuestDocumentRow {
 export interface GrcDocumentRow {
   id: string; property_id: string; stay_id: string; number: string; version: number; supersedes_id: string | null;
   storage_key: string; content_type: string; size_bytes: number; sha256: Buffer;
-  signature_method: 'touchscreen' | 'phone' | 'paper_scan'; signature_document_id: string; signed_at: Date;
+  signature_method: 'touchscreen' | 'phone' | 'paper_scan' | 'not_collected'; signature_document_id: string | null; signed_at: Date | null;
   notice_version: string; generated_at: Date; generated_by: string; reason: string | null; created_at: Date;
 }
 

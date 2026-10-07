@@ -337,6 +337,11 @@ function AddChargeDialog({ bill, stayId, open, onClose }: { bill: Bill; stayId: 
           </Field>
         )}
 
+        <div className="flex flex-wrap gap-2" aria-label="Common extra charges">
+          {['Extra bed', 'Extra adult', 'Child charge'].map((label) => (
+            <Button key={label} variant="secondary" size="sm" onClick={() => { setLineType('extra_person'); setName(label); setChargeItemId(undefined); setUnitRate(''); }}>{label}</Button>
+          ))}
+        </div>
         <Field label="Type" required>
           {(id) => (
             <Select id={id} value={lineType} onChange={(e) => setLineType(e.target.value as AddableLineType)}>
@@ -362,7 +367,7 @@ function AddChargeDialog({ bill, stayId, open, onClose }: { bill: Bill; stayId: 
           {(id) => <Textarea id={id} rows={2} value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} />}
         </Field>
 
-        <p className="text-xs text-text-3">GST is worked out from the type and the date — you never pick a rate.</p>
+        <p className="text-xs text-text-3">GST uses the rule for this charge type and date. Change rates in Settings → GST rules.</p>
       </div>
     </Dialog>
   );
@@ -510,7 +515,7 @@ function DiscountDialog({ bill, line, stayId, onClose }: { bill: Bill; line: Bil
 
         {preview && (
           <div className="rounded-lg border border-border p-3 text-sm">
-            <p><strong className="tabular-nums">{formatINR(preview.discount)}</strong> off · {Number(preview.percentOfCharges)}% of what is being discounted</p>
+            <p><strong className="tabular-nums">{formatINR(preview.discount)}</strong> off · {Number(preview.percentOfCharges)}% cumulative discount on the bill or affected charge</p>
             <p className="mt-1 text-text-2">
               Bill total {formatINR(preview.before.grandTotal ?? '0')} → <strong>{formatINR(preview.after.grandTotal ?? '0')}</strong>
               {' '}· GST {formatINR(preview.before.taxTotal ?? '0')} → {formatINR(preview.after.taxTotal ?? '0')}

@@ -13,6 +13,7 @@ import { api, newIdempotencyKey } from '@/lib/api';
 import type { GrcList, GrcVersion, StayDetail } from '@/lib/types';
 
 const METHOD_LABEL: Record<GrcVersion['signatureMethod'], string> = {
+  not_collected: 'Signature not collected',
   touchscreen: 'Signed on the reception touchscreen',
   phone: 'Signed on a phone',
   paper_scan: 'Signed on paper, scanned back in',
@@ -65,7 +66,7 @@ export function RegistrationCard({ stay }: { stay: StayDetail }) {
         <EmptyState
           icon={<FileText className="h-5 w-5" />}
           title="No registration card yet"
-          description="The card is created from the guest's signature the first time you print it."
+          description="The card includes a signature if one was collected. You can also print it without a signature."
           action={<Button loading={generate.isPending} onClick={() => generate.mutate()}><Printer className="h-4 w-4" />Create and print</Button>}
         />
       ) : (
@@ -77,7 +78,7 @@ export function RegistrationCard({ stay }: { stay: StayDetail }) {
             <Pill tone="neutral">{METHOD_LABEL[current.signatureMethod]}</Pill>
           </div>
           <dl className="grid grid-cols-2 gap-3">
-            <div><dt className="text-text-3">Signed</dt><dd className="mt-0.5 num">{formatDateTime(current.signedAt)}</dd></div>
+            <div><dt className="text-text-3">Signed</dt><dd className="mt-0.5 num">{current.signedAt ? formatDateTime(current.signedAt) : 'Not collected'}</dd></div>
             <div><dt className="text-text-3">Created</dt><dd className="mt-0.5 num">{formatDateTime(current.generatedAt)}</dd></div>
           </dl>
           <div>

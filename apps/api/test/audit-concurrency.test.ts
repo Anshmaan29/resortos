@@ -12,12 +12,12 @@ describe('audit chain under concurrency', () => {
     const desk = await login(app, 'receptionist');
     const owner = await login(app, 'owner');
     const f = await fixtures();
-    const rooms = ['101', '102', '201', '202', '203', 'C2', 'C3'];
+    const rooms = ['101', '102', '201', '202', '203', '108', '209'];
     const statuses = ['dirty', 'cleaning', 'clean', 'inspected'];
     const actions = Array.from({ length: 60 }, (_, i) => {
       const agent = i % 2 ? desk : owner;
       if (i % 3 === 0) {
-        return post(agent, '/reservations', booking({ roomTypeId: f.type('STD'), arrival: '2027-05-01', departure: '2027-05-02' }));
+        return post(agent, '/reservations', booking({ roomTypeId: f.type('DLX'), arrival: '2027-05-01', departure: '2027-05-02' }));
       }
       return post(agent, `/rooms/${f.room(rooms[i % rooms.length]!)}/status`, { housekeeping: statuses[i % statuses.length] }, null);
     });

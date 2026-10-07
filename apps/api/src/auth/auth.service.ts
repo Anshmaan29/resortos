@@ -380,7 +380,7 @@ export class AuthService {
     );
     return rows.map((r) => ({
       id: r.id, fullName: r.full_name, username: r.username, mobile: r.mobile, role: r.role, isActive: r.is_active,
-      mustChangePassword: r.must_change_password, discountLimitPercent: r.discount_limit_percent, canRunNightAudit: r.can_run_night_audit,
+      mustChangePassword: r.must_change_password, discountLimitPercent: r.discount_limit_percent, canRunNightAudit: r.role === 'owner' || r.can_run_night_audit,
       hasStaffPin: Boolean(r.staff_pin_hash),
       ownerPinLocked: !!r.owner_pin_locked_until && r.owner_pin_locked_until > new Date(), hasOwnerPin: r.has_owner_pin, createdAt: r.created_at,
     }));

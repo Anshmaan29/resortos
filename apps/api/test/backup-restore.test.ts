@@ -150,6 +150,10 @@ describe('the restore test', () => {
     expect(Number(counts.guests)).toBeGreaterThan(0);
     expect(Number(counts.reservations)).toBeGreaterThan(0);
     expect(Number(counts.reservation_rooms)).toBeGreaterThan(0);
+    for (const key of ['folios','folio_lines','payments','invoices','invoice_lines','invoice_tax_groups','expenses','messages','maintenance_tickets','payment_cash_total','payment_bill_total','invoice_net_total']) {
+      expect(counts, `Restore report must include ${key}`).toHaveProperty(key);
+      expect(Number.isFinite(Number(counts[key]))).toBe(true);
+    }
 
     // And it is recorded, because Gate 0 asks for evidence with a date and a duration.
     expect(report.startedAt).toBeTruthy();

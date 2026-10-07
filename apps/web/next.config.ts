@@ -15,7 +15,16 @@ const config: NextConfig = {
     return [{
       source: '/:path*',
       headers: [
-        { key: 'X-Frame-Options', value: 'DENY' },
+        { key: 'Content-Security-Policy', value: [
+          "default-src 'self'", "script-src 'self' 'unsafe-inline'" + (process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''),
+          "style-src 'self' 'unsafe-inline'", "font-src 'self'", "img-src 'self' data: blob: https://*.storageapi.dev https://localhost:9000 http://localhost:9000",
+          "connect-src 'self' https://*.storageapi.dev https://localhost:9000 http://localhost:9000" + (process.env.NODE_ENV === 'development' ? ' ws: wss:' : ''),
+          "media-src 'self' blob:", "frame-src 'self' blob: https://*.storageapi.dev https://localhost:9000 http://localhost:9000",
+          "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'",
+        ].join('; ') },
+        { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
+        { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        { key: 'X-Frame-Options' , value: 'DENY' },
         { key: 'X-Content-Type-Options', value: 'nosniff' },
         { key: 'Referrer-Policy', value: 'same-origin' },
         { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=()' },

@@ -29,6 +29,7 @@ export class SearchService {
     const mobile = normalizeIndianMobile(t);
     const digits = t.replace(/\D/g, '');
     const vehicle = normalizeVehicleNumber(t);
+    const pattern = t.replace(/[\\%_]/g, (c) => `\\${c}`);
 
     const [guests, bookings, rooms, vehicles] = await Promise.all([
       this.db.query<{ id: string; name: string; mobile: string; city: string | null; is_vip: boolean; exact: boolean }>(
@@ -40,16 +41,16 @@ export class SearchService {
               OR (length($3::text) >= 4 AND g.mobile LIKE '%' || $3)
               OR lower(g.first_name || ' ' || g.last_name) LIKE '%' || lower($4) || '%')
           ORDER BY exact DESC, name LIMIT 6`,
-        [propertyId, mobile, digits, t],
+        [propertyId, mobile, digits, pattern],
       ),
       this.db.query<{ id: string; number: string; name: string; arrival: string; departure: string; status: string; exact: boolean }>(
         `SELECT r.id, r.number, trim(g.first_name || ' ' || g.last_name) AS name, r.arrival, r.departure, r.status,
                 upper(r.number) = upper($2) AS exact
            FROM reservations r JOIN guests g ON g.id = r.primary_guest_id
           WHERE r.property_id = $1
-            AND (upper(r.number) LIKE '%' || upper($2) || '%' OR r.ota_reference = $2)
+            AND (upper(r.number) LIKE '%' || upper($3) || '%' OR r.ota_reference = $2)
           ORDER BY exact DESC, r.arrival DESC LIMIT 6`,
-        [propertyId, t],
+        [propertyId, t, pattern],
       ),
       this.db.query<{ id: string; number: string; type_name: string; guest_name: string | null; stay_id: string | null }>(
         `SELECT rm.id, rm.number, rt.name AS type_name,

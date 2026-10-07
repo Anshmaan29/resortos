@@ -11,6 +11,7 @@ import { PropertyService } from '../property/property.service';
 import { RatesService } from '../rates/rates.service';
 import { documentView } from './capture.service';
 import { applySteps, CHECKOUT_STEPS, collectBlockers, type CheckoutStep } from './checkout-pipeline';
+import { latestDocuments } from './document-slots';
 
 @Injectable()
 export class StaysService {
@@ -46,12 +47,12 @@ export class StaysService {
     );
     const s = rows[0];
     if (!s) throw notFound('Stay');
-    const businessDate = await this.property.businessDate(q, propertyId);
+    const businessDate = await this.property.today(q, propertyId);
     const [occupants, vehicles, documents, shifts] = await gather(q, [
       () => q.query<{ occupant_key: string; full_name: string; is_primary: boolean; is_child: boolean; age: number | null; nationality: string; id_type: string; id_last4: string | null }>(
         `SELECT occupant_key, full_name, is_primary, is_child, age, nationality, id_type, id_last4 FROM stay_occupants WHERE stay_id = $1 ORDER BY is_primary DESC, is_child, created_at`, [stayId]),
       () => q.query<{ registration: string; vehicle_type: string; parking_slot: string | null }>(`SELECT registration, vehicle_type, parking_slot FROM stay_vehicles WHERE stay_id = $1`, [stayId]),
-      () => q.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE stay_id = $1 ORDER BY created_at`, [stayId]),
+      () => q.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE stay_id = $1 ORDER BY created_at, id`, [stayId]),
       () => q.query<{ from_number: string; to_number: string; business_date: string; reason: string; rate_decision: string; created_at: Date; by_name: string }>(
         `SELECT f.number AS from_number, t.number AS to_number, sh.business_date, sh.reason, sh.rate_decision, sh.created_at, u.full_name AS by_name
            FROM room_shifts sh JOIN rooms f ON f.id = sh.from_room_id JOIN rooms t ON t.id = sh.to_room_id JOIN users u ON u.id = sh.created_by
@@ -67,7 +68,7 @@ export class StaysService {
       businessDate, canShiftRoom: s.status === 'in_house' && businessDate < s.expected_departure, version: s.version,
       occupants: occupants.rows.map((o) => ({ key: o.occupant_key, fullName: o.full_name, isPrimary: o.is_primary, isChild: o.is_child, age: o.age, nationality: o.nationality, idType: o.id_type, idLast4: o.id_last4 })),
       vehicles: vehicles.rows.map((v) => ({ registration: v.registration, vehicleType: v.vehicle_type, parkingSlot: v.parking_slot })),
-      documents: documents.rows.map(documentView),
+      documents: latestDocuments(documents.rows).map(documentView),
       shifts: shifts.rows.map((x) => ({ from: x.from_number, to: x.to_number, businessDate: x.business_date, reason: x.reason, rateDecision: x.rate_decision, at: x.created_at, by: x.by_name })),
     };
   }
@@ -155,7 +156,7 @@ export class StaysService {
     const stay = await this.lockStay(q, actor, stayId);
     if (stay.status !== 'in_house') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'Only guests who are in house can change rooms.');
     if (stay.room_id === input.toRoomId) throw new AppError(ERROR_CODES.VALIDATION, 'Choose a different room.');
-    const bd = await this.property.businessDate(q, actor.user.propertyId);
+    const bd = await this.property.today(q, actor.user.propertyId);
     if (bd >= stay.expected_departure) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'The guest is due to check out; room shift is not possible.');
 
     const { rows: rrRows } = await q.query<ReservationRoomRow>(`SELECT * FROM reservation_rooms WHERE id = $1 FOR UPDATE`, [stay.reservation_room_id]);
@@ -187,6 +188,8 @@ export class StaysService {
 
     let authorisedBy: string | null = null;
     if (input.rateDecision === 'new_room_type_rate') {
+      const { rows: billed } = await q.query(`SELECT 1 FROM folio_lines l JOIN folios f ON f.id=l.folio_id WHERE f.stay_id=$1 AND l.business_date=$2 AND l.source='night_audit' AND l.voided_at IS NULL LIMIT 1`, [stayId, bd]);
+      if (billed.length) throw new AppError(ERROR_CODES.CONFLICT, 'Today’s room charge is already on the bill. Keep the agreed rate when moving this guest; correct any price difference as a separate charge or discount.');
       const quote = await this.rates.quote(q, actor.user.propertyId, {
         roomTypeId: to.room_type_id, arrival: bd, departure: stay.expected_departure, adults: rr.adults, childAges: rr.child_ages.map(Number), mealPlan: rr.meal_plan,
       });
@@ -222,7 +225,10 @@ export class StaysService {
     await q.query(`UPDATE reservation_rooms SET room_id = $2, room_type_id = $3 WHERE id = $1`, [rr.id, to.id, to.room_type_id]);
     await q.query(`UPDATE stays SET room_id = $2 WHERE id = $1`, [stayId, to.id]);
     await q.query(`SELECT set_config('resortos.reason', $1, true)`, [`Room shift to ${to.number}: ${input.reason}`]);
+    // The room left behind needs a full clean, like a checkout; the trigger opens that task (0021).
+    await q.query(`SELECT set_config('resortos.housekeeping_kind', 'checkout', true)`);
     await q.query(`UPDATE rooms SET housekeeping_status = 'dirty', updated_by = $2 WHERE id = $1`, [from.id, actor.user.id]);
+    await q.query(`SELECT set_config('resortos.housekeeping_kind', '', true)`);
     await q.query(
       `INSERT INTO room_shifts (property_id, stay_id, from_room_id, to_room_id, business_date, reason, rate_decision, authorised_by, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
@@ -256,7 +262,7 @@ export class StaysService {
         { fields: [{ path: 'newDeparture', message: `Must be after ${formatDate(stay.expected_departure)}` }] },
       );
     }
-    const bd = await this.property.businessDate(q, actor.user.propertyId);
+    const bd = await this.property.today(q, actor.user.propertyId);
 
     const { rows: rrRows } = await q.query<ReservationRoomRow>(`SELECT * FROM reservation_rooms WHERE id = $1 FOR UPDATE`, [stay.reservation_room_id]);
     const rr = rrRows[0]!;
@@ -317,10 +323,10 @@ export class StaysService {
 
   async checkoutPreview(actor: Actor, stayId: string) {
     return this.db.tx({ userId: actor.user.id }, async (q) => {
-      const { rows } = await q.query<StayRow>(`SELECT * FROM stays WHERE id = $1 AND property_id = $2`, [stayId, actor.user.propertyId]);
+      const bd = await this.property.today(q, actor.user.propertyId);
+      const { rows } = await q.query<StayRow>(`SELECT * FROM stays WHERE id = $1 AND property_id = $2 FOR UPDATE`, [stayId, actor.user.propertyId]);
       const stay = rows[0];
       if (!stay) throw notFound('Stay');
-      const bd = await this.property.businessDate(q, actor.user.propertyId);
       const blockers = stay.status === 'in_house' ? await collectBlockers(this.checkoutSteps, { q, actor, stay, businessDate: bd, input: {} }) : [];
       return {
         stayId, status: stay.status, businessDate: bd, expectedDeparture: stay.expected_departure,
@@ -332,9 +338,9 @@ export class StaysService {
   }
 
   async checkout(q: Queryable, actor: Actor, stayId: string, input: Record<string, unknown>) {
+    const bd = await this.property.today(q, actor.user.propertyId);
     const stay = await this.lockStay(q, actor, stayId);
     if (stay.status !== 'in_house') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This guest has already checked out.');
-    const bd = await this.property.businessDate(q, actor.user.propertyId);
     const ctx = { q, actor, stay, businessDate: bd, input };
 
     const blockers = await collectBlockers(this.checkoutSteps, ctx);
@@ -360,7 +366,10 @@ export class StaysService {
       [stayId, actor.user.id, bd, early],
     );
     await q.query(`SELECT set_config('resortos.reason', 'Checkout', true)`);
+    // Opens the checkout cleaning task (trigger rooms_housekeeping_task, 0021).
+    await q.query(`SELECT set_config('resortos.housekeeping_kind', 'checkout', true)`);
     await q.query(`UPDATE rooms SET housekeeping_status = 'dirty', updated_by = $2 WHERE id = $1`, [stay.room_id, actor.user.id]);
+    await q.query(`SELECT set_config('resortos.housekeeping_kind', '', true)`);
 
     // The booking is checked out when no room is still waiting or in house.
     const { rows: open } = await q.query<{ n: string }>(

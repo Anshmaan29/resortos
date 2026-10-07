@@ -196,17 +196,14 @@ export class GrcService {
     const { rows: signatures } = await q.query<GuestDocumentRow>(
       `SELECT * FROM guest_documents
         WHERE stay_id = $1 AND doc_type = 'signature' AND status = 'verified'
-        ORDER BY verified_at DESC LIMIT 1`,
+        ORDER BY created_at DESC, id DESC LIMIT 1`,
       [stay.id],
     );
     const signature = signatures[0];
-    if (!signature) {
-      throw new AppError(ERROR_CODES.VALIDATION, 'Collect the guest’s signature before printing the registration card.');
-    }
-    if (!(SIGNATURE_CONTENT_TYPES as readonly string[]).includes(signature.content_type)) {
+    if (signature && !(SIGNATURE_CONTENT_TYPES as readonly string[]).includes(signature.content_type)) {
       throw new AppError(ERROR_CODES.VALIDATION, 'The signature image cannot be printed. Capture the signature again.');
     }
-    const signatureImage = await this.storage.getObject(signature.storage_key);
+    const signatureImage = signature ? await this.storage.getObject(signature.storage_key) : null;
 
     const content = await this.content(q, propertyId);
     const version = supersedes ? supersedes.version + 1 : 1;
@@ -255,13 +252,13 @@ export class GrcService {
       },
       houseRules: content.houseRules,
       notice: content.notice,
-      signature: {
-        image: signatureImage,
+      signature: signature ? {
+        image: signatureImage!,
         contentType: signature.content_type,
         method: SIGNATURE_METHOD_BY_SOURCE[signature.source] ?? 'paper_scan',
         signedAt: signature.verified_at!,
         signedBy: primary?.full_name ?? `${stayDetail.guest_first} ${stayDetail.guest_last}`.trim(),
-      },
+      } : null,
       generatedAt,
       generatedBy: actor.user.fullName,
     });
@@ -282,7 +279,7 @@ export class GrcService {
           signature_method, signature_document_id, signed_at, notice_version, generated_at, generated_by, reason)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
       [propertyId, stay.id, number, version, supersedes?.id ?? null, storageKey, pdf.length, sha256,
-        SIGNATURE_METHOD_BY_SOURCE[signature.source] ?? 'paper_scan', signature.id, signature.verified_at,
+        signature ? SIGNATURE_METHOD_BY_SOURCE[signature.source] ?? 'paper_scan' : 'not_collected', signature?.id ?? null, signature?.verified_at ?? null,
         content.notice.version, generatedAt, actor.user.id, reason],
     );
     const row = inserted[0]!;

@@ -74,6 +74,7 @@ describe('company accounts', () => {
 
   it('a bill moved to the company is invoiced in the company’s name, and the company then owes it', async () => {
     const s = await stayWithCharge('202', 'DLX', '5000');
+    await desk.get(`/api/v1/stays/${s.stayId}/checkout-preview`).expect(200);
     const bill = (await desk.get(`/api/v1/stays/${s.stayId}/bill`).expect(200)).body;
     await post(desk, `/folios/${s.folioId}/payments`, { method: 'company_account', companyId, amount: bill.balance }).expect(200);
     await post(desk, `/stays/${s.stayId}/checkout`, {}).expect(200);
@@ -134,7 +135,7 @@ describe('OTA bookings', () => {
   let reservationId: string;
   beforeAll(async () => {
     const created = await post(owner, '/reservations', {
-      ...booking({ roomTypeId: f.type('PCOT'), roomId: f.room('C2'), arrival: '2026-09-20', departure: '2026-09-22', extra: { source: 'booking_com', otaReference: 'BDC-99812' } }),
+      ...booking({ roomTypeId: f.type('PRE'), roomId: f.room('108'), arrival: '2026-09-20', departure: '2026-09-22', extra: { source: 'booking_com', otaReference: 'BDC-99812' } }),
     }).expect(201);
     reservationId = created.body.id;
   });
@@ -146,7 +147,7 @@ describe('OTA bookings', () => {
   });
 
   it('only on a booking that came from an OTA', async () => {
-    const direct = await post(owner, '/reservations', booking({ roomTypeId: f.type('PCOT'), roomId: f.room('C3'), arrival: '2026-09-20', departure: '2026-09-21' })).expect(201);
+    const direct = await post(owner, '/reservations', booking({ roomTypeId: f.type('PRE'), roomId: f.room('209'), arrival: '2026-09-20', departure: '2026-09-21' })).expect(201);
     await desk.put(`/api/v1/reservations/${direct.body.id}/ota`).set('x-resortos', '1')
       .send({ paymentMode: 'prepaid_to_ota', grossAmount: '100' }).expect(400);
   });
@@ -164,6 +165,6 @@ describe('OTA bookings', () => {
 
   it('every booking made today is on the "availability changed today" list', async () => {
     const list = (await desk.get('/api/v1/availability-changes/today').expect(200)).body;
-    expect(list.some((e: any) => String(e.what).includes('booking_com'))).toBe(true);
+    expect(list.some((e: any) => String(e.what).includes('Booking.com'))).toBe(true);
   });
 });

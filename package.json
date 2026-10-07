@@ -15,21 +15,24 @@
     "dev:api": "pnpm --filter @resortos/api dev",
     "dev:web": "pnpm --filter @resortos/web dev",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "test": "node --test ops/railway/start.test.mjs && pnpm -r test",
     "verify": "pnpm build && pnpm typecheck && pnpm test",
     "e2e": "pnpm --filter @resortos/shared build && pnpm --filter @resortos/api build && pnpm --filter @resortos/web build && playwright test",
     "audit": "node ops/ci/audit.mjs",
     "https:setup": "bash ops/dev-https/setup-lan.sh",
     "https:off": "bash ops/dev-https/teardown-lan.sh",
     "dev:api:lan": "bash ops/dev-https/api-lan.sh",
-    "dev:web:lan": "bash ops/dev-https/web-lan.sh"
+    "dev:web:lan": "bash ops/dev-https/web-lan.sh",
+    "start": "node ops/railway/start.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"
   },
   "pnpm": {
     "overrides": {
-      "multer": "2.3.0"
+      "multer": "2.4.0",
+      "source-map-js": "1.2.2",
+      "sharp": "0.35.5"
     }
   }
 }

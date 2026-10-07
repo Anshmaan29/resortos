@@ -1,5 +1,5 @@
 'use client';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea } from '@/components/ui/field';
@@ -8,6 +8,7 @@ import { Pill } from '@/components/ui/status';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useProperty } from '@/lib/session';
+import { EmailSetupSettings, type EmailSetup } from './email-setup';
 import { Section, Toggle, useSave } from './common';
 
 interface Template {
@@ -24,6 +25,7 @@ const render = (text: string, vars: Record<string, string>) => text.replace(/\{\
 export function MessageSettings() {
   const property = useProperty();
   const data = useQuery({ queryKey: ['message-templates'], queryFn: () => api<{ variables: string[]; templates: Template[] }>('/message-templates') });
+  const setup = useQuery({ queryKey: ['email-settings'], queryFn: () => api<EmailSetup>('/email-settings') });
   const sample = useQuery({ queryKey: ['message-sample'], queryFn: () => api<Record<string, string>>('/message-templates/sample') });
   const [key, setKey] = useState('booking_confirmation');
   const [language, setLanguage] = useState<'en' | 'hi'>('en');
@@ -34,19 +36,20 @@ export function MessageSettings() {
   useEffect(() => { if (!testTo && property.data?.email) setTestTo(property.data.email); }, [property.data, testTo]);
 
   const save = useSave(() => api(`/message-templates/${key}/${language}`, { method: 'PUT', body: f }), { invalidate: [['message-templates']], success: 'Wording saved' });
-  const test = useSave(() => api(`/message-templates/${key}/${language}/test`, { method: 'POST', body: { to: testTo } }), { invalidate: [], success: `Test sent to ${testTo}` });
+  const test = useMutation({ mutationFn: () => api<{ status: string; skipReason: string | null }>(`/message-templates/${key}/${language}/test`, { method: 'POST', body: { to: testTo } }) });
 
   if (!data.data || !f || !current) return <Skeleton className="h-96" />;
   const keys = [...new Set(data.data.templates.map((t) => t.key))];
   const emailOn = property.data?.policies.emailEnabled;
   return (
     <div className="flex flex-col gap-5">
+      <EmailSetupSettings />
       {!emailOn && (
         <p className="rounded-lg border border-border bg-surface-2 px-4 py-3 text-sm text-text-2">
-          Guest email is switched off. Messages are still recorded as “skipped” on each stay, so you can see what would have gone. Switch it on in Policies once your sending domain is verified.
+          Guest email is switched off. Messages are still recorded as “skipped” on each stay, so you can see what would have gone. Switch it on above once your sending domain is verified.
         </p>
       )}
-      <Section title="Guest messages" description="Sent by email now; WhatsApp will use the same wording once Meta verification is done."
+      <Section title="Guest messages" description="Email wording in English and Hindi."
         action={<Button loading={save.isPending} onClick={() => save.mutate(undefined)}>Save wording</Button>}>
         <div className="grid gap-4 p-4 lg:grid-cols-[1fr_1fr]">
           <div className="flex flex-col gap-4">
@@ -82,10 +85,11 @@ export function MessageSettings() {
             </div>
             <div className="flex items-end gap-2">
               <Field label="Send a test to" className="flex-1">{(id) => <Input id={id} type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} />}</Field>
-              <Button variant="outline" loading={test.isPending} disabled={!testTo} onClick={() => test.mutate(undefined)}>Send test</Button>
+              <Button variant="outline" loading={test.isPending} disabled={!testTo || setup.data?.provider === 'off'} onClick={() => test.mutate(undefined)}>Send test</Button>
             </div>
+            {test.data && <p role="status" className="text-sm text-text-2">{setup.data?.provider === 'dev' ? 'Test recorded in practice mode; no email was delivered.' : test.data.status === 'queued' ? 'Test queued. Confirm delivery in Resend and in your inbox.' : test.data.skipReason ?? `Test status: ${test.data.status}`}</p>}
             {test.error && <ErrorBanner message={(test.error as Error).message} />}
-            <p className="text-xs text-text-3">A test uses the saved wording, so save first. It goes through Resend exactly as a guest message would.</p>
+            <p className="text-xs text-text-3">A test uses the saved wording, so save first. Delivery uses the provider shown above.</p>
           </div>
         </div>
       </Section>

@@ -173,6 +173,7 @@ export default function GuestProfilePage() {
                       </span>
                       <span className="block text-xs text-text-3">Room {d.roomNumber} · {formatDateTime(d.at)}</span>
                     </span>
+                    <a href={`/api/v1/documents/${d.id}/download`} className="rounded-md px-3 py-2 text-sm hover:bg-surface-2">Download</a>
                     <Button variant="ghost" size="sm" loading={view.isPending} onClick={() => view.mutate(d.id)}><Eye className="h-4 w-4" />View</Button>
                   </li>
                 ))}

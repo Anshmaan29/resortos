@@ -1,7 +1,8 @@
 'use client';
 import { formatDate, formatMobile } from '@resortos/shared';
-import { SlotStatus } from '@/components/capture/capture-slot';
+import { CaptureSlot, SlotStatus } from '@/components/capture/capture-slot';
 import { slotState } from '@/lib/capture/slot-state';
+import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/surface';
 import type { Property } from '@/lib/types';
 import type { useDeskQueue } from './documents-step';
@@ -53,10 +54,15 @@ export function RegistrationStep({ draft, data, property, onChange, onRefresh, q
         </div>
       </Card>
       <Card className="xl:sticky xl:top-24 xl:self-start">
-        <CardHeader title="Guest signature" action={<SlotStatus state={state} />} />
-        <div className="p-5">
+        <CardHeader title="Guest signature" description="Optional — draw it, take a photo, or upload a signature picture." action={<SlotStatus state={state} />} />
+        <div className="space-y-5 p-5">
           <SignatureField disabled={state.kind === 'uploading' || state.kind === 'verifying'}
             onSigned={(png) => void queue.add({ slotKey: 'signature', docType: 'signature', source: 'signature_pad', blob: png, contentType: 'image/png' }).then(onRefresh)} />
+          <CaptureSlot label="Signature photo" docType="signature" state={state} item={item} compact
+            onDiscardFailed={() => { if (item && item.status !== 'done') void queue.remove(item.id); }}
+            onCaptured={(result, via) => void queue.add({ slotKey: 'signature', docType: 'signature', source: via === 'file' ? 'file_upload' : 'desk_camera', blob: result.blob, thumbnail: result.thumbnail, contentType: 'image/jpeg' }).then(onRefresh)} />
+          {item && item.status !== 'done' && <Button variant="outline" onClick={() => void queue.remove(item.id)}>Cancel signature upload</Button>}
+          <p className="text-sm text-text-2">You can continue without a signature.</p>
         </div>
       </Card>
     </div>

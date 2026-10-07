@@ -15,7 +15,7 @@ import type { NightAuditPreview, NightAuditRun, NightAuditStepView } from '@/lib
 const SUMMARY_LABELS: [string, string, (v: number) => string][] = [
   ['occupancyPercent', 'Occupancy', (v) => `${v}%`],
   ['roomsOccupied', 'Rooms occupied', String],
-  ['roomsActive', 'Rooms in use', String],
+  ['roomsActive', 'Rooms in service', String],
   ['arrivalsCheckedIn', 'Arrived', String],
   ['departuresCompleted', 'Departed', String],
   ['inHouseAtClose', 'Still in house', String],

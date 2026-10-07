@@ -141,7 +141,7 @@ export function booking(input: { roomTypeId: string; roomId?: string; arrival: s
 }
 
 /** Creates a staff account and completes the forced password change. Returns a logged-in agent. */
-export async function createStaff(app: INestApplication, owner: Agent, username: string, role: 'receptionist' | 'owner' = 'receptionist'): Promise<Agent> {
+export async function createStaff(app: INestApplication, owner: Agent, username: string, role: 'receptionist' | 'owner' | 'cleaner' = 'receptionist'): Promise<Agent> {
   await post(owner, '/users', { fullName: `Test ${username}`, username, role, temporaryPassword: 'Temporary#Pass1' }, null).expect(201);
   const agent = request.agent(app.getHttpServer());
   await agent.post('/api/v1/auth/login').set('x-resortos', '1').send({ login: username, password: 'Temporary#Pass1' }).expect(200);

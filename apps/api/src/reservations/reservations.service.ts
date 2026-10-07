@@ -151,12 +151,13 @@ export class ReservationsService {
         && sameAges(ex.row.child_ages, room.childAges) && ex.row.meal_plan === room.mealPlan
         && (room.ratePlanId ?? ex.row.rate_plan_id) === ex.row.rate_plan_id && ex.row.arrival === arrival && ex.row.departure === departure;
       if (unchanged) {
-        quotes.push(await this.rates.quoteFromStoredNights(q, propertyId, room.roomTypeId, ex.row.rate_plan_id, ex.nights));
+        const nights = room.extraPersonRate === undefined ? ex.nights : ex.nights.map((night) => ({ ...night, extra_person_amount: room.extraPersonRate! }));
+        quotes.push(await this.rates.quoteFromStoredNights(q, propertyId, room.roomTypeId, ex.row.rate_plan_id, nights));
         reused.push(true);
       } else {
         quotes.push(await this.rates.quote(q, propertyId, {
           roomTypeId: room.roomTypeId, arrival, departure, adults: room.adults, childAges: room.childAges,
-          ratePlanId: room.ratePlanId, mealPlan: room.mealPlan, manualRate: room.nightlyRate,
+          ratePlanId: room.ratePlanId, mealPlan: room.mealPlan, manualRate: room.nightlyRate, extraPersonRate: room.extraPersonRate,
         }));
         reused.push(false);
       }
@@ -191,7 +192,7 @@ export class ReservationsService {
       departure: input.departure,
       rooms: input.rooms.map((r) => ({
         reservationRoomId: r.reservationRoomId ?? null, roomTypeId: r.roomTypeId, roomId: r.roomId ?? null, adults: r.adults,
-        childAges: r.childAges, mealPlan: r.mealPlan, ratePlanId: r.ratePlanId ?? null, nightlyRate: r.nightlyRate ?? null,
+        childAges: r.childAges, mealPlan: r.mealPlan, ratePlanId: r.ratePlanId ?? null, nightlyRate: r.nightlyRate ?? null, extraPersonRate: r.extraPersonRate ?? null,
       })),
       exceptions: reasons.map((r) => r.description),
     };
@@ -249,9 +250,9 @@ export class ReservationsService {
   async create(q: Queryable, actor: Actor, input: CreateReservationInput) {
     const propertyId = actor.user.propertyId;
     const id = randomUUID();
-    const businessDate = await this.property.businessDate(q, propertyId);
+    const businessDate = await this.property.today(q, propertyId);
     if (input.arrival < businessDate) {
-      throw new AppError(ERROR_CODES.VALIDATION, `Arrival cannot be before the business date (${formatDate(businessDate)}).`, {
+      throw new AppError(ERROR_CODES.VALIDATION, `Arrival cannot be before today (${formatDate(businessDate)}).`, {
         fields: [{ path: 'arrival', message: 'Arrival is in the past' }],
       });
     }
@@ -320,12 +321,12 @@ export class ReservationsService {
       throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'A confirmed booking cannot be changed back to tentative.');
     }
 
-    const businessDate = await this.property.businessDate(q, propertyId);
+    const businessDate = await this.property.today(q, propertyId);
     if (input.arrival !== res.arrival && input.arrival < businessDate) {
-      throw new AppError(ERROR_CODES.VALIDATION, `Arrival cannot be before the business date (${formatDate(businessDate)}).`, { fields: [{ path: 'arrival', message: 'Arrival is in the past' }] });
+      throw new AppError(ERROR_CODES.VALIDATION, `Arrival cannot be before today (${formatDate(businessDate)}).`, { fields: [{ path: 'arrival', message: 'Arrival is in the past' }] });
     }
     if (input.departure <= businessDate) {
-      throw new AppError(ERROR_CODES.VALIDATION, 'Departure must be after the business date.', { fields: [{ path: 'departure', message: 'Departure is in the past' }] });
+      throw new AppError(ERROR_CODES.VALIDATION, 'Departure must be after today.', { fields: [{ path: 'departure', message: 'Departure is in the past' }] });
     }
 
     const before = await this.detail(q, propertyId, id);
@@ -540,7 +541,7 @@ export class ReservationsService {
           : 'Only a confirmed booking that never arrived can be marked a no-show.',
       );
     }
-    const businessDate = await this.property.businessDate(q, actor.user.propertyId);
+    const businessDate = await this.property.today(q, actor.user.propertyId);
     if (res.arrival > businessDate) {
       throw new AppError(ERROR_CODES.INVALID_TRANSITION, `This booking arrives on ${formatDate(res.arrival)}. It cannot be a no-show before then.`);
     }
@@ -630,7 +631,7 @@ export class ReservationsService {
          SELECT id, number, status, 'as' AS relation FROM reservations WHERE rebooked_from_id = $2`,
         [r.rebooked_from_id, id],
       ),
-      () => this.property.businessDate(q, propertyId),
+      () => this.property.today(q, propertyId),
     ]);
 
     const stayRows = await q.query<{ id: string; room_number: string; status: string }>(
@@ -791,7 +792,7 @@ export class ReservationsService {
 
   /** Reception home (spec §70.1). */
   async frontDesk(propertyId: string) {
-    const businessDate = await this.property.businessDate(this.db, propertyId);
+    const businessDate = await this.property.today(this.db, propertyId);
     const [arrivals, departures, inHouse, rooms] = await Promise.all([
       this.list(propertyId, { from: businessDate, to: businessDate, limit: 200 }).then((l) =>
         l.filter((r) => r.arrival === businessDate && ['tentative', 'confirmed'].includes(r.status))),

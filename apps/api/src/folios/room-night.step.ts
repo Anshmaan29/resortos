@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { formatDate, formatINR, money, toMoneyString } from '@resortos/shared';
+import { AppError } from '../common/errors';
+import { ERROR_CODES } from '@resortos/shared';
 import { emptyReport, type NightAuditContext, type NightAuditStep, type StepReport, type StepResult } from '../night-audit/night-audit-pipeline';
 import { FolioService } from './folio.service';
+import type { Queryable } from '../db/db.service';
+import type { Actor } from '../common/request-context';
+import { AuditService } from '../common/audit.service';
+import { OutboxService } from '../common/outbox.service';
 
 interface PostableRow {
   stay_id: string;
@@ -42,7 +48,55 @@ export class RoomNightPostingStep implements NightAuditStep {
   readonly order = 40;
   readonly blocking = false;
 
-  constructor(private readonly folios: FolioService) {}
+  constructor(private readonly folios: FolioService, private readonly audit: AuditService, private readonly outbox: OutboxService) {}
+
+  /** Complete elapsed agreed nights before settlement. Same-day use has a minimum of one night;
+   * future reserved nights are released by checkout, not silently billed. Existing posted or
+   * explicitly voided nights are retained, so retries do not resurrect an owner's correction. */
+  async prepareCheckout(q: Queryable, actor: Actor, stayId: string, businessDate: string) {
+    const folio = await this.folios.ensureForStay(q, actor, stayId);
+    const { rows } = await q.query<PostableRow & { night_date: string }>(
+      `SELECT s.id AS stay_id, rm.id AS room_id, rm.number AS room_number, '' AS guest_name,
+              n.night_date, n.room_rate, n.extra_person_amount, n.meal_amount, rt.name AS room_type_name, rr.meal_plan
+         FROM stays s JOIN reservation_rooms rr ON rr.id = s.reservation_room_id
+         JOIN reservation_room_nights n ON n.reservation_room_id = rr.id
+         JOIN rooms rm ON rm.id = COALESCE((SELECT sh.from_room_id FROM room_shifts sh WHERE sh.stay_id=s.id AND sh.business_date>n.night_date ORDER BY sh.business_date,sh.created_at LIMIT 1),s.room_id) JOIN room_types rt ON rt.id = rm.room_type_id
+        WHERE s.id = $1 AND s.property_id = $2 AND s.status = 'in_house'
+          AND n.night_date >= s.business_date_in
+          AND (n.night_date < $3::date OR (s.business_date_in = $3::date AND n.night_date = $3::date))
+        ORDER BY n.night_date FOR NO KEY UPDATE OF s`,
+      [stayId, actor.user.propertyId, businessDate],
+    );
+    let posted = 0;
+    for (const row of rows) {
+      for (const part of PARTS) {
+        const amount = row[part.column];
+        if (!money(amount).gt(0)) continue;
+        const { rows: closedMissing } = await q.query<{ one: number }>(
+          `SELECT 1 AS one FROM night_audits WHERE property_id=$1 AND business_date=$2::date
+            AND NOT EXISTS (SELECT 1 FROM folio_lines WHERE folio_id=$3 AND business_date=$2::date AND line_type=$4 AND source='night_audit')`,
+          [actor.user.propertyId,row.night_date,folio.id,part.lineType],
+        );
+        if (closedMissing.length) throw new AppError(ERROR_CODES.CONFLICT, 'An agreed room charge is missing from a closed business date. Ask the owner to reconcile the day’s records before checkout.');
+        const inserted = await q.query<{ id: string }>(
+          `INSERT INTO folio_lines (property_id, folio_id, business_date, line_type, name, quantity, unit_rate, amount,
+                                    tax_category, source, room_id, created_by)
+           SELECT $1,$2,$3::date,$4,$5,1,$6,$6,$7,'night_audit',$8,$9
+            WHERE NOT EXISTS (SELECT 1 FROM folio_lines WHERE folio_id = $2 AND business_date = $3::date AND line_type = $4 AND source = 'night_audit')
+           ON CONFLICT DO NOTHING RETURNING id`,
+          [actor.user.propertyId, folio.id, row.night_date, part.lineType,
+           part.lineType === 'room_night' ? `Room — ${row.room_type_name}` : part.lineType === 'meal' ? `Meal plan (${row.meal_plan})` : 'Extra person',
+           amount, part.taxCategory, row.room_id, actor.user.id],
+        );
+        posted += inserted.rowCount ?? 0;
+      }
+    }
+    if (posted) {
+      await this.audit.record(q, actor, { action: 'bill.room_charges_completed', entityType: 'folio', entityId: folio.id, after: { posted, throughBusinessDate: businessDate } });
+      await this.outbox.emit(q, actor.user.propertyId, 'folio.charges_posted', { type: 'folio', id: folio.id }, { posted });
+    }
+    return { id: folio.id };
+  }
 
   private async postable(ctx: NightAuditContext): Promise<PostableRow[]> {
     const { rows } = await ctx.q.query<PostableRow>(
@@ -58,6 +112,7 @@ export class RoomNightPostingStep implements NightAuditStep {
          JOIN reservations res ON res.id = s.reservation_id
          JOIN guests g ON g.id = res.primary_guest_id
         WHERE s.property_id = $1 AND s.status = 'in_house'
+          AND n.night_date >= s.business_date_in
         ORDER BY rm.number`,
       [ctx.propertyId, ctx.businessDate],
     );
@@ -108,7 +163,8 @@ export class RoomNightPostingStep implements NightAuditStep {
         const { rowCount } = await ctx.q.query(
           `INSERT INTO folio_lines (property_id, folio_id, business_date, line_type, name, quantity, unit_rate, amount,
                                     tax_category, source, room_id, created_by)
-           VALUES ($1,$2,$3::date,$4,$5,1,$6,$6,$7,'night_audit',$8,$9)
+           SELECT $1,$2,$3::date,$4,$5,1,$6,$6,$7,'night_audit',$8,$9
+            WHERE NOT EXISTS (SELECT 1 FROM folio_lines WHERE folio_id=$2 AND business_date=$3::date AND line_type=$4 AND source='night_audit')
            ON CONFLICT DO NOTHING`,
           [ctx.propertyId, folio.id, ctx.businessDate, part.lineType, name, amount, part.taxCategory, row.room_id, ctx.actor.user.id],
         );

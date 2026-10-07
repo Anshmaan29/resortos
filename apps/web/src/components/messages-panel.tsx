@@ -1,13 +1,13 @@
 'use client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Mail, RotateCw, Send } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Card, CardHeader, ErrorBanner } from '@/components/ui/surface';
 import { Pill } from '@/components/ui/status';
 import { useToast } from '@/components/ui/toast';
-import { api } from '@/lib/api';
+import { api, newIdempotencyKey } from '@/lib/api';
 
 interface Message {
   id: string; templateKey: string; templateLabel: string; recipient: string; subject: string | null; body: string; status: string;
@@ -31,13 +31,15 @@ export function MessagesPanel({ stayId, reservationId }: { stayId?: string; rese
   const [open, setOpen] = useState<Message | null>(null);
   const key = ['messages', stayId ?? reservationId];
   const list = useQuery({ queryKey: key, queryFn: () => api<Message[]>('/messages', { query: { stayId, reservationId } }), refetchInterval: 15_000 });
+  const resendKey = useRef(newIdempotencyKey());
+  const sendKey = useRef(newIdempotencyKey());
   const resend = useMutation({
-    mutationFn: (id: string) => api<Message>(`/messages/${id}/resend`, { method: 'POST', body: {} }),
-    onSuccess: (m) => { void qc.invalidateQueries({ queryKey: key }); toast(m.status === 'skipped' ? 'error' : 'success', m.status === 'skipped' ? `Not sent: ${m.skipReason}` : 'Sending again'); },
+    mutationFn: (id: string) => api<Message>(`/messages/${id}/resend`, { method: 'POST', idempotencyKey:resendKey.current, body: {} }),
+    onSuccess: (m) => { resendKey.current=newIdempotencyKey(); void qc.invalidateQueries({ queryKey: key }); toast(m.status === 'skipped' ? 'error' : 'success', m.status === 'skipped' ? `Not sent: ${m.skipReason}` : 'Sending again'); },
   });
   const send = useMutation({
-    mutationFn: (templateKey: string) => api<Message>('/messages/send', { method: 'POST', body: { templateKey, stayId, reservationId } }),
-    onSuccess: (m) => { void qc.invalidateQueries({ queryKey: key }); toast(m.status === 'skipped' ? 'error' : 'success', m.status === 'skipped' ? `Not sent: ${m.skipReason}` : 'Message queued'); },
+    mutationFn: (templateKey: string) => api<Message>('/messages/send', { method: 'POST', idempotencyKey:sendKey.current, body: { templateKey, stayId, reservationId } }),
+    onSuccess: (m) => { sendKey.current=newIdempotencyKey(); void qc.invalidateQueries({ queryKey: key }); toast(m.status === 'skipped' ? 'error' : 'success', m.status === 'skipped' ? `Not sent: ${m.skipReason}` : 'Message queued'); },
   });
   const messages = list.data ?? [];
   return (

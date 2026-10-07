@@ -16,6 +16,22 @@ test('staff UI has no developer wording and meets the Indian formats @phone', as
   await expect(page.getByText('+91 98765 43210').locator('visible=true').first()).toBeVisible();
 });
 
+test('new bookings and the header use today even while an earlier accounting day is open', async ({ page }) => {
+  await page.route('**/api/v1/property', async (route) => {
+    const response = await route.fetch();
+    const property = await response.json();
+    await route.fulfill({ response, json: { ...property, today: '2026-10-07', businessDate: '2026-10-06' } });
+  });
+  await receptionist(page);
+  await expect(page.getByText('Today', { exact: true })).toBeVisible();
+  await expect(page.getByText('Day closing: 6 Oct', { exact: true })).toBeVisible();
+  await page.goto('/reservations/new');
+  await expect(page.getByRole('textbox', { name: 'Arrival' })).toHaveValue('07/10/2026');
+  await expect(page.getByRole('textbox', { name: 'Departure' })).toHaveValue('08/10/2026');
+  await page.getByRole('button', { name: 'Choose arrival date from calendar' }).click();
+  await expect(page.getByRole('button', { name: 'Tue 6 Oct 2026' })).toBeDisabled();
+});
+
 test('dates are entered as DD/MM/YYYY with our own picker, independent of browser locale', async ({ page }) => {
   await receptionist(page);
   await page.goto('/reservations/new');
@@ -42,36 +58,56 @@ test('dates are entered as DD/MM/YYYY with our own picker, independent of browse
   await expect(departure).toHaveValue('21/09/2026');
 });
 
-test('below-minimum rate: Owner PIN typed on the physical keyboard, override shown on the booking', async ({ page }) => {
+test('below-minimum rate: four-digit Owner PIN typed on the physical keyboard, override shown on the booking', async ({ page, request }) => {
   await receptionist(page);
   await page.goto('/reservations/new');
   await page.getByLabel('First name').fill('Kavya');
   await page.getByLabel('Last name').fill('Reddy');
   await page.getByLabel('Mobile').fill('9849012345');
-  await page.getByLabel('Room rate per night').fill('2000');
-  await expect(page.getByText(/Below the minimum rate of ₹2,600/)).toBeVisible();
+  await expect(page.getByLabel('Meal plan')).toHaveCount(0);
+  await page.getByLabel('Base room price per night').fill('2000');
+  await page.getByLabel('Extra adult / child charges per night').fill('375.50');
+  await expect(page.getByText('₹2,375.50', { exact: true }).first()).toBeVisible();
+  await page.getByLabel('Extra adult / child charges per night').fill('');
+  await expect(page.getByText('₹3,150', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/Below the minimum rate of ₹3,200/)).toBeVisible();
   await expect(page.getByText('Estimated total incl. GST')).toBeVisible();
+  const ownersLoaded = page.waitForResponse((r) => r.url().endsWith('/api/v1/auth/owners') && r.status() === 200);
   await page.getByRole('button', { name: 'Save booking' }).click();
 
   const pad = page.getByRole('dialog', { name: 'Owner authorisation' });
-  await expect(pad.getByText('Needed because: Rate ₹2,000 is below the minimum ₹2,600')).toBeVisible();
-  await page.keyboard.type('000000');
-  await page.keyboard.press('Enter');
+  await expect(pad.getByText('Needed because: Rate ₹2,000 is below the minimum ₹3,200')).toBeVisible();
+  await ownersLoaded;
+  await expect(pad.getByText('Loading owners…')).toBeHidden();
+  // Keep a burst of digits and Enter in the same browser task. This reproduces the
+  // lost-submit race without depending on how quickly a CI runner commits React state.
+  await page.evaluate(() => {
+    for (const key of [...'000000', 'Enter']) window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  });
   await expect(pad.getByText('Owner PIN is incorrect.')).toBeVisible();
-  await page.keyboard.type('48291');
-  await page.keyboard.press('Backspace');
-  await page.keyboard.type('16');
-  await expect(pad.getByRole('status')).toHaveAttribute('aria-label', '6 of 6 digits entered');
-  await page.keyboard.press('Enter');
-
-  await page.waitForURL(/\/reservations\/[0-9a-f-]{36}$/);
+  // The owner sets a shorter PIN through the actual password-protected API.
+  expect((await request.post('/api/v1/auth/login', { headers: { 'x-resortos': '1' }, data: { login: 'owner', password: 'Aravali#Hills26' } })).ok()).toBe(true);
+  const setPin = (pin: string) => request.post('/api/v1/auth/owner-pin', { headers: { 'x-resortos': '1' }, data: { password: 'Aravali#Hills26', pin } });
+  expect((await setPin('7294')).ok()).toBe(true);
+  try {
+    await page.keyboard.type('7295');
+    await page.keyboard.press('Backspace');
+    await expect(pad.getByRole('button', { name: 'Authorise' })).toBeDisabled();
+    // The last digit and Enter in one task must submit all four digits.
+    await page.evaluate(() => {
+      for (const key of ['4', 'Enter']) window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    });
+    await page.waitForURL(/\/reservations\/[0-9a-f-]{36}$/);
+  } finally {
+    expect((await setPin('482916')).ok()).toBe(true);
+  }
   // The override records the real time it happened, not the seeded business date, so the day is
   // whatever today is — matching a fixed date here would fail on every other day of the year.
-  await expect(page.getByText(/Rate ₹2,000 is below the minimum ₹2,600\. Authorised by Vikram Rathore \(Owner\), \d{1,2} \w{3}, \d{1,2}:\d{2} [AP]M, requested by Priya Sharma\./)).toBeVisible();
+  await expect(page.getByText(/Rate ₹2,000 is below the minimum ₹3,200\. Authorised by Vikram Rathore \(Owner\), \d{1,2} \w{3}, \d{1,2}:\d{2} [AP]M, requested by Priya Sharma\./)).toBeVisible();
   await expect(page.getByText('+91 98490 12345')).toBeVisible();
-  await expect(page.getByText(/Room ₹2,000 · breakfast ₹800 · ₹2,800 before GST/)).toBeVisible();
+  await expect(page.getByText(/Room ₹2,000 · extra guests ₹1,000/)).toBeVisible(); // Room only: single ₹2,000 plus the second adult
   await expect(page.getByText('Estimated total incl. GST')).toBeVisible();
-  await expect(page.getByText('₹2,940')).toBeVisible(); // ₹2,000 at 5% + ₹800 at 5%
+  await expect(page.getByText('₹3,150')).toBeVisible(); // ₹3,000 at the configured 5% demo GST
   await expect(page.getByText('Assign a room first')).toBeVisible();
 });
 

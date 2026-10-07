@@ -12,6 +12,7 @@ test('express check-in: one form creates the walk-in booking and opens the whole
   await loginAs(page, 'priya', 'Aravali#Desk26');
   await page.getByRole('link', { name: 'Express check-in' }).click();
   await page.waitForURL('/check-in/express');
+  await expect(page.getByLabel('Meal plan')).toHaveCount(0);
   await page.getByLabel('First name').fill('Arjun');
   await page.getByLabel('Mobile').fill('9829012345');
   // Whichever type still has a clean, free room after the earlier specs, and the first such room.
@@ -33,7 +34,7 @@ test('express check-in: one form creates the walk-in booking and opens the whole
   await expect(page.getByRole('button', { name: 'Confirm check-in' })).toBeDisabled();
 });
 
-test('the owner changes a policy in settings, and a receptionist only sees their own PIN', async ({ page, browser }) => {
+test('the owner changes a policy in settings, and a receptionist sees GST rules and their own PIN', async ({ page, browser }) => {
   await loginAs(page, 'owner', 'Aravali#Hills26');
   await page.goto('/settings?tab=policies');
   const threshold = page.getByLabel('Cash difference needing a reason (₹)');
@@ -47,6 +48,9 @@ test('the owner changes a policy in settings, and a receptionist only sees their
   await loginAs(desk, 'priya', 'Aravali#Desk26');
   await desk.goto('/settings');
   await expect(desk.getByRole('button', { name: 'My PIN' })).toBeVisible();
+  await desk.getByRole('button', { name: 'GST rules' }).click();
+  await expect(desk.getByRole('button', { name: 'Add rule', exact: true })).toBeVisible();
+  await expect(desk.getByText('Food · 5%')).toBeVisible();
   await expect(desk.getByRole('button', { name: 'Policies & printing' })).toHaveCount(0);
 });
 
