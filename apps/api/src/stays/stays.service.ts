@@ -47,7 +47,7 @@ export class StaysService {
     );
     const s = rows[0];
     if (!s) throw notFound('Stay');
-    const businessDate = await this.property.businessDate(q, propertyId);
+    const businessDate = await this.property.today(q, propertyId);
     const [occupants, vehicles, documents, shifts] = await gather(q, [
       () => q.query<{ occupant_key: string; full_name: string; is_primary: boolean; is_child: boolean; age: number | null; nationality: string; id_type: string; id_last4: string | null }>(
         `SELECT occupant_key, full_name, is_primary, is_child, age, nationality, id_type, id_last4 FROM stay_occupants WHERE stay_id = $1 ORDER BY is_primary DESC, is_child, created_at`, [stayId]),
@@ -156,7 +156,7 @@ export class StaysService {
     const stay = await this.lockStay(q, actor, stayId);
     if (stay.status !== 'in_house') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'Only guests who are in house can change rooms.');
     if (stay.room_id === input.toRoomId) throw new AppError(ERROR_CODES.VALIDATION, 'Choose a different room.');
-    const bd = await this.property.businessDate(q, actor.user.propertyId);
+    const bd = await this.property.today(q, actor.user.propertyId);
     if (bd >= stay.expected_departure) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'The guest is due to check out; room shift is not possible.');
 
     const { rows: rrRows } = await q.query<ReservationRoomRow>(`SELECT * FROM reservation_rooms WHERE id = $1 FOR UPDATE`, [stay.reservation_room_id]);
@@ -262,7 +262,7 @@ export class StaysService {
         { fields: [{ path: 'newDeparture', message: `Must be after ${formatDate(stay.expected_departure)}` }] },
       );
     }
-    const bd = await this.property.businessDate(q, actor.user.propertyId);
+    const bd = await this.property.today(q, actor.user.propertyId);
 
     const { rows: rrRows } = await q.query<ReservationRoomRow>(`SELECT * FROM reservation_rooms WHERE id = $1 FOR UPDATE`, [stay.reservation_room_id]);
     const rr = rrRows[0]!;
@@ -323,7 +323,7 @@ export class StaysService {
 
   async checkoutPreview(actor: Actor, stayId: string) {
     return this.db.tx({ userId: actor.user.id }, async (q) => {
-      const bd = await this.property.businessDate(q, actor.user.propertyId);
+      const bd = await this.property.today(q, actor.user.propertyId);
       const { rows } = await q.query<StayRow>(`SELECT * FROM stays WHERE id = $1 AND property_id = $2 FOR UPDATE`, [stayId, actor.user.propertyId]);
       const stay = rows[0];
       if (!stay) throw notFound('Stay');
@@ -338,7 +338,7 @@ export class StaysService {
   }
 
   async checkout(q: Queryable, actor: Actor, stayId: string, input: Record<string, unknown>) {
-    const bd = await this.property.businessDate(q, actor.user.propertyId);
+    const bd = await this.property.today(q, actor.user.propertyId);
     const stay = await this.lockStay(q, actor, stayId);
     if (stay.status !== 'in_house') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This guest has already checked out.');
     const ctx = { q, actor, stay, businessDate: bd, input };

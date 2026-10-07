@@ -10,6 +10,12 @@ yesterday's date, and a charge added then belongs to yesterday's takings. `prope
 holds it, a trigger from migration `0001` refuses to move it backwards, and night audit is the only
 thing that moves it forward.
 
+## Reception calendar date
+
+Live booking, calendar, check-in, room-change and checkout date validation follows today's date in the property's timezone, independently of the accounting date. `/property` returns `today` separately from `businessDate`. The header displays Today and, when different, a Day closing link to Night audit. The property query refreshes every minute and on returning to the window. New check-ins record their actual reception date so a pending older audit cannot bill a night before arrival. Money entry and night-audit closure still use the accounting date; no audit is automatically completed, skipped or backdated. Existing stay and invoice snapshots are not rewritten.
+
+Demo-origin properties retain their seeded reception date for replay and isolated tests; live properties always derive the date from the server clock and configured timezone.
+
 ## Shape of the feature
 
 Two endpoints, deliberately split:

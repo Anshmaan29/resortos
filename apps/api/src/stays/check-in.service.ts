@@ -81,7 +81,7 @@ export class CheckInService {
       if (!['confirmed', 'checked_in'].includes(res.status)) {
         throw new AppError(ERROR_CODES.INVALID_TRANSITION, res.status === 'tentative' ? 'Confirm the booking before check-in.' : 'This booking cannot be checked in.');
       }
-      const bd = await this.property.businessDate(q, actor.user.propertyId);
+      const bd = await this.property.today(q, actor.user.propertyId);
       if (res.arrival > bd) throw new AppError(ERROR_CODES.INVALID_TRANSITION, `Check-in opens on the arrival day, ${formatDate(res.arrival)}.`);
       if (res.departure <= bd) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'The stay dates have already passed.');
 
@@ -221,7 +221,7 @@ export class CheckInService {
     const { rows: resRows } = await q.query<ReservationRow>(`SELECT * FROM reservations WHERE id = $1 FOR UPDATE`, [draft.reservation_id]);
     const res = resRows[0]!;
     if (!['confirmed', 'checked_in'].includes(res.status)) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This booking cannot be checked in.');
-    const bd = await this.property.businessDate(q, actor.user.propertyId);
+    const bd = await this.property.today(q, actor.user.propertyId);
     if (res.arrival > bd || res.departure <= bd) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'Check-in is only possible between the arrival day and the day before departure.');
 
     const data = checkInDraftDataSchema.parse(draft.data);

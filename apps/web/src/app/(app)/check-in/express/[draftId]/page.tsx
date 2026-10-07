@@ -31,7 +31,7 @@ export default function ExpressDraftPage() {
   const d = draft.data;
   const sections = [
     { title: 'Guests', body: <GuestsStep draft={d} data={data} onChange={change} /> },
-    { title: 'Room', body: <RoomStep draft={d} data={data} businessDate={property.data.businessDate} onChange={change} /> },
+    { title: 'Room', body: <RoomStep draft={d} data={data} businessDate={property.data.today} onChange={change} /> },
     { title: 'IDs', body: <DocumentsStep draft={d} data={data} onChange={change} onRefresh={refresh} queue={queue} /> },
     { title: 'Registration card and signature', body: <RegistrationStep draft={d} data={data} property={property.data} onChange={change} onRefresh={refresh} queue={queue} /> },
     { title: 'Check', body: <ConfirmStep draft={d} data={data} reservation={reservation.data} /> },

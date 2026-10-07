@@ -156,10 +156,15 @@ export function AppShell({ children }: { children: ReactNode }) {
           <kbd className="hidden rounded border border-border px-1 text-[10px] lg:inline">Ctrl K</kbd>
         </button>
         {property.data && (
-          <div className="hidden items-center gap-2 rounded-full bg-surface-2 px-3 py-1.5 text-sm sm:flex" title="Business date moves forward only at night audit">
-            <span className="text-text-3">Business date</span>
-            <span className="font-medium num">{formatDate(property.data.businessDate, { weekday: true })}</span>
+          <div className="hidden items-center gap-2 rounded-full bg-surface-2 px-3 py-1.5 text-sm sm:flex" title="Current date in the hotel’s timezone">
+            <span className="text-text-3">Today</span>
+            <span className="font-medium num">{formatDate(property.data.today, { weekday: true })}</span>
           </div>
+        )}
+        {property.data && property.data.businessDate !== property.data.today && (
+          <Link href="/night-audit" className="hidden text-xs text-text-3 lg:block" title="Night audit closes this accounting date">
+            Day closing: {formatDate(property.data.businessDate, { year: false })}
+          </Link>
         )}
         {property.data?.isPractice && <span className="rounded-full bg-warning-soft px-3 py-1 text-xs font-semibold text-warning">PRACTICE MODE</span>}
         <div className="ml-auto" ref={menuRef}>

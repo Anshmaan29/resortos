@@ -112,6 +112,7 @@ export class RoomNightPostingStep implements NightAuditStep {
          JOIN reservations res ON res.id = s.reservation_id
          JOIN guests g ON g.id = res.primary_guest_id
         WHERE s.property_id = $1 AND s.status = 'in_house'
+          AND n.night_date >= s.business_date_in
         ORDER BY rm.number`,
       [ctx.propertyId, ctx.businessDate],
     );

@@ -16,6 +16,22 @@ test('staff UI has no developer wording and meets the Indian formats @phone', as
   await expect(page.getByText('+91 98765 43210').locator('visible=true').first()).toBeVisible();
 });
 
+test('new bookings and the header use today even while an earlier accounting day is open', async ({ page }) => {
+  await page.route('**/api/v1/property', async (route) => {
+    const response = await route.fetch();
+    const property = await response.json();
+    await route.fulfill({ response, json: { ...property, today: '2026-10-07', businessDate: '2026-10-06' } });
+  });
+  await receptionist(page);
+  await expect(page.getByText('Today', { exact: true })).toBeVisible();
+  await expect(page.getByText('Day closing: 6 Oct', { exact: true })).toBeVisible();
+  await page.goto('/reservations/new');
+  await expect(page.getByRole('textbox', { name: 'Arrival' })).toHaveValue('07/10/2026');
+  await expect(page.getByRole('textbox', { name: 'Departure' })).toHaveValue('08/10/2026');
+  await page.getByRole('button', { name: 'Choose arrival date from calendar' }).click();
+  await expect(page.getByRole('button', { name: 'Tue 6 Oct 2026' })).toBeDisabled();
+});
+
 test('dates are entered as DD/MM/YYYY with our own picker, independent of browser locale', async ({ page }) => {
   await receptionist(page);
   await page.goto('/reservations/new');

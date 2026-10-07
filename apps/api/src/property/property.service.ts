@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
-  addDays, ERROR_CODES, roomDisplayState, isSellable, type HousekeepingStatus, type OccupancyStatus, type PropertySettingsInput, type PropertyPoliciesInput,
+  addDays, todayIn, ERROR_CODES, roomDisplayState, isSellable, type HousekeepingStatus, type OccupancyStatus, type PropertySettingsInput, type PropertyPoliciesInput,
   type RoomInput, type RoomTypeInput, type ServiceStatus,
 } from '@resortos/shared';
 import { AuditService } from '../common/audit.service';
@@ -9,6 +9,11 @@ import { OutboxService } from '../common/outbox.service';
 import type { Actor } from '../common/request-context';
 import { DbService, type Queryable } from '../db/db.service';
 import type { IdRow, PropertyRow, RoomRow, RoomTypeRow } from '../db/rows';
+
+/** Live reception follows the property's calendar. Demo hotels keep their replay date. */
+export function propertyToday(property: Pick<PropertyRow, 'data_origin' | 'timezone' | 'current_business_date'>, now = new Date()): string {
+  return property.data_origin === 'demo' ? property.current_business_date : todayIn(property.timezone, now);
+}
 
 const mapRoomType = (r: RoomTypeRow) => ({
   id: r.id, code: r.code, name: r.name, description: r.description, baseOccupancy: r.base_occupancy,
@@ -48,6 +53,13 @@ export class PropertyService {
     return rows[0].current_business_date;
   }
 
+  async today(q: Queryable, propertyId: string): Promise<string> {
+    const { rows } = await q.query<Pick<PropertyRow, 'data_origin' | 'timezone' | 'current_business_date'>>(
+      `SELECT data_origin, timezone, current_business_date FROM properties WHERE id = $1`, [propertyId]);
+    if (!rows[0]) throw notFound('Property');
+    return propertyToday(rows[0]);
+  }
+
   async getProperty(propertyId: string) {
     const { rows } = await this.db.query<PropertyRow>(`SELECT * FROM properties WHERE id = $1`, [propertyId]);
     const p = rows[0];
@@ -56,7 +68,7 @@ export class PropertyService {
       id: p.id, name: p.name, legalName: p.legal_name, addressLine1: p.address_line1, addressLine2: p.address_line2,
       city: p.city, stateCode: p.state_code, pinCode: p.pin_code, gstin: p.gstin, phone: p.phone, email: p.email,
       checkInTime: String(p.check_in_time).slice(0, 5), checkOutTime: String(p.check_out_time).slice(0, 5),
-      timezone: p.timezone, businessDate: p.current_business_date, isPractice: p.is_practice, version: p.version,
+      timezone: p.timezone, today: propertyToday(p), businessDate: p.current_business_date, isPractice: p.is_practice, version: p.version,
       policies: {
         receptionistCanRunNightAudit: p.receptionist_can_run_night_audit, cashDifferenceThreshold: p.cash_difference_threshold,
         reviewDiscountPercent: p.review_discount_percent, invoiceTerms: p.invoice_terms, invoiceBankDetails: p.invoice_bank_details,
@@ -168,7 +180,7 @@ export class PropertyService {
    * never stored, so it cannot drift from bookings (spec §10).
    */
   async listRooms(propertyId: string, date?: string) {
-    const day = date ?? (await this.businessDate(this.db, propertyId));
+    const day = date ?? (await this.today(this.db, propertyId));
     const { rows } = await this.db.query<RoomRow & {
       room_type_name: string; room_type_code: string; alloc_status: 'reserved' | 'checked_in' | null; start_date: string | null; end_date: string | null;
       reservation_id: string | null; reservation_number: string | null; guest_name: string | null; is_vip: boolean | null; out_of_order_today: boolean;

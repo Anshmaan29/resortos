@@ -23,7 +23,7 @@ import type { Availability, Quote, ReservationDetail } from '@/lib/types';
 export default function ExpressCheckInPage() {
   const router = useRouter();
   const property = useProperty();
-  const today = property.data?.businessDate ?? '';
+  const today = property.data?.today ?? '';
   const [departure, setDeparture] = useState('');
   const [guest, setGuest] = useState({ firstName: '', lastName: '', mobile: '', email: '', preferredLanguage: 'en' as 'en' | 'hi' });
   const [roomTypeId, setRoomTypeId] = useState('');

@@ -27,7 +27,7 @@ const BAR: Record<ReservationStatus, string> = {
 
 export default function CalendarPage() {
   const property = useProperty();
-  const bd = property.data?.businessDate;
+  const bd = property.data?.today;
   const [from, setFrom] = useState<string | null>(null);
   useEffect(() => { if (bd && !from) setFrom(addDays(bd, -1)); }, [bd, from]);
 

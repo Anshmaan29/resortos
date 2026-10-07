@@ -19,7 +19,7 @@ function ReservationsList() {
   const router = useRouter();
   const params = useSearchParams();
   const property = useProperty();
-  const bd = property.data?.businessDate;
+  const bd = property.data?.today;
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
   const [source, setSource] = useState('');

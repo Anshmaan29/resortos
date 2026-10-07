@@ -52,7 +52,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
   const qc = useQueryClient();
   const toast = useToast();
   const property = useProperty();
-  const bd = property.data?.businessDate;
+  const bd = property.data?.today;
 
   // ---------- state (prefilled for edit / rebook) ----------
   const [guest, setGuest] = useState<GuestChoice | null>(initial ? { ...initial.guest } : null);
