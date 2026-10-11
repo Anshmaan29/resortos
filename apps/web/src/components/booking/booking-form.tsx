@@ -34,7 +34,7 @@ interface RoomLine {
   manualExtras: string;
 }
 
-type GuestChoice = Pick<Guest, 'id' | 'fullName' | 'mobile' | 'city' | 'isVip'> & { stays?: number };
+type GuestChoice = Pick<Guest, 'id' | 'fullName' | 'mobile' | 'city' | 'isVip' | 'whatsappOptedIn' | 'whatsappConsentAt'> & { stays?: number };
 
 const newLine = (roomTypeId = ''): RoomLine => ({ key: crypto.randomUUID(), roomTypeId, roomId: '', adults: 2, childAges: [], mealPlan: 'EP', manualRate: '', manualExtras: '' });
 const validRate = (v: string) => (/^\d+(\.\d{1,2})?$/.test(v) ? v : undefined);
@@ -74,6 +74,8 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
     : [newLine()]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<ApiError | null>(null);
+  const [whatsappOverride, setWhatsappOverride] = useState<boolean | null>(null);
+  const whatsappOptedIn = whatsappOverride ?? !(guest?.whatsappOptedIn === false && guest.whatsappConsentAt);
 
   useEffect(() => {
     if (!bd || arrival) return;
@@ -144,6 +146,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
     ownerAuthorisationId,
     ...(mode === 'edit' ? { version: initial!.version } : {}),
     ...(mode === 'rebook' ? { rebookedFromId: initial!.id } : {}),
+    ...(mode !== 'edit' ? { whatsappOptedIn } : {}),
   });
 
   const save = useMutation({
@@ -221,7 +224,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
                     <p className="flex items-center gap-1 font-medium">{guest.isVip && <Crown className="h-3.5 w-3.5 text-warning" aria-label="VIP" />}{guest.fullName}</p>
                     <p className="text-sm text-text-2 num">{formatMobile(guest.mobile)}{guest.city ? ` · ${guest.city}` : ''}{guest.stays ? ` · ${guest.stays} past stay${guest.stays > 1 ? 's' : ''}` : ''}</p>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => setGuest(null)}><X className="h-4 w-4" />Change</Button>
+                  <Button variant="ghost" size="sm" onClick={() => { setGuest(null); setWhatsappOverride(null); }}><X className="h-4 w-4" />Change</Button>
                 </div>
               ) : (
                 <div className="flex flex-col gap-4">
@@ -236,7 +239,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
                           <ul className="divide-y divide-border">
                             {guestResults.data.map((g) => (
                               <li key={g.id}>
-                                <button onClick={() => { setGuest(g); setSearch(''); }} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-2">
+                                <button onClick={() => { setGuest(g); setSearch(''); setWhatsappOverride(null); }} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-2">
                                   <UserRound className="h-4 w-4 text-text-3" />
                                   <span className="flex-1"><span className="font-medium">{g.fullName}</span><span className="ml-2 text-sm text-text-2 num">{formatMobile(g.mobile)}{g.city ? ` · ${g.city}` : ''}</span></span>
                                   {g.stays ? <span className="text-xs text-text-3">{g.stays} stays</span> : null}
@@ -343,6 +346,20 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
               <Row label="Nights" value={datesValid ? String(nights) : '—'} />
               <div className="my-1 border-t border-border" />
               <EstimateBreakdown estimate={estimate.data} loading={estimate.isFetching && !estimate.data} />
+              {mode !== 'edit' && <div className="rounded-lg border border-border bg-surface-2 p-3 text-sm">
+                <p className="font-medium">{status === 'confirmed' ? 'Confirmation sends automatically' : 'Confirmation sends when the booking is confirmed'}</p>
+                <p className="mt-1 text-text-2">Email goes to the guest’s email address. {whatsappOptedIn ? 'WhatsApp goes to their mobile number.' : 'WhatsApp is off for this guest.'}</p>
+                {whatsappOptedIn && <p className="mt-2 text-text-2">By saving, you confirm the guest agreed to receive booking, stay and payment messages from this hotel on WhatsApp.</p>}
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-brand">Change WhatsApp preference</summary>
+                  <div className="mt-2"><Field label="WhatsApp messages">{(id) => (
+                    <Select id={id} value={whatsappOptedIn ? 'agreed' : 'declined'} onChange={e => setWhatsappOverride(e.target.value === 'agreed')}>
+                      <option value="agreed">Guest agreed — send automatically</option>
+                      <option value="declined">Guest declined — email only</option>
+                    </Select>
+                  )}</Field></div>
+                </details>
+              </div>}
               <Button size="lg" className="mt-2 w-full" loading={save.isPending} onClick={() => submit()}>
                 <Check className="h-4 w-4" />{mode === 'edit' ? 'Save changes' : mode === 'rebook' ? 'Create new booking' : 'Save booking'}
               </Button>

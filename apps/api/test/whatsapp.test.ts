@@ -5,6 +5,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { APP_CONFIG, type AppConfig } from '../src/config';
 import { MESSAGE_PROVIDERS, type MessageProvider } from '../src/messaging/providers';
 import { MessagingService } from '../src/messaging/messaging.service';
+import { GuestMessagesHandler } from '../src/messaging/guest-messages.handler';
+import type { OutboxEvent } from '../src/jobs/outbox-handlers';
 import { WhatsAppService } from '../src/messaging/whatsapp.service';
 import { WhatsAppProvider, defaultBindings } from '../src/messaging/whatsapp';
 import { bootAppOnOwnDatabase, booking, fixtures, login, post, type Agent } from './helpers';
@@ -27,14 +29,16 @@ beforeAll(async () => {
   await sql("INSERT INTO settings(property_id,key,value) VALUES($1,'whatsapp',$2::jsonb)", [propertyId, JSON.stringify({
     enabled:true, templates:defaultBindings().map(t=>({...t,ready:true,approval:'APPROVED',matching:true})),
   })]);
+  await sql("UPDATE properties SET email_enabled=true,email_from_address='stay@example.com'");
 }, 120000);
 afterAll(async()=>{await app.close();});
-async function book() {
+async function book(extra: object = {}) {
   next += 1;
   const day = String(next+1).padStart(2,'0'), end = String(next+2).padStart(2,'0');
   const response = await post(owner,'/reservations',{
     ...booking({roomTypeId:f.type('PRE'),arrival:'2027-01-'+day,departure:'2027-01-'+end}),
     guest:{firstName:'WhatsApp',lastName:'Test',mobile:String(9899900000+next),email:'test@example.com'},
+    ...extra,
   }).expect(201);
   return response.body.id as string;
 }
@@ -43,6 +47,10 @@ async function consent(id: string, optedIn=true) {
   await post(owner,'/whatsapp-consent',{reservationId:id,optedIn,version:current.body.version}).expect(200);
 }
 const send = (id:string,key?:string)=>post(owner,'/messages/send',{channel:'whatsapp',templateKey:'booking_confirmation',reservationId:id},key);
+async function bookingEvent(id: string) {
+  const [event] = await sql<OutboxEvent>(`SELECT id,property_id AS "propertyId",topic,aggregate_type AS "aggregateType",aggregate_id AS "aggregateId",payload,attempts,created_at AS "createdAt" FROM outbox_events WHERE aggregate_id=$1 AND topic='reservation.created'`,[id]);
+  await app.get(GuestMessagesHandler).handle(event!);
+}
 const reports = (id:string,status:string,opaque?:string,waba='456',sender='123')=>({
   object:'whatsapp_business_account',entry:[{id:waba,changes:[{field:'messages',value:{metadata:{phone_number_id:sender},
     statuses:[{id,status,timestamp:'1791711000',...(opaque?{biz_opaque_callback_data:opaque}:{})}]} }]}],
@@ -53,6 +61,44 @@ async function callback(body: object, valid=true) {
     .set('x-hub-signature-256','sha256='+createHmac('sha256',valid?secret:'wrong').update(raw).digest('hex')).send(raw);
 }
 describe('WhatsApp guest workflow',()=>{
+  it('Save booking records agreement atomically and automatically sends one confirmation on each channel',async()=>{
+    const body={
+      ...booking({roomTypeId:f.type('PRE'),arrival:'2027-02-01',departure:'2027-02-02'}),
+      guest:{firstName:'Automatic',lastName:'Booking',mobile:'9899910001',email:'automatic@example.com'},
+      whatsappOptedIn:true,
+    };
+    const key='automatic-'+randomUUID();
+    const created=await post(desk,'/reservations',body,key).expect(201);
+    const repeated=await post(desk,'/reservations',body,key).expect(201);
+    expect(repeated.body.id).toBe(created.body.id);
+    const id=created.body.id;
+    const [g]=await sql<{whatsapp_opted_in:boolean;whatsapp_consent_at:Date|null;recorded_by_creator:boolean}>(`SELECT g.whatsapp_opted_in,g.whatsapp_consent_at,g.whatsapp_consent_by=r.created_by AS recorded_by_creator FROM reservations r JOIN guests g ON g.id=r.primary_guest_id WHERE r.id=$1`,[id]);
+    expect(g).toMatchObject({whatsapp_opted_in:true,recorded_by_creator:true});
+    expect(g!.whatsapp_consent_at).toBeTruthy();
+    expect((await sql<{n:string}>("SELECT count(*) AS n FROM audit_logs WHERE action='guest.whatsapp_consent_recorded' AND entity_id=$1",[created.body.guest.id]))[0]!.n).toBe('1');
+    await bookingEvent(id);await bookingEvent(id);
+    expect(await sql('SELECT channel,status FROM messages WHERE reservation_id=$1 ORDER BY channel',[id])).toEqual([{channel:'email',status:'queued'},{channel:'whatsapp',status:'queued'}]);
+    fetcher.mockResolvedValueOnce(Response.json({messages:[{id:'wamid.automatic'}]}));
+    await messaging.sendDue(100);
+    expect(await sql('SELECT channel,status FROM messages WHERE reservation_id=$1 ORDER BY channel',[id])).toEqual([{channel:'email',status:'sent'},{channel:'whatsapp',status:'sent'}]);
+    fetcher.mockClear();
+  });
+  it('keeps email automatic when the guest declines WhatsApp at booking',async()=>{
+    const id=await book({whatsappOptedIn:false});
+    await bookingEvent(id);fetcher.mockClear();await messaging.sendDue(100);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(await sql('SELECT channel,status FROM messages WHERE reservation_id=$1 ORDER BY channel',[id])).toEqual([{channel:'email',status:'sent'},{channel:'whatsapp',status:'skipped'}]);
+    const [g]=await sql('SELECT g.whatsapp_opted_in,g.whatsapp_consent_at FROM guests g JOIN reservations r ON r.primary_guest_id=g.id WHERE r.id=$1',[id]);
+    expect(g.whatsapp_opted_in).toBe(false);expect(g.whatsapp_consent_at).toBeTruthy();
+  });
+  it('keeps a returning guest’s decline when older API callers omit an agreement',async()=>{
+    const old=await book({whatsappOptedIn:false});
+    const [r]=await sql<{primary_guest_id:string}>('SELECT primary_guest_id FROM reservations WHERE id=$1',[old]);
+    const id=await book({guest:undefined,guestId:r!.primary_guest_id});
+    await bookingEvent(id);fetcher.mockClear();await messaging.sendDue(100);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect((await sql("SELECT status,skip_reason FROM messages WHERE reservation_id=$1 AND channel='whatsapp'",[id]))[0]).toMatchObject({status:'skipped',skip_reason:'The guest has not agreed to WhatsApp messages.'});
+  });
   it('has owner-only settings and never exposes access tokens or app secrets',async()=>{
     await desk.get('/api/v1/whatsapp-settings').expect(403);
     const result=await owner.get('/api/v1/whatsapp-settings').expect(200);

@@ -37,8 +37,9 @@ payment receipts use the after-commit queue. It is not a WhatsApp chat inbox.
    header and a sample PDF. Others have no header. Do not add buttons or footer.
 7. In ResortOS save the template names, click Check Meta template approval, and correct any
    NOT_FOUND / unapproved / mismatching templates. Then enable WhatsApp and save.
-8. Open a test booking, record the test guest's agreement in Messages, choose WhatsApp and send
-   confirmation/welcome. Confirm it changes from Sent to Delivered/Read and arrives on the phone.
+8. Create a test booking with the guest's email and WhatsApp number. Save booking records
+   reception's agreement attestation and queues both confirmations automatically, without a second
+   checkbox or Send action. Confirm Sent changes to Delivered/Read and it arrives on the phone.
    Test invoice/receipt PDF delivery using practice records, not a fabricated real payment.
 9. Revoke consent and verify a later send is skipped. Confirm existing Resend email still works.
 
@@ -47,7 +48,12 @@ are operator gates, not outcomes guaranteed by CI.
 
 ## Message behaviour and reliability
 
-- The number in a guest profile alone is never treated as opt-in. Reception must record agreement.
+- Save booking displays the agreement attestation and records it with the booking, before its
+  event is published. Reception must obtain the guest's permission; Save is the recording action.
+  The optional delivery preference excludes WhatsApp when the guest declines. Returning guests
+  with a recorded decline default to email only. Older API callers that omit whatsappOptedIn
+  preserve the existing agreement state. Tentative bookings send when confirmed; walk-ins send too.
+  The number in a guest profile alone is never treated as opt-in.
   Consent changes are audited using guest identifiers and boolean state, without copying phones.
 - Automatic sends only start when the property explicitly enables WhatsApp. Consent, property
   binding, current recipient number and the switch are checked again before a network send.

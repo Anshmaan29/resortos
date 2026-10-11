@@ -52,9 +52,9 @@ export function MessagesPanel({ stayId, reservationId }: { stayId?: string; rese
   const messages = list.data ?? [];
   return (
     <Card>
-      <CardHeader title="Messages" description="Email and WhatsApp to the guest. A failed message never affects the booking or the bill."
+      <CardHeader title="Messages" description="Confirmations send automatically after booking. Delivery status appears here; the controls below are for extra sends or preference changes."
         action={<Button size="sm" variant="outline" loading={send.isPending} onClick={() => send.mutate(stayId ? 'check_in_welcome' : 'booking_confirmation')}>
-          <Send className="h-4 w-4" aria-hidden />{stayId ? 'Send welcome' : 'Send confirmation'}</Button>} />
+          <Send className="h-4 w-4" aria-hidden />{stayId ? 'Send welcome again' : 'Send confirmation again'}</Button>} />
       {availability.data?.configured && <div className="flex flex-col gap-3 border-t border-border p-4 text-sm">
         <label className="flex items-center gap-2">Send using
           <select aria-label="Message channel" className="rounded border border-border bg-surface-2 p-2" value={channel} onChange={e=>{setChannel(e.target.value as 'email'|'whatsapp');sendKey.current=newIdempotencyKey();}}>

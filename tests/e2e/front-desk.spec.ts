@@ -9,6 +9,49 @@ async function loginAs(page: Page, username: string, password: string) {
 }
 const receptionist = (page: Page) => loginAs(page, 'priya', 'Aravali#Desk26');
 
+test('Save booking records WhatsApp agreement without an extra checkbox or send action @phone', async ({ page }, testInfo) => {
+  await receptionist(page);
+  await page.goto('/reservations/new');
+  await page.getByLabel('First name').fill('Automatic');
+  await page.getByLabel('Last name').fill('Confirmation');
+  await page.getByRole('textbox', { name: 'Mobile', exact: true }).fill(testInfo.project.name === 'phone' ? '9899920002' : '9899920001');
+  await page.getByLabel('Email', { exact: true }).fill('automatic@example.com');
+  await page.getByRole('textbox', { name: 'Arrival' }).fill('12/12/2026');
+  await page.getByRole('textbox', { name: 'Departure' }).fill('13/12/2026');
+  await page.getByRole('textbox', { name: 'Departure' }).blur();
+  await expect(page.getByText('Confirmation sends automatically', { exact: true })).toBeVisible();
+  await expect(page.getByText(/By saving, you confirm the guest agreed/)).toBeVisible();
+  await expect(page.getByLabel('WhatsApp messages', { exact: true })).toBeHidden();
+  const response = page.waitForResponse(r => r.url().endsWith('/api/v1/reservations') && r.request().method() === 'POST' && r.status() === 201);
+  await page.getByRole('button', { name: 'Save booking', exact: true }).click();
+  const created = await response;
+  expect(created.request().postDataJSON().whatsappOptedIn).toBe(true);
+  const booking = await created.json();
+  expect(booking.guest.whatsappOptedIn).toBe(true);
+  expect(booking.guest.whatsappConsentAt).toBeTruthy();
+  await page.waitForURL(`/reservations/${booking.id}`);
+});
+
+test('a returning guest who declined WhatsApp stays email only when saving another booking', async ({ page }) => {
+  await receptionist(page);
+  await page.route('**/api/v1/guests?*', async route => {
+    const response = await route.fetch();
+    const guests = await response.json();
+    await route.fulfill({response,json:guests.map((g: object) => ({...g,whatsappOptedIn:false,whatsappConsentAt:'2026-09-16T08:00:00Z'}))});
+  });
+  await page.goto('/reservations/new');
+  await page.getByLabel('Search existing guests').fill('9876543210');
+  await page.getByRole('button').filter({hasText:'Rahul Sharma'}).first().click();
+  await expect(page.getByText('WhatsApp is off for this guest.', { exact: false })).toBeVisible();
+  await expect(page.getByText(/By saving, you confirm the guest agreed/)).toHaveCount(0);
+  await page.getByRole('textbox', { name: 'Arrival' }).fill('14/12/2026');
+  await page.getByRole('textbox', { name: 'Departure' }).fill('15/12/2026');
+  await page.getByRole('textbox', { name: 'Departure' }).blur();
+  const response = page.waitForResponse(r => r.url().endsWith('/api/v1/reservations') && r.request().method() === 'POST' && r.status() === 201);
+  await page.getByRole('button', { name: 'Save booking', exact: true }).click();
+  expect((await response).request().postDataJSON().whatsappOptedIn).toBe(false);
+});
+
 test('staff UI has no developer wording and meets the Indian formats @phone', async ({ page }) => {
   await receptionist(page);
   await expect(page.getByText(/phase|milestone/i)).toHaveCount(0);

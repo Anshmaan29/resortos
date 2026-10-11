@@ -33,7 +33,7 @@ export interface TaxEstimate {
 export interface ReservationDetail {
   id: string; number: string; status: ReservationStatus; source: string; sourceLabel: string; otaReference: string | null; arrival: string; departure: string; nights: number;
   groupName: string | null; billingMode: string; purpose: VisitPurpose | null; specialRequests: string | null; internalNotes: string | null;
-  guest: { id: string; firstName: string; lastName: string; fullName: string; mobile: string; email: string | null; isVip: boolean; city: string | null };
+  guest: { id: string; firstName: string; lastName: string; fullName: string; mobile: string; email: string | null; isVip: boolean; city: string | null; whatsappOptedIn?: boolean; whatsappConsentAt?: string | null };
   rooms: {
     id: string; roomTypeId: string; roomTypeName: string; roomId: string | null; roomNumber: string | null; adults: number; childAges: number[]; mealPlan: MealPlanCode;
     nightlyRate: string; roomTotal: string; extrasTotal: string; mealTotal: string; total: string; status: string; rateAuthorisedBy: string | null;
@@ -58,7 +58,7 @@ export interface FrontDesk {
   departures: { id: string; number: string; departure: string; guestName: string; isVip: boolean; roomNumbers: string | null; overdue: boolean }[];
   inHouseRooms: number; roomCounts: Partial<Record<RoomDisplayState, number>>; totalRooms: number;
 }
-export interface Guest { id: string; firstName: string; lastName: string; fullName: string; mobile: string; email: string | null; city: string | null; isVip: boolean; stays?: number; lastStay?: string | null; version: number }
+export interface Guest { id: string; firstName: string; lastName: string; fullName: string; mobile: string; email: string | null; city: string | null; isVip: boolean; stays?: number; lastStay?: string | null; version: number; whatsappOptedIn?: boolean; whatsappConsentAt?: string | null }
 export interface Availability {
   arrival: string; departure: string; nights: number;
   roomTypes: { roomTypeId: string; roomTypeName: string; available: number; nights: { date: string; capacity: number; booked: number; available: number }[]; freeRooms: { id: string; number: string; view: string | null; housekeeping: string }[] }[];

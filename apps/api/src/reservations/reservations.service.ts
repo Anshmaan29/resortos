@@ -294,6 +294,19 @@ export class ReservationsService {
     await this.writeRooms(q, actor, id, input, priced, auth);
     if (auth) await this.ownerAuth.recordOverrides(q, actor, auth, { type: 'reservation', id });
 
+    // Record reception's attestation before publishing the booking event. The worker cannot
+    // observe the booking without its agreement, and a retried Save uses the same transaction.
+    if (input.whatsappOptedIn !== undefined) {
+      await q.query(
+        'UPDATE guests SET whatsapp_opted_in=$3, whatsapp_consent_at=now(), whatsapp_consent_by=$4 WHERE id=$1 AND property_id=$2',
+        [guestId, propertyId, input.whatsappOptedIn, actor.user.id],
+      );
+      await this.audit.record(q, actor, {
+        action: 'guest.whatsapp_consent_recorded', entityType: 'guest', entityId: guestId,
+        after: { optedIn: input.whatsappOptedIn, source: 'booking', reservationId: id },
+      });
+    }
+
     await this.audit.record(q, actor, {
       action: rebookedFrom ? 'reservation.rebooked' : 'reservation.created', entityType: 'reservation', entityId: id,
       authorisedBy: auth?.authorisedBy ?? null, reason: rebookedFrom ? `Rebook of ${rebookedFrom.number}` : null,
@@ -597,8 +610,8 @@ export class ReservationsService {
   // ---------------------------------------------------------------------------
 
   async detail(q: Queryable, propertyId: string, id: string) {
-    const { rows } = await q.query<ReservationRow & { first_name: string; last_name: string; mobile: string; email: string | null; is_vip: boolean; city: string | null; created_by_name: string | null }>(
-      `SELECT r.*, g.first_name, g.last_name, g.mobile, g.email, g.is_vip, g.city, u.full_name AS created_by_name
+    const { rows } = await q.query<ReservationRow & { first_name: string; last_name: string; mobile: string; email: string | null; is_vip: boolean; city: string | null; whatsapp_opted_in: boolean; whatsapp_consent_at: Date | null; created_by_name: string | null }>(
+      `SELECT r.*, g.first_name, g.last_name, g.mobile, g.email, g.is_vip, g.city, g.whatsapp_opted_in, g.whatsapp_consent_at, u.full_name AS created_by_name
          FROM reservations r JOIN guests g ON g.id = r.primary_guest_id LEFT JOIN users u ON u.id = r.created_by
         WHERE r.id = $1 AND r.property_id = $2`,
       [id, propertyId],
@@ -669,7 +682,7 @@ export class ReservationsService {
       id: r.id, number: r.number, status: r.status, source: r.source, sourceLabel: BOOKING_SOURCE_LABELS[r.source as BookingSource],
       otaReference: r.ota_reference, arrival: r.arrival, departure: r.departure, nights: nightsBetween(r.arrival, r.departure),
       groupName: r.group_name, billingMode: r.billing_mode, purpose: r.purpose, specialRequests: r.special_requests, internalNotes: r.internal_notes,
-      guest: { id: r.primary_guest_id, firstName: r.first_name, lastName: r.last_name, fullName: `${r.first_name} ${r.last_name}`.trim(), mobile: r.mobile, email: r.email, isVip: r.is_vip, city: r.city },
+      guest: { id: r.primary_guest_id, firstName: r.first_name, lastName: r.last_name, fullName: `${r.first_name} ${r.last_name}`.trim(), mobile: r.mobile, email: r.email, isVip: r.is_vip, city: r.city, whatsappOptedIn: r.whatsapp_opted_in, whatsappConsentAt: r.whatsapp_consent_at },
       rooms,
       estimate,
       advancePaid: toMoneyString(await this.advancePaid(q, r.id)),
