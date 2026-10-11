@@ -30,6 +30,12 @@ export class MessagingController {
     return this.messaging.saveEmailSettings(actor, parse(emailSettingsSchema, body), key);
   }
 
+  @Get('messages/attention')
+  @Roles('owner', 'receptionist')
+  attention(@CurrentActor() actor: Actor) {
+    return this.messaging.attention(actor.user.propertyId);
+  }
+
   /** Messages for a booking or a stay, newest first — the "Messages" panel. */
   @Get('messages')
   list(@CurrentActor() actor: Actor, @Query() query: unknown) {

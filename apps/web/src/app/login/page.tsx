@@ -70,6 +70,7 @@ function LoginForm() {
           <Link href="/desk" className="text-center text-sm font-medium text-brand underline-offset-2 hover:underline">Switch in with your PIN</Link>
         )}
         <p className="text-center text-xs text-text-3">Forgot your password? Ask the owner to reset it.</p>
+        <Link href="/recover" className="min-h-11 text-center text-sm font-medium text-brand hover:underline">Owner account recovery</Link>
       </div>
     </motion.form>
   );

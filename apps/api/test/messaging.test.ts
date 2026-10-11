@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -158,11 +158,20 @@ describe('delivery', () => {
     const [failed] = await messagesFor(id);
     expect(failed).toMatchObject({ status: 'failed', last_error: 'Resend 422: invalid recipient' });
 
+    const alert = await desk.get('/api/v1/messages/attention').expect(200);
+    expect(alert.body.items).toContainEqual({ id: failed!.id, channel: 'email', templateLabel: 'Booking confirmed', status: 'failed', bookingNumber: expect.any(String), href: `/reservations/${id}` });
+    expect(alert.body.items.find((m: any) => m.id === failed!.id)).not.toHaveProperty('recipient');
+    // Other properties and unauthenticated visitors cannot see this reception alert.
+    expect(await messaging.attention(randomUUID())).toEqual({ total: 0, items: [] });
+    await request(app.getHttpServer()).get('/api/v1/messages/attention').expect(401);
+
     const again = await post(desk, `/messages/${failed!.id}/resend`, {}).expect(200);
     expect(again.body.resendOf).toBe(failed!.id);
     await messaging.sendDue();
     const all = await messagesFor(id);
     expect(all.map((m) => m.status)).toEqual(['failed', 'sent']);
+    const resolved = await desk.get('/api/v1/messages/attention').expect(200);
+    expect(resolved.body.items.some((m: any) => m.id === failed!.id)).toBe(false);
   });
 
   it('a message is never rewritten or deleted, and a failed one stays failed', async () => {

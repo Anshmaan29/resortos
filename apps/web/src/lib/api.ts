@@ -47,14 +47,21 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
     });
   } catch (err) {
     if ((err as Error).name === 'AbortError') throw err;
-    throw new ApiError(0, 'INTERNAL_ERROR', 'Cannot reach ResortOS. Check the internet connection — nothing new was saved.');
+    throw new ApiError(0, 'INTERNAL_ERROR', opts.method && opts.method !== 'GET'
+      ? 'Cannot confirm the result. Check the connection and refresh this record before trying again.'
+      : 'Cannot reach ResortOS. Check the internet connection and try again.');
   }
 
-  const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: any = null;
+  try { const text = await res.text(); data = text ? JSON.parse(text) : null; }
+  catch {
+    throw new ApiError(res.ok ? 502 : res.status, 'INTERNAL_ERROR', opts.method && opts.method !== 'GET'
+      ? 'Cannot read the server response. Refresh this record to check whether your changes were saved.'
+      : 'ResortOS is temporarily unavailable. Please try again.');
+  }
   if (!res.ok) {
     const body = (data ?? {}) as Partial<ApiErrorBody>;
-    if (res.status === 401 && typeof window !== 'undefined' && !path.startsWith('/auth/login') && !window.location.pathname.startsWith('/login')) {
+    if (res.status === 401 && typeof window !== 'undefined' && !['/auth/login','/auth/recover'].includes(path) && !window.location.pathname.startsWith('/login')) {
       window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
     }
     throw new ApiError(res.status, (body.code ?? 'INTERNAL_ERROR') as ErrorCode, body.message ?? 'Something went wrong.', body.details, body.requestId);

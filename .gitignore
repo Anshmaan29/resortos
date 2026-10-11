@@ -34,6 +34,8 @@ apps/api/uploads/
 test-results/
 playwright-report/
 blob-report/
+.playwright-cli/
+output/playwright/
 
 # Generated vendor assets
 apps/web/public/vendor/
