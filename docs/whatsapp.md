@@ -79,3 +79,10 @@ are operator gates, not outcomes guaranteed by CI.
 References:
 [Meta webhook signature example](https://github.com/fbsamples/whatsapp-api-examples/tree/main/signature-validation-with-webhooks-payloads)
 and [Meta Cloud API collection](https://www.postman.com/meta/whatsapp-business-platform/documentation/wlk6lh4/whatsapp-cloud-api).
+
+## Message layout
+
+English templates use bold headings and one labelled line per booking, room, date or amount.
+The formatted templates have names ending in `_en_v2`. Existing `_en` templates remain
+compatible during review. Switch each binding only after its replacement is approved and
+matching; already-queued messages retain the template and wording captured when queued.

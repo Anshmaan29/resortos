@@ -2,7 +2,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import type { AppConfig } from '../src/config';
 import { ProviderError, type OutgoingMessage } from '../src/messaging/providers';
-import { defaultBindings, verifyMetaSignature, verifyMetaToken, WHATSAPP_WORDING, whatsappNumber, whatsappParameters, WhatsAppProvider } from '../src/messaging/whatsapp';
+import { defaultBindings, verifyMetaSignature, verifyMetaToken, WHATSAPP_WORDING, whatsappNumber, whatsappParameters, whatsappBody, whatsappWording, WhatsAppProvider } from '../src/messaging/whatsapp';
 const config = {
   WHATSAPP_ACCESS_TOKEN: randomBytes(24).toString('hex'), WHATSAPP_PHONE_NUMBER_ID: '123',
   WHATSAPP_BUSINESS_ACCOUNT_ID: '456', WHATSAPP_GRAPH_VERSION: 'v25.0',
@@ -55,6 +55,20 @@ describe('Meta provider', () => {
       const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ error: { code } }, { status }));
       await expect(new WhatsAppProvider(config, fetcher).send(message())).rejects.toMatchObject({ retryable });
     }
+  });
+  it('keeps approved legacy templates usable until formatted replacements are approved', async () => {
+    const formatted = defaultBindings()[0]!;
+    const legacy = { ...formatted, name: 'resortos_booking_confirmation_en' };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [
+      { name: legacy.name, language: 'en', status: 'APPROVED', components: [{ type: 'BODY', text: whatsappWording(legacy.key, 'en', legacy.name).body }] },
+      { name: formatted.name, language: 'en', status: 'PENDING', components: [{ type: 'BODY', text: WHATSAPP_WORDING.booking_confirmation.body }] },
+    ] }));
+    expect(await new WhatsAppProvider(config, fetcher).approval([legacy, formatted]))
+      .toMatchObject([{ ready: true, matching: true }, { ready: false, matching: true, approval: 'PENDING' }]);
+    const parameters = ['Sample Guest', 'BK-000009', 'Sample Hotel', '11 Oct 2026', '12 Oct 2026', '12:30', '+91 99999 99999'];
+    const body = whatsappBody('booking_confirmation', parameters, 'en', formatted.name);
+    expect(body).toContain('*Booking reference:* BK-000009\n*Arrival date:* 11 Oct 2026\n*Departure date:* 12 Oct 2026');
+    expect(whatsappBody('booking_confirmation', parameters, 'en', legacy.name)).toContain('Your booking reference is BK-000009.');
   });
   it('checks approval, wording, exact locale and header rather than trusting a name alone', async () => {
     const binding = defaultBindings()[0]!;
