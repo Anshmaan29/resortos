@@ -6,7 +6,7 @@ Deployment preparation, not a completed production deployment. Use practice data
 
 1. Create a Railway project, then add **Database → PostgreSQL**. Keep its persistent volume.
 2. Add a private S3-compatible document bucket. Record its endpoint, region and credentials securely. Verify signed uploads, downloads and browser CORS before using it for guest documents.
-3. Connect `Anshmaan29/resortos` as one app service. Select branch `codex/reliability-and-configurable-operations`; keep Root Directory at the repository root. `railway.json` supplies the build, start and database health check. The public web process proxies `/api/v1` to the API on internal port 4000. The API also runs the email/background jobs. Neither a second public API service nor Redis is needed.
+3. Connect `Anshmaan29/resortos` as one app service. Select the reviewed `main` branch; keep Root Directory at the repository root. `railway.json` supplies the build, start and database health check. The public web process proxies `/api/v1` to the API on internal port 4000. The API also runs the email/background jobs. Neither a second public API service nor Redis is needed.
 4. Set `RAILPACK_NODE_VERSION=22` and leave dependency pruning disabled (`RAILPACK_PRUNE_DEPS=false`) so operator migration/provision commands retain their runtime dependencies. Disable service sleeping for scheduled jobs. Begin with one replica.
 
 ## Database bootstrap (operator step)

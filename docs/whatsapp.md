@@ -26,6 +26,8 @@ payment receipts use the after-commit queue. It is not a WhatsApp chat inbox.
    - verify token: exactly the WHATSAPP_VERIFY_TOKEN saved in Railway.
    - leave client-certificate authentication off for this implementation.
    Click Verify and save. This requires the deployed endpoint, not just a registered phone.
+   For Meta's app publishing requirement, the public privacy policy is at
+   https://pms.voittoventures.com/privacy. It opens without a ResortOS login.
 5. Subscribe the production WABA to the app (Subscribe webhooks), and subscribe the messages
    webhook field. Complete the Meta app's publishing requirements and publish it for production
    webhook delivery. Dashboard test webhooks are not proof of production delivery.
