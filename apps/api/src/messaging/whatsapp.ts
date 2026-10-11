@@ -5,23 +5,23 @@ import { TEMPLATE_KEYS, type TemplateKey, type TemplateVariable } from './templa
 
 export const WHATSAPP_WORDING: Record<TemplateKey, { body: string; variables: TemplateVariable[]; documentHeader: boolean }> = {
   booking_confirmation: {
-    body: 'Hello {{1}}, your booking {{2}} at {{3}} is confirmed.\nArrival: {{4}}\nDeparture: {{5}}\nCheck-in from {{6}}. Reception: {{7}}.',
+    body: 'Hello {{1}}, your reservation at {{3}} has been confirmed. Your booking reference is {{2}}.\nYour arrival date is {{4}}, and your departure date is {{5}}. Check-in is available from {{6}}.\nFor questions about this reservation or changes to your arrival plans, please contact our reception team on {{7}}. We look forward to your stay.',
     variables: ['guest_name', 'booking_number', 'resort_name', 'check_in_date', 'check_out_date', 'check_in_time', 'reception_phone'], documentHeader: false,
   },
   check_in_welcome: {
-    body: 'Hello {{1}}, your check-in at {{2}} is complete.\nRoom: {{3}}\nCheckout: {{4}} by {{5}}.\nReception: {{6}}.',
+    body: 'Hello {{1}}, your check-in at {{2}} is complete and your room is ready.\nYour assigned room number is {{3}}. Your scheduled checkout date is {{4}}, with checkout due by {{5}}.\nIf you need assistance during your stay, please contact the reception team on {{6}}. We hope you have a comfortable stay.',
     variables: ['guest_name', 'resort_name', 'room_number', 'check_out_date', 'checkout_time', 'reception_phone'], documentHeader: false,
   },
   checkout_reminder: {
-    body: 'Hello {{1}}, this is your checkout reminder for {{2}}.\nRoom {{3}}: checkout on {{4}} by {{5}}.\nFor assistance, contact reception: {{6}}.',
+    body: 'Hello {{1}}, this is a reminder about your scheduled checkout from {{2}}.\nYour room number is {{3}}, and checkout is due on {{4}} by {{5}}.\nIf you need help with checkout or your bill, please contact our reception team on {{6}}. Thank you for staying with us.',
     variables: ['guest_name', 'resort_name', 'room_number', 'check_out_date', 'checkout_time', 'reception_phone'], documentHeader: false,
   },
   invoice: {
-    body: 'Hello {{1}}, your invoice {{2}} from {{3}} for {{4}} is attached.\nBalance: {{5}}.\nReception: {{6}}.',
+    body: 'Hello {{1}}, your invoice from {{3}} is attached as a PDF document.\nThe invoice reference is {{2}} and the invoice total is {{4}}. The balance remaining to be paid is {{5}}.\nFor questions about these charges or payment, please contact our reception team on {{6}}. Please keep this invoice for your records.',
     variables: ['guest_name', 'invoice_number', 'resort_name', 'invoice_total', 'balance', 'reception_phone'], documentHeader: true,
   },
   receipt: {
-    body: 'Hello {{1}}, {{2}} has received {{3}} by {{4}} for booking {{5}}.\nYour receipt {{6}} is attached.',
+    body: 'Hello {{1}}, this message confirms that {{2}} has received your payment.\nThe amount received is {{3}} and the payment method recorded is {{4}}. This payment relates to booking {{5}}.\nYour payment receipt {{6}} is attached as a PDF document. Please keep it for your records and contact reception if you have any questions.',
     variables: ['guest_name', 'resort_name', 'amount', 'payment_method', 'booking_number', 'receipt_number'], documentHeader: true,
   },
 };
