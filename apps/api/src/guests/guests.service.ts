@@ -11,6 +11,7 @@ export const mapGuest = (r: GuestRow) => ({
   mobile: r.mobile, email: r.email, addressLine: r.address_line, city: r.city, state: r.state, pinCode: r.pin_code,
   country: r.country, nationality: r.nationality, companyName: r.company_name, companyGstin: r.company_gstin,
   preferredLanguage: r.preferred_language,
+  whatsappOptedIn: r.whatsapp_opted_in, whatsappConsentAt: r.whatsapp_consent_at,
   preferences: r.preferences, isVip: r.is_vip, specialNote: r.special_note, version: r.version,
 });
 

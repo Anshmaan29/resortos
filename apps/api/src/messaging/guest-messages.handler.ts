@@ -31,14 +31,13 @@ export class GuestMessagesHandler implements OutboxHandler {
     switch (event.topic) {
       case 'reservation.created':
       case 'reservation.confirmed': {
-        // A walk-in being checked in right now needs a welcome, not a booking confirmation; and a
-        // tentative booking is not confirmed yet. One confirmation per booking, whichever event comes.
-        const { rows } = await this.db.query<{ status: string; walk_in_today: boolean }>(
-          `SELECT r.status, (r.source = 'walk_in' AND r.arrival <= p.current_business_date) AS walk_in_today
-             FROM reservations r JOIN properties p ON p.id = r.property_id WHERE r.id = $1`,
-          [event.aggregateId],
+        // Every confirmed booking, including walk-ins, gets one confirmation. Tentative bookings
+        // wait until confirmed. Replayed events cannot send the same confirmation twice.
+        const { rows } = await this.db.query<{ status: string }>(
+          'SELECT status FROM reservations WHERE id = $1 AND property_id = $2',
+          [event.aggregateId, event.propertyId],
         );
-        if (!rows[0] || rows[0].status !== 'confirmed' || rows[0].walk_in_today) return null;
+        if (!rows[0] || rows[0].status !== 'confirmed') return null;
         return { templateKey: 'booking_confirmation', sourceKey: `reservation:${event.aggregateId}:confirmation`, reservationId: event.aggregateId! };
       }
       case 'stay.checked_in': {

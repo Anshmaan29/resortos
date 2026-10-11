@@ -212,7 +212,11 @@ function reservationRules<T extends z.ZodType<ReservationFields>>(schema: T) {
       { message: 'The same room is selected twice', path: ['rooms'] });
 }
 
-export const createReservationSchema = reservationRules(reservationFields.extend({ rebookedFromId: zId.optional() }));
+export const createReservationSchema = reservationRules(reservationFields.extend({
+  rebookedFromId: zId.optional(),
+  /** Reception's agreement attestation on Save booking; omitted callers preserve existing consent. */
+  whatsappOptedIn: z.boolean().optional(),
+}));
 export type CreateReservationInput = z.infer<typeof createReservationSchema>;
 
 export const updateReservationSchema = reservationRules(reservationFields.extend({ version: z.number().int().min(1) }));

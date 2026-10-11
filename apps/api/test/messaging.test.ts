@@ -105,14 +105,15 @@ describe('booking confirmation', () => {
     expect(dev.sent).toHaveLength(0);
   });
 
-  it('is not sent to a walk-in being checked in today, nor for a tentative booking', async () => {
+  it('sends automatically for a confirmed walk-in, while tentative bookings wait for confirmation', async () => {
     const walkIn = await post(owner, '/reservations', {
       ...booking({ roomTypeId: f.type('DLX'), arrival: TEST_BUSINESS_DATE, departure: '2026-09-17' }),
       guest: { firstName: 'Walk', lastName: 'In', mobile: String((mobile += 1)), email: 'walk@example.com' },
     }).expect(201);
     const tentative = await book({ status: 'tentative' });
     await settle();
-    expect(await messagesFor(walkIn.body.id)).toHaveLength(0);
+    expect(await messagesFor(walkIn.body.id)).toHaveLength(1);
+    expect((await messagesFor(walkIn.body.id))[0]).toMatchObject({template_key:'booking_confirmation',status:'sent'});
     const t = await sql<{ status: string }>(`SELECT status FROM reservations WHERE id = $1`, [tentative]);
     if (t[0]!.status === 'tentative') expect(await messagesFor(tentative)).toHaveLength(0);
   });

@@ -60,6 +60,7 @@ export interface TaxRuleRow {
 }
 
 export interface GuestRow {
+  whatsapp_opted_in: boolean; whatsapp_consent_at: Date | null;
   id: string; property_id: string; first_name: string; last_name: string; mobile: string; email: string | null; address_line: string | null;
   city: string | null; state: string | null; pin_code: string | null; country: string; nationality: string; company_name: string | null;
   company_gstin: string | null; preferences: string | null; preferred_language: 'en' | 'hi'; is_vip: boolean; special_note: string | null; merged_into_id: string | null; version: number;
