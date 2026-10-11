@@ -1,0 +1,23 @@
+name: Generate patched Next lockfile
+on:
+  push:
+    branches: ['codex/meta-whatsapp-integration']
+    paths: ['.github/workflows/whatsapp-lock-update.yml']
+permissions:
+  contents: read
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.17.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Resolve the security patch without running package scripts
+        run: pnpm --filter @resortos/web up next@16.3.8 --lockfile-only --ignore-scripts
+      - name: Return generated lockfile
+        run: node -e "console.log('RESORTOS_LOCKFILE=' + JSON.stringify(require('node:fs').readFileSync('pnpm-lock.yaml','utf8')))"

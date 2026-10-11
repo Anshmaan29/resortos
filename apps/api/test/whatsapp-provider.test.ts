@@ -58,7 +58,7 @@ describe('Meta provider', () => {
   });
   it('checks approval, wording, exact locale and header rather than trusting a name alone', async () => {
     const binding = defaultBindings()[0]!;
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [{
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ data: [{
       name: binding.name, language: 'en', status: 'APPROVED',
       components: [{ type: 'BODY', text: WHATSAPP_WORDING.booking_confirmation.body }],
     }] }));

@@ -136,16 +136,6 @@ export class WhatsAppService {
         req.paymentId ?? null, req.trigger, req.sourceKey, payload.text, skip ? 'skipped' : 'queued', skip, NON_URGENT.has(req.templateKey), req.createdBy ?? null, req.resendOf ?? null, JSON.stringify(payload)]);
     return rows[0]?.id ?? null;
   }
-  /** Re-check current opt-in and property switch immediately before any network send. */
-  async allowed(q: Queryable, m: { property_id: string; guest_id: string | null; recipient: string }): Promise<string | null> {
-    if (!this.available(m.property_id)) return 'WhatsApp server credentials are incomplete.';
-    const settings = await this.settings(q, m.property_id);
-    if (!settings.enabled) return 'WhatsApp is switched off in settings.';
-    const { rows } = await q.query<{ whatsapp_opted_in: boolean; mobile: string | null }>('SELECT whatsapp_opted_in,mobile FROM guests WHERE property_id=$1 AND id=$2', [m.property_id, m.guest_id]);
-    if (!rows[0]?.whatsapp_opted_in) return 'The guest has not agreed to WhatsApp messages.';
-    if (whatsappNumber(rows[0].mobile ?? '') !== m.recipient) return 'The guest phone number changed. Review it before sending again.';
-    return null;
-  }
   async send(actor: Actor, templateKey: TemplateKey, target: { reservationId?: string; stayId?: string }, key: string | undefined) {
     return this.mutate(actor, key, '/whatsapp/send', { templateKey, ...target }, async q => {
       const id = await this.queue(q, { propertyId: actor.user.propertyId, templateKey, ...target, trigger: 'resend', sourceKey: 'manual:' + randomUUID(), createdBy: actor.user.id });
