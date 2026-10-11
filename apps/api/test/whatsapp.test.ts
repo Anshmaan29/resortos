@@ -90,6 +90,14 @@ describe('WhatsApp guest workflow',()=>{
     expect((await sql<{status:string}>('SELECT status FROM messages WHERE id=$1',[queued.body.id]))[0]!.status).toBe('skipped');
     expect(fetcher).not.toHaveBeenCalled();
   });
+  it('blocks a queued message when its approved template is switched off',async()=>{
+    const id=await book();await consent(id);const queued=await send(id).expect(200);
+    await sql("UPDATE settings SET value=jsonb_set(value,'{templates,0,active}','false'::jsonb) WHERE property_id=$1 AND key='whatsapp'",[propertyId]);
+    fetcher.mockClear();await messaging.sendDue(100);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect((await sql<{status:string}>('SELECT status FROM messages WHERE id=$1',[queued.body.id]))[0]!.status).toBe('skipped');
+    await sql("UPDATE settings SET value=jsonb_set(value,'{templates,0,active}','true'::jsonb) WHERE property_id=$1 AND key='whatsapp'",[propertyId]);
+  });
   it('does not automatically resend after a network timeout or stale sender lease',async()=>{
     const id=await book();await consent(id);const queued=await send(id).expect(200);
     fetcher.mockRejectedValueOnce(new Error('timeout'));

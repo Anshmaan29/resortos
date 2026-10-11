@@ -369,12 +369,15 @@ export class MessagingService {
           continue;
         }
         if (m.channel === 'whatsapp') {
-          const { rows: allowed } = await this.db.query<{ enabled: boolean; opted_in: boolean; mobile: string | null }>(
+          const { rows: allowed } = await this.db.query<{ enabled: boolean; opted_in: boolean; mobile: string | null; templates: { key: string; language: string; name: string; languageCode: string; active: boolean; ready: boolean }[] }>(
             `SELECT COALESCE((SELECT (value->>'enabled')::boolean FROM settings WHERE property_id=$1 AND key='whatsapp'),false) AS enabled,
+                    COALESCE((SELECT value->'templates' FROM settings WHERE property_id=$1 AND key='whatsapp'),'[]'::jsonb) AS templates,
                     g.whatsapp_opted_in AS opted_in, g.mobile FROM guests g WHERE g.property_id=$1 AND g.id=$2`, [m.property_id,m.guest_id]);
           const a=allowed[0];
+          const binding=a?.templates.find(t=>t.key===m.template_key && t.language===m.language && t.name===m.outgoing_payload?.whatsapp?.name && t.languageCode===m.outgoing_payload?.whatsapp?.languageCode);
           const reason = !whatsappConfigured(this.config) || this.config.WHATSAPP_PROPERTY_ID !== m.property_id ? 'WhatsApp server credentials are incomplete.'
             : !a?.enabled ? 'WhatsApp is switched off in settings.'
+            : !binding?.active || !binding.ready ? 'This WhatsApp template is switched off, changed or no longer approved.'
             : !a.opted_in ? 'The guest has not agreed to WhatsApp messages.'
             : whatsappNumber(a.mobile ?? '') !== m.recipient ? 'The guest phone number changed. Review it before sending again.' : null;
           if (reason) {
@@ -598,7 +601,7 @@ export class MessagingService {
          JOIN stays s ON s.property_id = p.id AND s.status = 'in_house'
         WHERE (now() AT TIME ZONE p.timezone)::time >= p.checkout_reminder_time
           AND s.expected_departure = (now() AT TIME ZONE p.timezone)::date + 1
-          AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.property_id = p.id AND m.source_key = 'stay:' || s.id || ':checkout_reminder')`,
+          AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.property_id = p.id AND m.channel='email' AND m.source_key = 'stay:' || s.id || ':checkout_reminder')`,
     );
     let queued = 0;
     for (const r of rows) {
