@@ -32,7 +32,7 @@ business change ──commit──► outbox_events ──handler──► messa
 
 | Template | Cause | Notes |
 |---|---|---|
-| Booking confirmed | `reservation.created` / `.confirmed` | Not for a tentative booking, nor a walk-in being checked in today |
+| Booking confirmed | `reservation.created` / `.confirmed` | Automatic for confirmed bookings, including walk-ins; tentative bookings wait for confirmation |
 | Welcome after check-in | `stay.checked_in` | One per booking, even for several rooms |
 | Checkout reminder | Schedule, every 10 minutes after the reminder time | Evening before departure; respects quiet hours; a one-night stay checked in that afternoon is recorded as skipped (setting) |
 | Thank you + invoice | `invoice.issued` (tax invoice / bill of supply) | PDF attached |
@@ -82,5 +82,18 @@ or complaint is final.
 2. Create an API key with sending access only → `RESEND_API_KEY`.
 3. Add a webhook to `https://<api-host>/api/v1/webhooks/resend` for the `email.*` events → copy its
    signing secret to `RESEND_WEBHOOK_SECRET`.
-4. In ResortOS, Settings → Policies → Guest email: set the sender address on the verified domain, the
+4. In ResortOS, Settings → Guest messages: set the sender address on the verified domain, the
    reception phone, Wi-Fi and map link, then switch email on. Send a test from Settings → Guest messages.
+
+## Reception delivery checks
+
+The booking/stay panel shows the latest Email and WhatsApp states first, with history underneath.
+Optional extra sends and WhatsApp preference controls are collapsed. Already sent or uncertain
+messages require confirmation before another copy is requested. Retrying a failed HTTP resend
+request reuses that message's idempotency key; a different message uses a different key.
+
+Home's `GET /messages/attention` alert is limited to owners and receptionists at the current
+property. It groups the latest attempt by booking/stay, template, channel, invoice and payment,
+then lists up to ten failed, bounced or complained items with a total count. A successful or queued
+replacement removes the historical failure from the alert; history itself is retained. Test sends
+are excluded. A guest's intentional opt-out is shown on their record, not as a global failure.

@@ -9,6 +9,7 @@ import { PolicySettings, PropertySettings } from '@/components/settings/property
 import { RatesSettings } from '@/components/settings/rates';
 import { RoomsSettings } from '@/components/settings/rooms';
 import { StaffSettings } from '@/components/settings/staff';
+import { OwnerSecuritySettings } from '@/components/settings/security';
 import { TaxSettings } from '@/components/settings/tax';
 import { PageHeader, Skeleton } from '@/components/ui/surface';
 import { cn } from '@/lib/cn';
@@ -26,6 +27,7 @@ const SECTIONS: { key: string; label: string; icon: ComponentType<{ className?: 
   { key: 'messages', label: 'Guest messages', icon: Mail, owner: true, component: MessageSettings },
   { key: 'desks', label: 'Desk computers', icon: Monitor, owner: true, component: DeskSettings },
   { key: 'pin', label: 'My PIN', icon: KeyRound, owner: false, component: MyPinSettings },
+  { key: 'security', label: 'Owner recovery', icon: KeyRound, owner: true, component: OwnerSecuritySettings },
 ];
 
 function SettingsInner() {

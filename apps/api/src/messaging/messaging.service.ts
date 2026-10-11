@@ -523,6 +523,30 @@ export class MessagingService {
     });
   }
 
+  /** Show unresolved delivery failures on the desk without revealing message content or contacts. */
+  async attention(propertyId: string) {
+    const { rows } = await this.db.query<{
+      id: string; channel: string; template_key: TemplateKey; status: string;
+      reservation_id: string | null; stay_id: string | null; booking_number: string | null; total: string;
+    }>(`
+      WITH latest AS (
+        SELECT DISTINCT ON (COALESCE(reservation_id,stay_id),template_key,channel,invoice_id,payment_id) *
+        FROM messages WHERE property_id=$1 AND trigger<>'test'
+          AND (reservation_id IS NOT NULL OR stay_id IS NOT NULL)
+        ORDER BY COALESCE(reservation_id,stay_id),template_key,channel,invoice_id,payment_id,queued_at DESC,id DESC
+      )
+      SELECT m.id,m.channel,m.template_key,m.status,m.reservation_id,m.stay_id,r.number AS booking_number,
+             count(*) OVER () AS total
+      FROM latest m LEFT JOIN reservations r ON r.id=m.reservation_id AND r.property_id=$1
+      WHERE m.status IN ('failed','bounced','complained')
+      ORDER BY m.queued_at DESC LIMIT 10`, [propertyId]);
+    return { total: Number(rows[0]?.total ?? 0), items: rows.map(m => ({
+      id: m.id, channel: m.channel, templateLabel: TEMPLATE_LABELS[m.template_key], status: m.status,
+      bookingNumber: m.booking_number,
+      href: m.stay_id ? '/stays/' + m.stay_id : '/reservations/' + m.reservation_id,
+    })) };
+  }
+
   async list(propertyId: string, filter: { reservationId?: string; stayId?: string; status?: string; limit?: number }) {
     const { rows } = await this.db.query<MessageRow>(
       `SELECT * FROM messages

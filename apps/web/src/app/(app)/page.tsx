@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BookUser, ArrowRight, BedDouble, CalendarPlus, Crown, DoorOpen, LogIn, LogOut, UserPlus, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { formatDate, formatINR } from '@resortos/shared';
+import { MessageAttention } from '@/components/message-attention';
 import { SetupReminder } from '@/components/setup-reminder';
 import { RoomBoard, RoomLegend } from '@/components/front-desk/room-board';
 import { Button } from '@/components/ui/button';
@@ -47,6 +48,7 @@ export default function HomePage() {
 
       <SetupReminder />
       <FormCReminder />
+      <MessageAttention />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Arrivals today" icon={LogIn} value={desk.data?.arrivals.length} tone="var(--st-arriving)" />

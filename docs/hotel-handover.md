@@ -2,13 +2,18 @@
 
 ## Daily use
 
-Open https://resortos-production.up.railway.app on the reception computer or phone.
+Open https://pms.voittoventures.com on the reception computer or phone.
 
 - Make a booking, choose the room and enter the agreed room price. Add extra adult/child charges per night if needed. Add an extra bed or meal by its name and agreed price in the bill.
+- Saving a confirmed booking automatically queues email and WhatsApp confirmation when the guest has the necessary contact details and WhatsApp agreement. No separate Send action is needed. A returning guest's recorded refusal is respected. Welcome messages, payment receipts and finalized invoices also queue automatically.
+- The booking/stay's **Guest messages** panel shows separate Email and WhatsApp statuses and refreshes automatically. **Sent** means the provider accepted it; **Delivered** and WhatsApp **Read** need delivery reports. **Not sent** explains missing contact details or an opt-out. Home shows **Guest messages need attention** for the latest failed/bounced messages; open that record to review the reason. Older attempts stay in the history. Use **Resend** only after checking delivery; sending another copy asks for confirmation.
 - Check in: enter guest details, then show the scanner QR. Scan it with the phone camera, or use **Open scanner on this phone** when working directly on a phone. No guest login is needed.
 - Photograph the face and both required ID sides. Crop the document, check the preview, then tap **Use photo**. Wait for **Received** before closing the scanner. The scanner link expires after ten minutes; reception can issue a new link.
 - Phone photos are re-encoded without GPS/EXIF metadata. Guest photos target at most 200 KB / 1200 px; documents target at most 600 KB / 2000 px. Compression does not recognise a face or authenticate an ID. Reception must check the guest and legibility.
 - A lost connection queues photos on the phone where browser storage is available. Restricted/private browsers may need the page to stay open. The app explains when an upload is blocked or a link has expired.
+- A retake replaces the active face/ID-side/signature for that guest. Previous attempts do not become extra required documents. Signatures are optional; draw one, upload a picture, or continue without one.
+- Checkout: open the stay, review room nights and extra charges, record any balance/refund with its actual payment method, then complete checkout. Print/download the final invoice and receipt. A message failure does not undo checkout. The room becomes dirty for housekeeping; mark it clean before assigning it again.
+- If a save loses its server response, refresh the record and check whether it was saved before trying again. Do not make a second payment just because the connection failed.
 - GST: reception can enter editable, dated tax rules in **Settings → Tax**. Get the room and food percentages from the accountant before issuing real tax invoices. Rates have deliberately not been guessed. Settings changes do not rewrite final invoices.
 - The owner downloads **Records → Download all records (Excel)** for all dates, or individual Excel/CSV reports by date. This contains operational records, not a restorable database image. Use **Download** next to a guest/stay document to save its photo or PDF.
 
@@ -37,6 +42,7 @@ The private Railway bucket needs a browser CORS rule for the hotel's exact HTTPS
 - Accountant confirms and reception saves GST rules. Print one invoice and receipt on the hotel's printer.
 - Test one actual Android phone and one actual iPhone on hotel Wi-Fi/mobile data: open scanner, photograph face/front/back, retake, disconnect/reconnect, and verify each original at the desk. Browser emulation cannot prove camera permission, HEIC decoding or a physical camera's focus.
 - Owner confirms rooms, prices, extra guest/bed policy, ID retention policy and contact details, and trains reception on cancellation/refund/day closing.
+- Owner opens **Settings → Owner recovery**, generates recovery codes, downloads a private copy, and hides them. Keep that copy away from the reception computer. Use **Owner account recovery** on the login screen if needed. Confirm reception can sign in with its own account and lock/switch the shared desk before the first shift.
 - Railway billing is upgraded before the trial ends. Enable Railway's database recovery/backup controls and keep the hotel's owner/admin recovery details private.
 - Create the Google Sheet when wanted. Until credentials and a real sheet are connected, automatic sync is not live.
 - Guest email has passed a provider delivery check. Configure Resend's signed delivery webhook if delivered/bounced status is needed in the app; review wording and sender/reply-to before handover.
