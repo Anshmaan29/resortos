@@ -39,7 +39,7 @@ export class WhatsAppService {
       webhookConfigured: Boolean(this.config.WHATSAPP_APP_SECRET && this.config.WHATSAPP_VERIFY_TOKEN),
       phoneNumberId: this.config.WHATSAPP_PROPERTY_ID === propertyId ? this.config.WHATSAPP_PHONE_NUMBER_ID ?? null : null,
       templates: settings.templates.map(t => ({ ...t, label: TEMPLATE_LABELS[t.key],
-        body: whatsappWording(t.key,t.language).body, variables: WHATSAPP_WORDING[t.key].variables,
+        body: whatsappWording(t.key,t.language,t.name).body, variables: WHATSAPP_WORDING[t.key].variables,
         documentHeader: WHATSAPP_WORDING[t.key].documentHeader })),
     };
   }
@@ -127,7 +127,7 @@ export class WhatsAppService {
     const id = randomUUID();
     const payload: OutgoingMessage = {
       id, channel: 'whatsapp', to: recipient, from: null, replyTo: null, subject: null,
-      text: whatsappBody(req.templateKey, parameters, binding?.language ?? 'en'), html: null, attachments: [], tags: [],
+      text: whatsappBody(req.templateKey, parameters, binding?.language ?? 'en', binding?.name), html: null, attachments: [], tags: [],
       ...(binding ? { whatsapp: { name: binding.name, languageCode: binding.languageCode, parameters, documentHeader: WHATSAPP_WORDING[req.templateKey].documentHeader } } : {}),
     };
     const { rows } = await q.query<{ id: string }>(

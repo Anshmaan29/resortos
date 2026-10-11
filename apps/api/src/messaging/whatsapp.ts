@@ -5,25 +5,34 @@ import { TEMPLATE_KEYS, type TemplateKey, type TemplateVariable } from './templa
 
 export const WHATSAPP_WORDING: Record<TemplateKey, { body: string; variables: TemplateVariable[]; documentHeader: boolean }> = {
   booking_confirmation: {
-    body: 'Hello {{1}}, your reservation at {{3}} has been confirmed. Your booking reference is {{2}}.\nYour arrival date is {{4}}, and your departure date is {{5}}. Check-in is available from {{6}}.\nFor questions about this reservation or changes to your arrival plans, please contact our reception team on {{7}}. We look forward to your stay.',
+    body: '*Booking confirmed*\n\nHello {{1}},\nYour reservation at {{3}} is confirmed.\n\n*Booking reference:* {{2}}\n*Arrival date:* {{4}}\n*Departure date:* {{5}}\n*Check-in from:* {{6}}\n\nFor questions or changes to your arrival plans, please contact our reception team.\n*Reception phone:* {{7}}\n\nWe look forward to welcoming you for your stay.',
     variables: ['guest_name', 'booking_number', 'resort_name', 'check_in_date', 'check_out_date', 'check_in_time', 'reception_phone'], documentHeader: false,
   },
   check_in_welcome: {
-    body: 'Hello {{1}}, your check-in at {{2}} is complete and your room is ready.\nYour assigned room number is {{3}}. Your scheduled checkout date is {{4}}, with checkout due by {{5}}.\nIf you need assistance during your stay, please contact the reception team on {{6}}. We hope you have a comfortable stay.',
+    body: '*Welcome — check-in complete*\n\nHello {{1}},\nWelcome to {{2}}. Your check-in is complete and your room is ready.\n\n*Your room number:* {{3}}\n*Checkout date:* {{4}}\n*Checkout due by:* {{5}}\n\nFor assistance during your stay, please contact our reception team.\n*Reception phone:* {{6}}\n\nWe hope you have a comfortable stay with us.',
     variables: ['guest_name', 'resort_name', 'room_number', 'check_out_date', 'checkout_time', 'reception_phone'], documentHeader: false,
   },
   checkout_reminder: {
-    body: 'Hello {{1}}, this is a reminder about your scheduled checkout from {{2}}.\nYour room number is {{3}}, and checkout is due on {{4}} by {{5}}.\nIf you need help with checkout or your bill, please contact our reception team on {{6}}. Thank you for staying with us.',
+    body: '*Checkout reminder*\n\nHello {{1}},\nThis is a reminder about your scheduled checkout from {{2}}.\n\n*Your room number:* {{3}}\n*Checkout date:* {{4}}\n*Checkout due by:* {{5}}\n\nFor help with checkout or your bill, please contact our reception team.\n*Reception phone:* {{6}}\n\nThank you for staying with us.',
     variables: ['guest_name', 'resort_name', 'room_number', 'check_out_date', 'checkout_time', 'reception_phone'], documentHeader: false,
   },
   invoice: {
-    body: 'Hello {{1}}, your invoice from {{3}} is attached as a PDF document.\nThe invoice reference is {{2}} and the invoice total is {{4}}. The balance remaining to be paid is {{5}}.\nFor questions about these charges or payment, please contact our reception team on {{6}}. Please keep this invoice for your records.',
+    body: '*Your hotel invoice*\n\nHello {{1}},\nYour invoice from {{3}} is attached as a PDF document.\n\n*Invoice reference:* {{2}}\n*Invoice total:* {{4}}\n*Remaining balance:* {{5}}\n\nFor questions about these charges or payment, please contact our reception team.\n*Reception phone:* {{6}}\n\nPlease keep the attached invoice for your records.',
     variables: ['guest_name', 'invoice_number', 'resort_name', 'invoice_total', 'balance', 'reception_phone'], documentHeader: true,
   },
   receipt: {
-    body: 'Hello {{1}}, this message confirms that {{2}} has received your payment.\nThe amount received is {{3}} and the payment method recorded is {{4}}. This payment relates to booking {{5}}.\nYour payment receipt {{6}} is attached as a PDF document. Please keep it for your records and contact reception if you have any questions.',
+    body: '*Payment received*\n\nHello {{1}},\nThis message confirms that {{2}} has received your payment.\n\n*Amount received:* {{3}}\n*Payment method:* {{4}}\n*Booking reference:* {{5}}\n*Receipt reference:* {{6}}\n\nYour payment receipt is attached as a PDF document. Please keep it for your records and contact reception if you have any questions.',
     variables: ['guest_name', 'resort_name', 'amount', 'payment_method', 'booking_number', 'receipt_number'], documentHeader: true,
   },
+};
+
+/** Keep already-approved templates usable while formatted replacements are reviewed. */
+const LEGACY_EN_BODY: Record<TemplateKey, string> = {
+  booking_confirmation: 'Hello {{1}}, your reservation at {{3}} has been confirmed. Your booking reference is {{2}}.\nYour arrival date is {{4}}, and your departure date is {{5}}. Check-in is available from {{6}}.\nFor questions about this reservation or changes to your arrival plans, please contact our reception team on {{7}}. We look forward to your stay.',
+  check_in_welcome: 'Hello {{1}}, your check-in at {{2}} is complete and your room is ready.\nYour assigned room number is {{3}}. Your scheduled checkout date is {{4}}, with checkout due by {{5}}.\nIf you need assistance during your stay, please contact the reception team on {{6}}. We hope you have a comfortable stay.',
+  checkout_reminder: 'Hello {{1}}, this is a reminder about your scheduled checkout from {{2}}.\nYour room number is {{3}}, and checkout is due on {{4}} by {{5}}.\nIf you need help with checkout or your bill, please contact our reception team on {{6}}. Thank you for staying with us.',
+  invoice: 'Hello {{1}}, your invoice from {{3}} is attached as a PDF document.\nThe invoice reference is {{2}} and the invoice total is {{4}}. The balance remaining to be paid is {{5}}.\nFor questions about these charges or payment, please contact our reception team on {{6}}. Please keep this invoice for your records.',
+  receipt: 'Hello {{1}}, this message confirms that {{2}} has received your payment.\nThe amount received is {{3}} and the payment method recorded is {{4}}. This payment relates to booking {{5}}.\nYour payment receipt {{6}} is attached as a PDF document. Please keep it for your records and contact reception if you have any questions.',
 };
 
 const HINDI_BODY: Record<TemplateKey, string> = {
@@ -33,14 +42,16 @@ const HINDI_BODY: Record<TemplateKey, string> = {
   invoice: 'नमस्ते {{1}}, {{3}} से {{4}} का आपका इनवॉइस {{2}} संलग्न है।\nशेष राशि: {{5}}।\nरिसेप्शन: {{6}}।',
   receipt: 'नमस्ते {{1}}, {{2}} को बुकिंग {{5}} के लिए {{4}} से {{3}} प्राप्त हुए।\nआपकी रसीद {{6}} संलग्न है।',
 };
-export function whatsappWording(key: TemplateKey, language: 'en' | 'hi' = 'en') {
-  return { ...WHATSAPP_WORDING[key], body: language === 'hi' ? HINDI_BODY[key] : WHATSAPP_WORDING[key].body };
+export function whatsappWording(key: TemplateKey, language: 'en' | 'hi' = 'en', templateName?: string) {
+  const body = language === 'hi' ? HINDI_BODY[key]
+    : templateName === 'resortos_' + key + '_en' ? LEGACY_EN_BODY[key] : WHATSAPP_WORDING[key].body;
+  return { ...WHATSAPP_WORDING[key], body };
 }
 export function whatsappParameters(key: TemplateKey, vars: Partial<Record<TemplateVariable, string>>) {
   return WHATSAPP_WORDING[key].variables.map(v => (vars[v] || '—').replace(/\s+/g, ' ').trim().slice(0, 500));
 }
-export function whatsappBody(key: TemplateKey, parameters: string[], language: 'en' | 'hi' = 'en') {
-  return whatsappWording(key, language).body.replace(/\{\{(\d+)\}\}/g, (_, n: string) => parameters[Number(n) - 1] ?? '—');
+export function whatsappBody(key: TemplateKey, parameters: string[], language: 'en' | 'hi' = 'en', templateName?: string) {
+  return whatsappWording(key, language, templateName).body.replace(/\{\{(\d+)\}\}/g, (_, n: string) => parameters[Number(n) - 1] ?? '—');
 }
 /** Ten-digit Indian numbers are supported, as are explicit international +/00 numbers. */
 export function whatsappNumber(value: string): string | null {
@@ -148,7 +159,7 @@ export class WhatsAppProvider implements MessageProvider {
     }
     return bindings.map(b => {
       const found = templates.find(t => t.name === b.name && t.language === b.languageCode);
-      const wording = whatsappWording(b.key, b.language);
+      const wording = whatsappWording(b.key, b.language, b.name);
       const components = found?.components ?? [];
       const body = components.find(x => x.type === 'BODY');
       const header = components.find(x => x.type === 'HEADER');
@@ -160,5 +171,5 @@ export class WhatsAppProvider implements MessageProvider {
   }
 }
 export const defaultBindings = (): TemplateBinding[] => TEMPLATE_KEYS.map(key => ({
-  key, language: 'en', languageCode: 'en', name: 'resortos_' + key + '_en', active: true,
+  key, language: 'en', languageCode: 'en', name: 'resortos_' + key + '_en_v2', active: true,
 }));
