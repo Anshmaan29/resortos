@@ -4,6 +4,7 @@ import Link from 'next/link';
 export const metadata: Metadata = {
   title: 'Privacy policy',
   description: 'Guest data and WhatsApp messaging privacy for Lakshmi Palace by Voitto and ResortOS.',
+  robots: { index: true, follow: false },
 };
 
 export default function PrivacyPage() {
