@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '../db/db.service';
 import type { OutboxEvent, OutboxHandler } from '../jobs/outbox-handlers';
 import { MessagingService } from './messaging.service';
+import { WhatsAppService } from './whatsapp.service';
 import type { TemplateKey } from './templates';
 
 /**
@@ -14,12 +15,16 @@ export class GuestMessagesHandler implements OutboxHandler {
   readonly name = 'guest-messages';
   readonly topics = ['reservation.created', 'reservation.confirmed', 'stay.checked_in', 'invoice.issued', 'payment.recorded'] as const;
 
-  constructor(private readonly db: DbService, private readonly messaging: MessagingService) {}
+  constructor(private readonly db: DbService, private readonly messaging: MessagingService, private readonly whatsapp: WhatsAppService) {}
 
   async handle(event: OutboxEvent): Promise<void> {
     const plan = await this.plan(event);
     if (!plan) return;
-    await this.db.tx({}, (q) => this.messaging.queue(q, { propertyId: event.propertyId, trigger: 'event', ...plan }));
+    await this.db.tx({}, async q => {
+      const req = { propertyId: event.propertyId, trigger: 'event' as const, ...plan };
+      await this.messaging.queue(q, req);
+      await this.whatsapp.queue(q, req);
+    });
   }
 
   private async plan(event: OutboxEvent): Promise<{ templateKey: TemplateKey; sourceKey: string; reservationId?: string; stayId?: string; invoiceId?: string; paymentId?: string } | null> {

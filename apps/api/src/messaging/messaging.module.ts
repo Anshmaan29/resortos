@@ -5,6 +5,9 @@ import { JobsService, SCHEDULED_JOBS, type ScheduledJob } from '../jobs/jobs.ser
 import { PrintingModule } from '../printing/printing.module';
 import { DailySummaryHandler } from './daily-summary.handler';
 import { GuestMessagesHandler } from './guest-messages.handler';
+import { WhatsAppController } from './whatsapp.controller';
+import { WhatsAppService } from './whatsapp.service';
+import { WhatsAppProvider, whatsappConfigured } from './whatsapp';
 import { MessagingController } from './messaging.controller';
 import { MessagingService } from './messaging.service';
 import { MESSAGE_PROVIDERS, providersFor } from './providers';
@@ -18,18 +21,20 @@ export const MESSAGES_REMINDERS_QUEUE = 'messages.reminders';
  */
 @Module({
   imports: [PrintingModule],
-  controllers: [MessagingController],
+  controllers: [MessagingController, WhatsAppController],
   providers: [
     MessagingService,
+    WhatsAppService,
     GuestMessagesHandler,
     DailySummaryHandler,
-    { provide: MESSAGE_PROVIDERS, useFactory: (config: AppConfig) => providersFor(config), inject: [APP_CONFIG] },
+    { provide: MESSAGE_PROVIDERS, useFactory: (config: AppConfig) => [...providersFor(config), ...(whatsappConfigured(config) ? [new WhatsAppProvider(config)] : [])], inject: [APP_CONFIG] },
   ],
   exports: [MessagingService, MESSAGE_PROVIDERS],
 })
 export class MessagingModule implements OnModuleInit {
   constructor(
     private readonly messaging: MessagingService,
+    private readonly whatsapp: WhatsAppService,
     private readonly handler: GuestMessagesHandler,
     private readonly dailySummary: DailySummaryHandler,
     private readonly jobs: JobsService,
@@ -54,7 +59,7 @@ export class MessagingModule implements OnModuleInit {
         // Keep going while batches come back full, as the outbox drain does.
         for (let i = 0; i < 20; i += 1) if ((await this.messaging.sendDue()).claimed < 10) break;
       } },
-      { queue: MESSAGES_REMINDERS_QUEUE, cron: '*/10 * * * *', run: async () => { await this.messaging.queueCheckoutReminders(); } },
+      { queue: MESSAGES_REMINDERS_QUEUE, cron: '*/10 * * * *', run: async () => { await this.messaging.queueCheckoutReminders(); await this.whatsapp.queueCheckoutReminders(); } },
     );
   }
 }

@@ -828,3 +828,22 @@ export const emailSettingsSchema = z.object({
   version: z.coerce.number().int().min(1),
 }).refine((v) => !v.enabled || v.fromAddress, { path: ['fromAddress'], message: 'Set the sender address before switching email on' });
 export type EmailSettingsInput = z.infer<typeof emailSettingsSchema>;
+
+
+export const whatsappSettingsSchema = z.object({
+  enabled: z.boolean(),
+  templates: z.array(z.object({
+    key: z.enum(['booking_confirmation', 'check_in_welcome', 'checkout_reminder', 'invoice', 'receipt']),
+    language: z.enum(['en', 'hi']),
+    name: z.string().trim().regex(/^[a-z][a-z0-9_]{0,511}$/),
+    languageCode: z.string().regex(/^[a-z]{2}(?:_[A-Z]{2})?$/),
+    active: z.boolean(),
+  })).max(10),
+  version: z.coerce.number().int().min(1),
+}).refine(v => new Set(v.templates.map(t => t.key + ':' + t.language)).size === v.templates.length,
+  { path: ['templates'], message: 'Each message and language can appear once' });
+export type WhatsAppSettingsInput = z.infer<typeof whatsappSettingsSchema>;
+export const whatsappConsentSchema = z.object({
+  optedIn: z.boolean(),
+  version: z.coerce.number().int().min(1),
+});

@@ -1,7 +1,8 @@
 # Guest messages — email through Resend (Sprint B)
 
-Spec §40, §41. Email now; WhatsApp waits on Meta business verification and SMS on DLT registration.
-Both will use the same templates, the same message rows and the same delivery tracking.
+Spec §40, §41. Email uses Resend; WhatsApp uses direct Meta Cloud API after operator setup.
+Both use the same queue and delivery history. SMS is still pending DLT registration.
+See [WhatsApp setup](whatsapp.md) for credentials, template approval, opt-in and live validation.
 
 ## A message is a row before it is anything else
 
@@ -63,8 +64,9 @@ messages) replaces it per language once saved. A guest's language is on their pr
 | `DevProvider` | development and tests without a key — records the message as sent, sends nothing; refused in production |
 | none (`MESSAGING_PROVIDER=off`) | messages are recorded as skipped |
 
-WhatsApp: a `WhatsAppProvider` with `channel = 'whatsapp'`, templates with `provider_template_id` and
-`approval_status` (columns already exist), and a fallback to email when WhatsApp fails.
+WhatsApp: `WhatsAppProvider` and `WhatsAppService` use Meta-approved utility templates, explicit guest opt-in,
+signed callbacks and the existing message rows. Resend remains independent; enabling WhatsApp does not
+turn email off or create extra fallback email. Uncertain Meta delivery needs review before a resend.
 
 ## Delivery reports
 

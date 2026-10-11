@@ -7,6 +7,8 @@ import { AppError, forbidden } from '../common/errors';
 import type { Actor, AppRequest } from '../common/request-context';
 import { parse } from '../common/zod';
 import { ERROR_CODES } from '@resortos/shared';
+import { WhatsAppService } from './whatsapp.service';
+import { DbService } from '../db/db.service';
 import { MessagingService } from './messaging.service';
 import { verifySvixSignature } from './providers';
 import { TEMPLATE_KEYS } from './templates';
@@ -16,7 +18,7 @@ const languageSchema = z.enum(['en', 'hi']);
 
 @Controller()
 export class MessagingController {
-  constructor(private readonly messaging: MessagingService, @Inject(APP_CONFIG) private readonly config: AppConfig) {}
+  constructor(private readonly messaging: MessagingService, private readonly whatsapp: WhatsAppService, private readonly db: DbService, @Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
   @Get('email-settings')
   @Roles('owner')
@@ -38,17 +40,19 @@ export class MessagingController {
 
   @Post('messages/:id/resend')
   @HttpCode(200)
-  resend(@CurrentActor() actor: Actor, @IdempotencyKey() key: string | undefined, @Param('id') id: string) {
-    return this.messaging.resend(actor, parse(zId, id),key);
+  async resend(@CurrentActor() actor: Actor, @IdempotencyKey() key: string | undefined, @Param('id') id: string) {
+    const messageId = parse(zId,id);
+    const { rows } = await this.db.query<{channel:string}>(`SELECT channel FROM messages WHERE id=$1 AND property_id=$2`,[messageId,actor.user.propertyId]);
+    return rows[0]?.channel === 'whatsapp' ? this.whatsapp.resend(actor,messageId,key) : this.messaging.resend(actor,messageId,key);
   }
 
   /** Send a message for a booking now, e.g. the confirmation again after the guest added an email. */
   @Post('messages/send')
   @HttpCode(200)
   sendNow(@CurrentActor() actor: Actor, @IdempotencyKey() key: string | undefined, @Body() body: unknown) {
-    const input = parse(z.object({ templateKey: keySchema, reservationId: zId.optional(), stayId: zId.optional() })
+    const input = parse(z.object({ channel: z.enum(['email','whatsapp']).default('email'), templateKey: keySchema, reservationId: zId.optional(), stayId: zId.optional() })
       .refine((v) => v.reservationId || v.stayId, 'Choose a booking or a stay'), body);
-    return this.messaging.sendNow(actor, input.templateKey, input,key);
+    return input.channel === 'whatsapp' ? this.whatsapp.send(actor,input.templateKey,input,key) : this.messaging.sendNow(actor, input.templateKey, input,key);
   }
 
   // ---------------- templates (owner settings) ----------------

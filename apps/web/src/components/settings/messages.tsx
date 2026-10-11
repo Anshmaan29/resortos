@@ -8,6 +8,7 @@ import { Pill } from '@/components/ui/status';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useProperty } from '@/lib/session';
+import { WhatsAppSettings } from './whatsapp';
 import { EmailSetupSettings, type EmailSetup } from './email-setup';
 import { Section, Toggle, useSave } from './common';
 
@@ -44,6 +45,7 @@ export function MessageSettings() {
   return (
     <div className="flex flex-col gap-5">
       <EmailSetupSettings />
+      <WhatsAppSettings />
       {!emailOn && (
         <p className="rounded-lg border border-border bg-surface-2 px-4 py-3 text-sm text-text-2">
           Guest email is switched off. Messages are still recorded as “skipped” on each stay, so you can see what would have gone. Switch it on above once your sending domain is verified.

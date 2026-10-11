@@ -9,6 +9,7 @@ import { APP_CONFIG, type AppConfig } from '../config';
 import { OutboxService } from '../common/outbox.service';
 import { IdempotencyService } from '../common/idempotency.service';
 import { PrintingService } from '../printing/printing.service';
+import { whatsappConfigured, whatsappNumber } from './whatsapp';
 import { MESSAGE_PROVIDERS, ProviderError, type MessageProvider, type OutgoingMessage } from './providers';
 import {
   DEFAULT_TEMPLATES, emailHtml, NON_URGENT, renderTemplate, TEMPLATE_KEYS, TEMPLATE_LABELS, TEMPLATE_VARIABLES, unknownVariables,
@@ -130,7 +131,7 @@ export class MessagingService {
     return this.providers.find((p) => p.channel === channel) ?? null;
   }
 
-  private async settings(q: Queryable, propertyId: string): Promise<PropertySettings> {
+  async settings(q: Queryable, propertyId: string): Promise<PropertySettings> {
     const { rows } = await q.query<PropertySettings>(
       `SELECT id, name, timezone, to_char(check_in_time, 'HH24:MI') AS check_in_time, to_char(check_out_time, 'HH24:MI') AS check_out_time,
               email_enabled, email_from_name, email_from_address, email_reply_to, reception_phone, phone, wifi_details, location_link
@@ -214,14 +215,14 @@ export class MessagingService {
   // Variables — only from the whitelist, and never a guest's phone, address or ID (§41)
   // ---------------------------------------------------------------------------
 
-  private propertyVars(s: PropertySettings): TemplateVars {
+  propertyVars(s: PropertySettings): TemplateVars {
     return {
       resort_name: s.name, checkout_time: s.check_out_time, check_in_time: s.check_in_time,
       reception_phone: s.reception_phone ?? s.phone, location_link: s.location_link ?? '', wifi: s.wifi_details ?? 'ask at the reception',
     };
   }
 
-  private async context(q: Queryable, propertyId: string, req: QueueRequest) {
+  async context(q: Queryable, propertyId: string, req: QueueRequest) {
     let reservationId = req.reservationId ?? null;
     let stayId = req.stayId ?? null;
     const vars: TemplateVars = {};
@@ -260,9 +261,9 @@ export class MessagingService {
 
     const { rows } = await q.query<{
       number: string; arrival: string; departure: string; guest_id: string; first_name: string; last_name: string;
-      email: string | null; preferred_language: Language; advance: string; rooms: string | null;
+      email: string | null; mobile: string | null; whatsapp_opted_in: boolean; preferred_language: Language; advance: string; rooms: string | null;
     }>(
-      `SELECT r.number, r.arrival, r.departure, g.id AS guest_id, g.first_name, g.last_name, g.email, g.preferred_language,
+      `SELECT r.number, r.arrival, r.departure, g.id AS guest_id, g.first_name, g.last_name, g.email, g.mobile, g.whatsapp_opted_in, g.preferred_language,
               COALESCE((SELECT sum(bill_effect) FROM payments p WHERE p.reservation_id = r.id), 0)::numeric(14,2) AS advance,
               (SELECT string_agg(rm.number, ', ' ORDER BY rm.number) FROM stays s JOIN rooms rm ON rm.id = s.room_id
                 WHERE s.reservation_id = r.id AND ($3::uuid IS NULL OR s.id = $3)) AS rooms
@@ -281,7 +282,7 @@ export class MessagingService {
       check_in_date: formatDate(r.arrival), check_out_date: formatDate(departure), nights: String(nightsBetween(r.arrival, departure)),
       advance_received: formatINR(r.advance), room_number: r.rooms ?? '',
     } satisfies TemplateVars);
-    return { vars, reservationId, stayId, guestId: r.guest_id, email: r.email, language: r.preferred_language };
+    return { vars, reservationId, stayId, guestId: r.guest_id, email: r.email, mobile: r.mobile, whatsappOptedIn: r.whatsapp_opted_in, language: r.preferred_language };
   }
 
   // ---------------------------------------------------------------------------
@@ -339,7 +340,11 @@ export class MessagingService {
     // Resend retains idempotency keys for 24 hours. A send interrupted beyond that window
     // needs manual delivery reconciliation; automatically repeating it could duplicate an email.
     await this.db.query(`UPDATE messages SET status='failed', failed_at=now(), last_error='Delivery is uncertain after 24 hours. Check Resend before sending again.'
-      WHERE status IN ('queued','sending') AND first_attempt_at < now() - interval '23 hours'`);
+      WHERE channel='email' AND status IN ('queued','sending') AND first_attempt_at < now() - interval '23 hours'`);
+    // Meta does not offer the Resend idempotency guarantee. A crashed/stale attempt needs review.
+    await this.db.query(`UPDATE messages SET status='failed', failed_at=now(),
+      last_error='WhatsApp delivery is uncertain after an interrupted send. Check Meta before sending again.'
+      WHERE channel='whatsapp' AND status='sending' AND send_after<=now()`);
     for (let i = 0; i < limit; i += 1) {
       // Claim only the next message, so later rows never wait for a batch's lease to expire.
       const { rows } = await this.db.query<MessageRow>(
@@ -358,10 +363,26 @@ export class MessagingService {
       }
       try {
         const s = await this.settings(this.db, m.property_id);
-        if (!s.email_enabled && m.trigger !== 'test') {
+        if (m.channel === 'email' && !s.email_enabled && m.trigger !== 'test') {
           await this.db.query(`UPDATE messages SET status='skipped', skip_reason='Email is switched off in message settings.' WHERE id=$1 AND status='sending' AND attempts=$2`, [m.id, m.attempts]);
           result.skipped += 1;
           continue;
+        }
+        if (m.channel === 'whatsapp') {
+          const { rows: allowed } = await this.db.query<{ enabled: boolean; opted_in: boolean; mobile: string | null }>(
+            `SELECT COALESCE((SELECT (value->>'enabled')::boolean FROM settings WHERE property_id=$1 AND key='whatsapp'),false) AS enabled,
+                    g.whatsapp_opted_in AS opted_in, g.mobile FROM guests g WHERE g.property_id=$1 AND g.id=$2`, [m.property_id,m.guest_id]);
+          const a=allowed[0];
+          const reason = !whatsappConfigured(this.config) || this.config.WHATSAPP_PROPERTY_ID !== m.property_id ? 'WhatsApp server credentials are incomplete.'
+            : !a?.enabled ? 'WhatsApp is switched off in settings.'
+            : !a.opted_in ? 'The guest has not agreed to WhatsApp messages.'
+            : whatsappNumber(a.mobile ?? '') !== m.recipient ? 'The guest phone number changed. Review it before sending again.' : null;
+          if (reason) {
+            await this.db.query(`UPDATE messages SET status='skipped',skip_reason=$2 WHERE id=$1 AND status='sending' AND attempts=$3`,[m.id,reason,m.attempts]);
+            result.skipped+=1; continue;
+          }
+          // Store the provider before the HTTP call, so an early callback can identify this row.
+          await this.db.query(`UPDATE messages SET provider='meta_whatsapp' WHERE id=$1 AND status='sending' AND attempts=$2`,[m.id,m.attempts]);
         }
         const payload: StoredOutgoing = m.outgoing_payload ?? {
           id: m.id, channel: m.channel, to: m.recipient,
@@ -370,7 +391,10 @@ export class MessagingService {
           attachments: (await this.attachments(m)).map((a) => ({ ...a, content: a.content.toString('base64') })),
           tags: [{ name: 'template', value: m.template_key }],
         };
-        const saved = await this.db.query(`UPDATE messages SET outgoing_payload=COALESCE(outgoing_payload,$3::jsonb), send_after=now()+make_interval(secs=>$4)
+        if (m.channel === 'whatsapp' && payload.whatsapp?.documentHeader && !payload.attachments.length) {
+          payload.attachments = (await this.attachments(m)).map(a => ({ ...a, content: a.content.toString('base64') }));
+        }
+        const saved = await this.db.query(`UPDATE messages SET outgoing_payload=$3::jsonb, send_after=now()+make_interval(secs=>$4)
           WHERE id=$1 AND status='sending' AND attempts=$2`, [m.id,m.attempts,JSON.stringify(payload),LEASE_SECONDS]);
         if (!saved.rowCount) continue; // A newer sender owns this attempt.
         const out: OutgoingMessage = { ...payload, attachments: payload.attachments.map((a) => ({ ...a, content: Buffer.from(a.content,'base64') })) };
@@ -383,7 +407,7 @@ export class MessagingService {
         result.sent += 1;
       } catch (err) {
         const message = (err as Error).message.slice(0, 500);
-        const retryable = !(err instanceof ProviderError) || err.retryable;
+        const retryable = err instanceof ProviderError ? err.retryable : m.channel === 'email';
         if (retryable && m.attempts < MAX_SEND_ATTEMPTS) {
           await this.db.query(
             `UPDATE messages SET status = 'queued', last_error = $2, send_after = now() + make_interval(secs => $3) WHERE id = $1 AND status='sending' AND attempts=$4`,
@@ -421,17 +445,25 @@ export class MessagingService {
    * A delivery report from the provider. Every report is kept in `message_events`; the message's
    * status only ever moves forward (sent → delivered → opened), and a bounce or complaint is final.
    */
-  async recordDelivery(provider: string, report: { providerMessageId: string; type: string; occurredAt: Date; detail?: string }) {
+  async recordDelivery(provider: string, report: { providerMessageId: string; type: string; occurredAt: Date; detail?: string; messageId?: string; propertyId?: string }) {
     const status = ({
       'email.sent': 'sent', 'email.delivered': 'delivered', 'email.opened': 'opened', 'email.clicked': 'opened',
+      'whatsapp.sent': 'sent', 'whatsapp.delivered': 'delivered', 'whatsapp.read': 'opened', 'whatsapp.failed': 'failed',
       'email.bounced': 'bounced', 'email.complained': 'complained', 'email.delivery_delayed': null, 'email.failed': 'failed',
     } as Record<string, string | null>)[report.type];
     return this.db.tx({}, async (q) => {
       const { rows } = await q.query<{ id: string; status: string }>(
-        `SELECT id, status FROM messages WHERE provider = $1 AND provider_message_id = $2 FOR UPDATE`, [provider, report.providerMessageId],
+         `SELECT id,status FROM messages WHERE provider=$1 AND
+          (provider_message_id=$2 OR ($1='meta_whatsapp' AND provider_message_id IS NULL AND id=$3::uuid AND property_id=$4::uuid AND channel='whatsapp'))
+          FOR UPDATE`, [provider,report.providerMessageId,report.messageId ?? null,report.propertyId ?? null],
       );
       const m = rows[0];
       if (!m) return { matched: false };
+      if (provider === 'meta_whatsapp') {
+        await q.query(`UPDATE messages SET provider_message_id=COALESCE(provider_message_id,$2),sent_at=COALESCE(sent_at,$3) WHERE id=$1`,[m.id,report.providerMessageId,report.occurredAt]);
+        const duplicate=await q.query<{id:string}>(`SELECT id FROM message_events WHERE message_id=$1 AND status=$2 AND occurred_at=$3`,[m.id,report.type,report.occurredAt]);
+        if (duplicate.rows.length) return {matched:true};
+      }
       await q.query(
         `INSERT INTO message_events (message_id, status, detail, occurred_at) VALUES ($1,$2,$3,$4)`,
         [m.id, report.type, report.detail?.slice(0, 500) ?? null, report.occurredAt],

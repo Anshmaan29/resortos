@@ -29,6 +29,14 @@ const envSchema = z.object({
   /** Svix signing secret for Resend delivery webhooks ("whsec_…"). Without it the webhook refuses everything. */
   RESEND_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
   RESEND_API_URL: z.string().url().default('https://api.resend.com'),
+  /** Direct Meta Cloud API; separate from the permanent Resend email provider. */
+  WHATSAPP_ACCESS_TOKEN: z.string().min(20).optional(),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().regex(/^\d+$/).optional(),
+  WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().regex(/^\d+$/).optional(),
+  WHATSAPP_PROPERTY_ID: z.string().uuid().optional(),
+  WHATSAPP_APP_SECRET: z.string().min(16).optional(),
+  WHATSAPP_VERIFY_TOKEN: z.string().min(32).optional(),
+  WHATSAPP_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/).default('v25.0'),
   /** Optional one-way Sheets mirror. Credentials stay on the server, never in guest pages. */
   GOOGLE_SHEETS_ID: z.string().regex(/^[A-Za-z0-9_-]{20,150}$/).optional(),
   GOOGLE_SERVICE_ACCOUNT_JSON: z.string().optional(),
