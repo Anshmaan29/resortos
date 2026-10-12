@@ -33,7 +33,7 @@ export default function ExpressCheckInPage() {
   const [mealPlan, setMealPlan] = useState<MealPlanCode>('EP');
   const [rate, setRate] = useState('');
   const [gstRate, setGstRate] = useState('');
-  const [extraRate, setExtraRate] = useState('');
+  const [extraRate, setExtraRate] = useState('0');
   const [whatsappOptedIn, setWhatsappOptedIn] = useState(true);
   const key = useRef<{ body: string; key: string } | null>(null);
   const validMoney = (v: string) => /^\d+(\.\d{1,2})?$/.test(v);

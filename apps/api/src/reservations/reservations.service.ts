@@ -155,9 +155,18 @@ export class ReservationsService {
         quotes.push(await this.rates.quoteFromStoredNights(q, propertyId, room.roomTypeId, ex.row.rate_plan_id, nights, room.gstRate === undefined ? ex.row.gst_rate_override : room.gstRate));
         reused.push(true);
       } else {
+        // An existing custom package stays an agreement when dates/party size change. Staff can
+        // explicitly replace its room price; unchanged extra-guest agreements are kept as well.
+        const keepPackage = !!ex?.row.includes_meal_plan && room.nightlyRate === undefined
+          && ex.row.room_type_id === room.roomTypeId && ex.row.meal_plan === room.mealPlan;
+        const keepExtras = keepPackage && ex!.row.adults === room.adults && sameAges(ex!.row.child_ages, room.childAges);
         quotes.push(await this.rates.quote(q, propertyId, {
           roomTypeId: room.roomTypeId, arrival, departure, adults: room.adults, childAges: room.childAges,
-          ratePlanId: room.ratePlanId, mealPlan: room.mealPlan, manualRate: room.nightlyRate, includesMealPlan: room.includesMealPlan, gstRate: room.gstRate === undefined ? ex?.row.gst_rate_override : room.gstRate, extraPersonRate: room.extraPersonRate,
+          ratePlanId: room.ratePlanId, mealPlan: room.mealPlan,
+          manualRate: room.nightlyRate ?? (keepPackage ? ex!.row.nightly_rate : undefined),
+          includesMealPlan: room.includesMealPlan ?? keepPackage,
+          gstRate: room.gstRate === undefined ? ex?.row.gst_rate_override : room.gstRate,
+          extraPersonRate: room.extraPersonRate ?? (keepExtras ? ex!.nights.at(-1)?.extra_person_amount : undefined),
         }));
         reused.push(false);
       }
@@ -220,7 +229,7 @@ export class ReservationsService {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
         [actor.user.propertyId, reservationId, room.roomTypeId, input.arrival, input.departure, room.adults, room.childAges,
           quote.ratePlanId, room.mealPlan, quote.averageRoomRate, rateAuthorisedBy, actor.user.id,
-          room.includesMealPlan ?? (priced.reused[i] ? previous?.includes_meal_plan ?? false : false), quote.gstRate ?? null],
+          quote.includesMealPlan ?? (priced.reused[i] ? previous?.includes_meal_plan ?? false : false), quote.gstRate ?? null],
       );
       const rrId = rows[0]!.id;
       for (const n of quote.nights) {

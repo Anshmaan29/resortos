@@ -40,6 +40,9 @@ describe('estimate with GST', () => {
     const exempt = await patch(desk, created.body.id, editBody(edited.body, {}, { gstRate: '0' })).expect(200);
     expect(exempt.body.estimate.taxTotal).toBe('0.00');
     expect(exempt.body.estimate.grandTotal).toBe('7000.00');
+    const extended = await patch(desk, created.body.id, editBody(exempt.body, { departure: '2026-12-08' })).expect(200);
+    expect(extended.body.rooms[0]).toMatchObject({ nightlyRate: '3100.25', includesMealPlan: true, roomTotal: '9300.75', extrasTotal: '1199.25', mealTotal: '0.00' });
+    expect(extended.body.estimate.grandTotal).toBe('10500.00');
     const invalid = await post(desk, '/reservations/estimate', { arrival: body.arrival, departure: body.departure, rooms: [{ ...body.rooms[0], gstRate: '101' }] }, null);
     expect(invalid.status).toBe(400);
     const noPrice = await post(desk, '/reservations/estimate', { arrival: body.arrival, departure: body.departure, rooms: [{ ...body.rooms[0], nightlyRate: undefined }] }, null);

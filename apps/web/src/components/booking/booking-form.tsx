@@ -38,7 +38,7 @@ interface RoomLine {
 
 type GuestChoice = Pick<Guest, 'id' | 'fullName' | 'mobile' | 'city' | 'isVip' | 'whatsappOptedIn' | 'whatsappConsentAt'> & { stays?: number };
 
-const newLine = (roomTypeId = ''): RoomLine => ({ key: crypto.randomUUID(), roomTypeId, roomId: '', adults: 2, childAges: [], mealPlan: 'EP', manualRate: '', useCustomPrice: true, gstRate: '', manualExtras: '' });
+const newLine = (roomTypeId = ''): RoomLine => ({ key: crypto.randomUUID(), roomTypeId, roomId: '', adults: 2, childAges: [], mealPlan: 'EP', manualRate: '', useCustomPrice: true, gstRate: '', manualExtras: '0' });
 const validRate = (v: string) => (/^\d+(\.\d{1,2})?$/.test(v) ? v : undefined);
 
 function useDebounced<T>(value: T, ms = 300) {
@@ -452,7 +452,7 @@ function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short
             <span className="w-10 text-center text-lg font-semibold num" aria-live="polite">{line.adults}</span>
             <Button variant="outline" size="icon" disabled={!!type && guests >= type.maxOccupancy} onClick={() => onChange({ adults: line.adults + 1 })} aria-label="More adults"><Plus className="h-4 w-4" /></Button>
           </div>
-          {type && <span className="text-xs text-text-2">Max {type.maxOccupancy} guests · {type.baseOccupancy} included in rate</span>}
+          {type && <span className="text-xs text-text-2">Max {type.maxOccupancy} guests{!line.useCustomPrice && ` · standard tariff includes ${type.baseOccupancy}`}</span>}
         </div>
         <div className="flex flex-col gap-1.5">
           <span className="text-sm font-medium text-text-2">Children (ages)</span>
@@ -479,7 +479,7 @@ function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short
         <Field label="Room pricing">{(id) => (
           <Select id={id} value={line.useCustomPrice ? 'custom' : 'configured'} onChange={(e) => onChange({ useCustomPrice: e.target.value === 'custom' })}>
             <option value="custom">Enter custom price</option>
-            <option value="configured">{line.reservationRoomId ? 'Keep agreed / use standard tariff' : 'Use standard tariff'}</option>
+            <option value="configured">{line.reservationRoomId ? 'Keep agreed price' : 'Use standard tariff'}</option>
           </Select>
         )}</Field>
         <div className="grid grid-cols-[2fr_1fr] gap-3 sm:col-span-2">

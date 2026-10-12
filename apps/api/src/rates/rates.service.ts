@@ -61,6 +61,7 @@ export interface TaxEstimate {
 
 export interface Quote {
   gstRate?: MoneyString | null;
+  includesMealPlan?: boolean;
   roomTypeId: string;
   ratePlanId: string | null;
   nights: NightQuote[];
@@ -244,7 +245,7 @@ export class RatesService {
     });
 
     return { ...this.summarise(input.roomTypeId, ratePlanId, nightQuotes, minRate, minStay,
-      { chargeableAdults, freeChildren, payingChildren, extraAdults, extraChildren }), gstRate: input.gstRate };
+      { chargeableAdults, freeChildren, payingChildren, extraAdults, extraChildren }), gstRate: input.gstRate, includesMealPlan: input.includesMealPlan ?? false };
   }
 
   // ---------------- configuration (owner) ----------------
