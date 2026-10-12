@@ -6,6 +6,7 @@ import { AppError } from '../common/errors';
 import type { Actor } from '../common/request-context';
 import { DbService, type Queryable } from '../db/db.service';
 import { GRC_FONT_PATH } from '../stays/grc-pdf';
+import { addPdfBranding } from '../printing/branding';
 import { PoliceRegisterService } from '../compliance/police-register.service';
 import { csv, workbook, type Sheet } from './xlsx';
 
@@ -370,6 +371,7 @@ export class ExportsService {
     doc.registerFont('body', GRC_FONT_PATH);
     doc.registerFont('body-bold', GRC_FONT_PATH);
     doc.font('body').fillColor('#111111');
+    addPdfBranding(doc);
     doc.fontSize(13).text(sheet.title);
     doc.fontSize(9).fillColor('#555555').text(from === to ? formatDate(from) : `${formatDate(from)} – ${formatDate(to)}`);
     doc.moveDown(0.5);

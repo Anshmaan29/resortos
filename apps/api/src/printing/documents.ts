@@ -4,6 +4,7 @@ import {
   toMoneyString, type PaymentEntryType, type PaymentMethod,
 } from '@resortos/shared';
 import { GRC_FONT_PATH } from '../stays/grc-pdf';
+import { addPdfBranding } from './branding';
 
 /**
  * Printed documents (spec §36): the A4 invoice, the payment receipt (A4 or an 80 mm thermal roll)
@@ -42,6 +43,7 @@ function start(opts: { title: string; author: string; at: Date; size: [number, n
   });
   doc.registerFont('body', GRC_FONT_PATH);
   doc.font('body').fillColor(INK);
+  addPdfBranding(doc);
   return { doc, done };
 }
 
@@ -102,6 +104,7 @@ export function renderInvoicePdf(input: InvoicePrint): Promise<Buffer> {
   const width = A4.width - A4.margin * 2;
 
   // Seller, left; the title block takes the right 200 pt, so the seller never runs under it.
+  const titleY = doc.y;
   const sellerW = width - 210;
   bold(doc, input.seller.legalName, 15, { width: sellerW });
   doc.fontSize(8.5).fillColor(MUTED).text(input.seller.address, { width: sellerW });
@@ -109,7 +112,6 @@ export function renderInvoicePdf(input: InvoicePrint): Promise<Buffer> {
   if (input.seller.gstin) { doc.fillColor(INK).fontSize(9).text(`GSTIN ${input.seller.gstin} · State ${state(input.seller.stateCode)}`, { width: sellerW }); }
 
   // Title block, right
-  const titleY = A4.margin;
   bold(doc, TITLES[input.documentType], 13, { width: 200, align: 'right' }, { x: x0 + width - 200, y: titleY });
   doc.fontSize(9).fillColor(INK).text(`No. ${input.number}`, x0 + width - 200, titleY + 20, { width: 200, align: 'right' });
   doc.text(`Date ${formatDate(input.invoiceDate)}`, x0 + width - 200, titleY + 33, { width: 200, align: 'right' });
@@ -155,7 +157,7 @@ export function renderInvoicePdf(input: InvoicePrint): Promise<Buffer> {
       Number(l.discount) ? inr(l.discount) : '—', inr(l.taxable), `${Number(l.gstRate)}%`,
     ];
     const h = Math.max(12, doc.fontSize(8).heightOfString(l.description, { width: COLS[1]!.w - 4 }) + 3);
-    if (y + h > A4.height - A4.margin - 170) { doc.addPage(); y = A4.margin; }
+    if (y + h > A4.height - A4.margin - 170) { doc.addPage(); y = doc.y; }
     doc.fontSize(8).fillColor(INK);
     COLS.reduce((x, c, i) => { doc.text(cells[i]!, x, y, { width: c.w - 4, align: c.align }); return x + c.w; }, x0);
     y += h;
@@ -235,7 +237,7 @@ export function renderReceiptPdf(input: ReceiptPrint, paper: Paper): Promise<Buf
   const margin = thermal ? THERMAL.margin : A4.margin;
   // A roll is cut once: the page is as long as the receipt, worked out from how many rows it has.
   const rows = 9 + [input.guestMobile, input.roomNumber, input.billNumber, input.accountName, input.reference, input.reason].filter(Boolean).length;
-  const size: [number, number] = thermal ? [THERMAL.width, 170 + rows * 11 + (input.reason ? 20 : 0)] : [A4.width, A4.height];
+  const size: [number, number] = thermal ? [THERMAL.width, 222 + rows * 11 + (input.reason ? 20 : 0)] : [A4.width, A4.height];
   const title = input.isReversal ? `REVERSAL OF ${input.reverses}` : RECEIPT_TITLE[input.entryType];
   const { doc, done } = start({ title: `${title} ${input.number}`, author: input.seller.legalName, at: input.receivedAt, size, margin });
   const s = thermal ? 0.82 : 1;
@@ -302,7 +304,7 @@ export function renderShiftReportPdf(input: ShiftReportPrint, paper: Paper): Pro
   const thermal = paper === 'thermal_80';
   const width = thermal ? THERMAL.width - THERMAL.margin * 2 : A4.width - A4.margin * 2;
   const margin = thermal ? THERMAL.margin : A4.margin;
-  const size: [number, number] = thermal ? [THERMAL.width, 300 + input.payments.length * 12 + input.accounts.length * 12] : [A4.width, A4.height];
+  const size: [number, number] = thermal ? [THERMAL.width, 352 + input.payments.length * 12 + input.accounts.length * 12] : [A4.width, A4.height];
   const at = input.closedAt ?? input.openedAt;
   const { doc, done } = start({ title: `Shift report ${input.openedBy} ${input.businessDate}`, author: input.seller.legalName, at, size, margin });
   const s = thermal ? 0.82 : 1;

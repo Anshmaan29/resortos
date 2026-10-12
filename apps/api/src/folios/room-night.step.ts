@@ -19,6 +19,8 @@ interface PostableRow {
   meal_amount: string;
   room_type_name: string;
   meal_plan: string;
+  includes_meal_plan: boolean;
+  gst_rate_override: string | null;
 }
 
 /** The three parts of a room night, and the tax category each falls into (docs/folio.md). */
@@ -57,7 +59,7 @@ export class RoomNightPostingStep implements NightAuditStep {
     const folio = await this.folios.ensureForStay(q, actor, stayId);
     const { rows } = await q.query<PostableRow & { night_date: string }>(
       `SELECT s.id AS stay_id, rm.id AS room_id, rm.number AS room_number, '' AS guest_name,
-              n.night_date, n.room_rate, n.extra_person_amount, n.meal_amount, rt.name AS room_type_name, rr.meal_plan
+              n.night_date, n.room_rate, n.extra_person_amount, n.meal_amount, rt.name AS room_type_name, rr.meal_plan, rr.includes_meal_plan, rr.gst_rate_override
          FROM stays s JOIN reservation_rooms rr ON rr.id = s.reservation_room_id
          JOIN reservation_room_nights n ON n.reservation_room_id = rr.id
          JOIN rooms rm ON rm.id = COALESCE((SELECT sh.from_room_id FROM room_shifts sh WHERE sh.stay_id=s.id AND sh.business_date>n.night_date ORDER BY sh.business_date,sh.created_at LIMIT 1),s.room_id) JOIN room_types rt ON rt.id = rm.room_type_id
@@ -80,13 +82,13 @@ export class RoomNightPostingStep implements NightAuditStep {
         if (closedMissing.length) throw new AppError(ERROR_CODES.CONFLICT, 'An agreed room charge is missing from a closed business date. Ask the owner to reconcile the day’s records before checkout.');
         const inserted = await q.query<{ id: string }>(
           `INSERT INTO folio_lines (property_id, folio_id, business_date, line_type, name, quantity, unit_rate, amount,
-                                    tax_category, source, room_id, created_by)
-           SELECT $1,$2,$3::date,$4,$5,1,$6,$6,$7,'night_audit',$8,$9
+                                    tax_category, source, room_id, created_by, gst_rate_override)
+           SELECT $1,$2,$3::date,$4,$5,1,$6,$6,$7,'night_audit',$8,$9,$10
             WHERE NOT EXISTS (SELECT 1 FROM folio_lines WHERE folio_id = $2 AND business_date = $3::date AND line_type = $4 AND source = 'night_audit')
            ON CONFLICT DO NOTHING RETURNING id`,
           [actor.user.propertyId, folio.id, row.night_date, part.lineType,
-           part.lineType === 'room_night' ? `Room — ${row.room_type_name}` : part.lineType === 'meal' ? `Meal plan (${row.meal_plan})` : 'Extra person',
-           amount, part.taxCategory, row.room_id, actor.user.id],
+           part.lineType === 'room_night' ? `Room — ${row.room_type_name}${row.includes_meal_plan && row.meal_plan !== 'EP' ? ` · ${row.meal_plan} included` : ''}` : part.lineType === 'meal' ? `Meal plan (${row.meal_plan})` : 'Extra person',
+           amount, part.taxCategory, row.room_id, actor.user.id, row.gst_rate_override],
         );
         posted += inserted.rowCount ?? 0;
       }
@@ -103,7 +105,7 @@ export class RoomNightPostingStep implements NightAuditStep {
       `SELECT s.id AS stay_id, s.room_id, rm.number AS room_number,
               trim(g.first_name || ' ' || g.last_name) AS guest_name,
               n.room_rate, n.extra_person_amount, n.meal_amount,
-              rt.name AS room_type_name, rr.meal_plan
+              rt.name AS room_type_name, rr.meal_plan, rr.includes_meal_plan, rr.gst_rate_override
          FROM stays s
          JOIN reservation_rooms rr ON rr.id = s.reservation_room_id
          JOIN reservation_room_nights n ON n.reservation_room_id = rr.id AND n.night_date = $2::date
@@ -155,18 +157,18 @@ export class RoomNightPostingStep implements NightAuditStep {
         const amount = row[part.column];
         if (!money(amount).gt(0)) continue;
         const name = part.lineType === 'room_night'
-          ? `Room — ${row.room_type_name}`
+          ? `Room — ${row.room_type_name}${row.includes_meal_plan && row.meal_plan !== 'EP' ? ` · ${row.meal_plan} included` : ''}`
           : part.lineType === 'meal'
             ? `Meal plan (${row.meal_plan})`
             : 'Extra person';
 
         const { rowCount } = await ctx.q.query(
           `INSERT INTO folio_lines (property_id, folio_id, business_date, line_type, name, quantity, unit_rate, amount,
-                                    tax_category, source, room_id, created_by)
-           SELECT $1,$2,$3::date,$4,$5,1,$6,$6,$7,'night_audit',$8,$9
+                                    tax_category, source, room_id, created_by, gst_rate_override)
+           SELECT $1,$2,$3::date,$4,$5,1,$6,$6,$7,'night_audit',$8,$9,$10
             WHERE NOT EXISTS (SELECT 1 FROM folio_lines WHERE folio_id=$2 AND business_date=$3::date AND line_type=$4 AND source='night_audit')
            ON CONFLICT DO NOTHING`,
-          [ctx.propertyId, folio.id, ctx.businessDate, part.lineType, name, amount, part.taxCategory, row.room_id, ctx.actor.user.id],
+          [ctx.propertyId, folio.id, ctx.businessDate, part.lineType, name, amount, part.taxCategory, row.room_id, ctx.actor.user.id, row.gst_rate_override],
         );
         if (rowCount) {
           posted += 1;

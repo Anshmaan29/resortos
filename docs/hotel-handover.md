@@ -4,7 +4,7 @@
 
 Open https://pms.voittoventures.com on the reception computer or phone.
 
-- Make a booking, choose the room and enter the agreed room price. Add extra adult/child charges per night if needed. Add an extra bed or meal by its name and agreed price in the bill.
+- Make a booking, choose the room and meal plan (EP, CP, MAP or AP), then enter the agreed room price per night. The custom price includes the chosen meal plan. GST % sits beside the price: leave it blank for hotel rules, or enter the agreed percentage. Enter a total extra adult/child price per night if needed; 0 includes them without an extra charge. Extra beds and additional meals can be added by name and agreed price on the bill. Express check-in offers the same pricing controls.
 - Saving a confirmed booking automatically queues email and WhatsApp confirmation when the guest has the necessary contact details and WhatsApp agreement. No separate Send action is needed. A returning guest's recorded refusal is respected. Welcome messages, payment receipts and finalized invoices also queue automatically.
 - The booking/stay's **Guest messages** panel shows separate Email and WhatsApp statuses and refreshes automatically. **Sent** means the provider accepted it; **Delivered** and WhatsApp **Read** need delivery reports. **Not sent** explains missing contact details or an opt-out. Home shows **Guest messages need attention** for the latest failed/bounced messages; open that record to review the reason. Older attempts stay in the history. Use **Resend** only after checking delivery; sending another copy asks for confirmation.
 - Check in: enter guest details, then show the scanner QR. Scan it with the phone camera, or use **Open scanner on this phone** when working directly on a phone. No guest login is needed.
@@ -12,9 +12,9 @@ Open https://pms.voittoventures.com on the reception computer or phone.
 - Phone photos are re-encoded without GPS/EXIF metadata. Guest photos target at most 200 KB / 1200 px; documents target at most 600 KB / 2000 px. Compression does not recognise a face or authenticate an ID. Reception must check the guest and legibility.
 - A lost connection queues photos on the phone where browser storage is available. Restricted/private browsers may need the page to stay open. The app explains when an upload is blocked or a link has expired.
 - A retake replaces the active face/ID-side/signature for that guest. Previous attempts do not become extra required documents. Signatures are optional; draw one, upload a picture, or continue without one.
-- Checkout: open the stay, review room nights and extra charges, record any balance/refund with its actual payment method, then complete checkout. Print/download the final invoice and receipt. A message failure does not undo checkout. The room becomes dirty for housekeeping; mark it clean before assigning it again.
+- Checkout: on Home choose **Check out**, then **Check out** beside the room in **In house**. The settlement dialog opens directly. Review room nights and extra charges, record any balance/refund with its actual payment method, then complete checkout. Print/download the final invoice and receipt. A message failure does not undo checkout. The room becomes dirty for housekeeping; mark it clean before assigning it again.
 - If a save loses its server response, refresh the record and check whether it was saved before trying again. Do not make a second payment just because the connection failed.
-- GST: reception can enter editable, dated tax rules in **Settings → Tax**. Get the room and food percentages from the accountant before issuing real tax invoices. Rates have deliberately not been guessed. Settings changes do not rewrite final invoices.
+- GST: the booking-specific percentage is saved through checkout and invoicing. For hotel defaults, reception can enter editable, dated tax rules in **Settings → Tax**. Get the room and food percentages from the accountant before issuing real tax invoices. Rates have deliberately not been guessed. Settings changes do not rewrite final invoices.
 - The owner downloads **Records → Download all records (Excel)** for all dates, or individual Excel/CSV reports by date. This contains operational records, not a restorable database image. Use **Download** next to a guest/stay document to save its photo or PDF.
 
 ## Storage and Sheets
@@ -55,3 +55,7 @@ Guest signatures are optional. In Registration & signature, reception may draw a
 ### Today's date and day closing
 
 The Today date updates automatically in India time and is used for new bookings and check-in. A separate Day closing date can show an older day until Night audit is completed. An unfinished audit no longer blocks a guest arriving today. Review outstanding arrivals and close the shift on the Night audit screen before completing day closing; the software does not mark guests as no-shows or close accounts automatically.
+
+All newly rendered PDF pages carry the supplied Voitto logo and VOITTO VENTURES masthead. Guest welcome email and the approved WhatsApp welcome template include the editable hotel Wi-Fi details. Existing archived registration files remain unchanged.
+
+The extra-guest price field appears only when adults exceed the room’s included occupancy or a child is present. Removing the last extra adult/child hides the field, clears its old value and sends zero extra charges in the preview and saved booking. This also applies to Express check-in’s adult count.

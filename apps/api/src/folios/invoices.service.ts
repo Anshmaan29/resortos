@@ -17,6 +17,7 @@ type DocumentType = 'tax_invoice' | 'bill_of_supply' | 'credit_note' | 'debit_no
 interface LiveLine {
   id: string; business_date: string; line_type: FolioLineType; name: string; quantity: string; unit_rate: string;
   amount: string; tax_category: string; applies_to_line_id: string | null; room_number: string | null;
+  gst_rate_override: string | null;
 }
 
 interface Parties {
@@ -62,7 +63,7 @@ export class InvoicesService {
   private async uninvoiced(q: Queryable, folioId: string): Promise<LiveLine[]> {
     const { rows } = await q.query<LiveLine>(
       `SELECT l.id, l.business_date, l.line_type, l.name, l.quantity, l.unit_rate, l.amount, l.tax_category,
-              l.applies_to_line_id, rm.number AS room_number
+              l.applies_to_line_id, l.gst_rate_override, rm.number AS room_number
          FROM folio_lines l
          LEFT JOIN rooms rm ON rm.id = l.room_id
         WHERE l.folio_id = $1 AND l.voided_at IS NULL

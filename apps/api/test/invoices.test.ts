@@ -20,10 +20,11 @@ const ownerId = async () => (await sql<{ id: string }>(`SELECT id FROM users WHE
 const billOf = async (stayId: string, agent: Agent = desk) => (await agent.get(`/api/v1/stays/${stayId}/bill`).expect(200)).body;
 
 /** A guest in house, with a room night posted as night audit would post it. */
-async function stay(room: string, type: string, nights: { date: string; rate: string }[] = [{ date: '2026-09-16', rate: '4000.00' }]) {
+async function stay(room: string, type: string, nights: { date: string; rate: string }[] = [{ date: '2026-09-16', rate: '4000.00' }], agreed: object = {}) {
   mobile += 1;
   const created = await post(owner, '/reservations', {
     ...booking({ roomTypeId: f.type(type), roomId: f.room(room), arrival: '2026-09-16', departure: '2026-09-18', adults: 1 }),
+    rooms: [{ roomTypeId: f.type(type), roomId: f.room(room), adults: 1, ...agreed }],
     guest: { firstName: 'Inv', lastName: `Guest${mobile}`, mobile: String(mobile) },
   }).expect(201);
   const [draft] = await sql<{ id: string }>(
@@ -326,5 +327,30 @@ describe('the owner review list (spec §34.4)', () => {
     const all = (await owner.get('/api/v1/owner-review?includeSeen=true').expect(200)).body;
     expect(all.find((i: any) => i.key === item.key).seen).toBe(true);
     await expect(sql(`DELETE FROM owner_review_seen`)).rejects.toThrow(/kept/);
+  });
+});
+
+
+describe('agreed booking GST reaches checkout and the invoice', () => {
+  it('uses the entered package and extra guest rates without adding meal tariffs again', async () => {
+    await post(owner, '/rooms', { number: 'QPRICE', roomTypeId: f.type('DLX'), unitType: 'room' }, null).expect(201);
+    f = await fixtures(sql);
+    const s = await stay('QPRICE', 'DLX', [], { mealPlan: 'AP', nightlyRate: '3200', includesMealPlan: true, extraPersonRate: '300', gstRate: '7.5' });
+    await desk.get(`/api/v1/stays/${s.stayId}/checkout-preview`).expect(200);
+    const bill = await billOf(s.stayId);
+    expect(bill.tax).toMatchObject({ taxTotal: '262.50', grandTotal: '3763.00' });
+    expect(bill.lines.filter((l: any) => l.lineType === 'meal')).toHaveLength(0);
+    expect(bill.lines.filter((l: any) => l.lineType !== 'discount').every((l: any) => l.gstRate === '7.50')).toBe(true);
+    const preview = (await post(desk, `/folios/${s.folioId}/invoice/preview`, {}, null).expect(200)).body;
+    expect(preview.groups.map((g: any) => g.ratePercent)).toEqual(['7.50']);
+    await payInFull(s.folioId, s.stayId);
+    await post(desk, `/stays/${s.stayId}/checkout`, {}).expect(200);
+    const closed = await billOf(s.stayId);
+    expect(closed.balance).toBe('0.00');
+    const [invoice] = await sql(`SELECT grand_total FROM invoices WHERE folio_id=$1`, [s.folioId]);
+    expect(invoice.grand_total).toBe('3763.00');
+    const lines = await sql(`SELECT gst_rate FROM invoice_lines WHERE invoice_id IN (SELECT id FROM invoices WHERE folio_id=$1)`, [s.folioId]);
+    expect(lines.every((l: any) => l.gst_rate === '7.50')).toBe(true);
+    await expect(sql(`UPDATE folio_lines SET gst_rate_override=18 WHERE folio_id=$1`, [s.folioId])).rejects.toThrow(/never edited/);
   });
 });

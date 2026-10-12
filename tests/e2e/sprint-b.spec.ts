@@ -12,7 +12,7 @@ test('express check-in: one form creates the walk-in booking and opens the whole
   await loginAs(page, 'priya', 'Aravali#Desk26');
   await page.getByRole('link', { name: 'Express check-in' }).click();
   await page.waitForURL('/check-in/express');
-  await expect(page.getByLabel('Meal plan')).toHaveCount(0);
+  await expect(page.getByLabel('Meal plan')).toBeVisible();
   await page.getByLabel('First name').fill('Arjun');
   await page.getByLabel('Mobile').fill('9829012345');
   // Whichever type still has a clean, free room after the earlier specs, and the first such room.
@@ -24,6 +24,10 @@ test('express check-in: one form creates the walk-in booking and opens the whole
     if (await rooms.first().isVisible().catch(() => false)) break;
   }
   await rooms.first().click();
+  await page.getByLabel('Meal plan').selectOption('CP');
+  await page.getByLabel('Room price per night').fill('6000');
+  await page.getByLabel('GST %').fill('5');
+  await page.getByLabel('Extra guest price per night').fill('0');
   await page.getByRole('button', { name: 'Continue to IDs and signature' }).click();
   await page.waitForURL(/\/check-in\/express\/[0-9a-f-]{36}$/);
   await expect(page.getByRole('heading', { name: 'Express check-in · Arjun' })).toBeVisible();

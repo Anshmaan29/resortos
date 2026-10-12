@@ -28,6 +28,7 @@ interface LineRow {
   voided_at: Date | null; void_reason: string | null; voided_by_name: string | null;
   applies_to_line_id: string | null; discount_group_id: string | null; discount_percent: string | null;
   discount_reason: string | null;
+  gst_rate_override: string | null;
 }
 
 export interface BillTax {
@@ -355,7 +356,7 @@ export class FolioService {
    * charge it points at, and that charge is taxed on what is left — which is what lets a discount
    * move a room night across the ₹7,500 slab (§30.2).
    */
-  async billTax(q: Queryable, propertyId: string, live: Pick<LineRow, 'id' | 'line_type' | 'amount' | 'tax_category' | 'business_date' | 'applies_to_line_id'>[]): Promise<BillTax> {
+  async billTax(q: Queryable, propertyId: string, live: (Pick<LineRow, 'id' | 'line_type' | 'amount' | 'tax_category' | 'business_date' | 'applies_to_line_id'> & { gst_rate_override?: string | null })[]): Promise<BillTax> {
     const discounts = new Map<string, Decimal>();
     for (const d of live) {
       if (d.line_type === 'discount' && d.applies_to_line_id) {
@@ -369,6 +370,7 @@ export class FolioService {
         taxCategory: l.tax_category as TaxableLine['taxCategory'],
         dateOfSupply: l.business_date,
         taxableValue: net,
+        ratePercentOverride: l.gst_rate_override ?? undefined,
         // Accommodation is slab-rated per room per night on the value actually charged, so the unit
         // value is this one night's value after discount, not the running total.
         ...(l.tax_category === 'accommodation' ? { unitValue: net } : {}),
@@ -381,7 +383,7 @@ export class FolioService {
       return {
         available: true, message: null, taxTotal: computed.taxTotal, roundOff: computed.roundOff,
         grandTotal: computed.grandTotal, groups: computed.groups,
-        usesPlaceholderRates: computed.lines.some((l) => placeholderIds.has(l.ruleId)),
+        usesPlaceholderRates: computed.lines.some((l) => l.ratePercentOverride === undefined && placeholderIds.has(l.ruleId)),
         lines: computed.lines.map((l) => ({ lineId: l.key, net: l.taxableValue, ratePercent: l.ratePercent, sac: l.sac })),
       };
     } catch (err) {

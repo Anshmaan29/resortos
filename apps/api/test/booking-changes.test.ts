@@ -28,6 +28,26 @@ function editBody(d: any, patch: Record<string, unknown> = {}, roomPatch: Record
 const patch = (agent: Agent, id: string, body: unknown) => agent.patch(`/api/v1/reservations/${id}`).set('x-resortos', '1').set('idempotency-key', `edit-${Math.random().toString(36).slice(2)}-key`).send(body as object);
 
 describe('estimate with GST', () => {
+  it('stores custom plan-inclusive prices, extra guests and GST through an unchanged edit', async () => {
+    const body = { ...booking({ roomTypeId: f.type('DLX'), arrival: '2026-12-05', departure: '2026-12-07' }),
+      rooms: [{ roomTypeId: f.type('DLX'), adults: 2, mealPlan: 'AP', nightlyRate: '3100.25', includesMealPlan: true, extraPersonRate: '399.75', gstRate: '7.5' }] };
+    const created = await post(desk, '/reservations', body).expect(201);
+    expect(created.body.rooms[0]).toMatchObject({ mealPlan: 'AP', nightlyRate: '3100.25', includesMealPlan: true, gstRate: '7.50', roomTotal: '6200.50', extrasTotal: '799.50', mealTotal: '0.00' });
+    expect(created.body.estimate).toMatchObject({ taxableTotal: '7000.00', taxTotal: '525.00', grandTotal: '7525.00' });
+    const edited = await patch(desk, created.body.id, editBody(created.body, { specialRequests: 'Plan price agreed' })).expect(200);
+    expect(edited.body.rooms[0]).toMatchObject({ includesMealPlan: true, gstRate: '7.50', mealTotal: '0.00' });
+    expect(edited.body.estimate.grandTotal).toBe('7525.00');
+    const exempt = await patch(desk, created.body.id, editBody(edited.body, {}, { gstRate: '0' })).expect(200);
+    expect(exempt.body.estimate.taxTotal).toBe('0.00');
+    expect(exempt.body.estimate.grandTotal).toBe('7000.00');
+    const extended = await patch(desk, created.body.id, editBody(exempt.body, { departure: '2026-12-08' })).expect(200);
+    expect(extended.body.rooms[0]).toMatchObject({ nightlyRate: '3100.25', includesMealPlan: true, roomTotal: '9300.75', extrasTotal: '1199.25', mealTotal: '0.00' });
+    expect(extended.body.estimate.grandTotal).toBe('10500.00');
+    const invalid = await post(desk, '/reservations/estimate', { arrival: body.arrival, departure: body.departure, rooms: [{ ...body.rooms[0], gstRate: '101' }] }, null);
+    expect(invalid.status).toBe(400);
+    const noPrice = await post(desk, '/reservations/estimate', { arrival: body.arrival, departure: body.departure, rooms: [{ ...body.rooms[0], nightlyRate: undefined }] }, null);
+    expect(noPrice.status).toBe(400);
+  });
   it('breaks down room and meals and estimates GST from the dated tax rules', async () => {
     const res = await post(desk, '/reservations/estimate', {
       arrival: '2026-10-06', departure: '2026-10-07', rooms: [{ roomTypeId: f.type('DLX'), adults: 2, mealPlan: 'CP' }],

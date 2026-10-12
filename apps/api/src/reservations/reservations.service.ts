@@ -152,12 +152,21 @@ export class ReservationsService {
         && (room.ratePlanId ?? ex.row.rate_plan_id) === ex.row.rate_plan_id && ex.row.arrival === arrival && ex.row.departure === departure;
       if (unchanged) {
         const nights = room.extraPersonRate === undefined ? ex.nights : ex.nights.map((night) => ({ ...night, extra_person_amount: room.extraPersonRate! }));
-        quotes.push(await this.rates.quoteFromStoredNights(q, propertyId, room.roomTypeId, ex.row.rate_plan_id, nights));
+        quotes.push(await this.rates.quoteFromStoredNights(q, propertyId, room.roomTypeId, ex.row.rate_plan_id, nights, room.gstRate === undefined ? ex.row.gst_rate_override : room.gstRate));
         reused.push(true);
       } else {
+        // An existing custom package stays an agreement when dates/party size change. Staff can
+        // explicitly replace its room price; unchanged extra-guest agreements are kept as well.
+        const keepPackage = !!ex?.row.includes_meal_plan && room.nightlyRate === undefined
+          && ex.row.room_type_id === room.roomTypeId && ex.row.meal_plan === room.mealPlan;
+        const keepExtras = keepPackage && ex!.row.adults === room.adults && sameAges(ex!.row.child_ages, room.childAges);
         quotes.push(await this.rates.quote(q, propertyId, {
           roomTypeId: room.roomTypeId, arrival, departure, adults: room.adults, childAges: room.childAges,
-          ratePlanId: room.ratePlanId, mealPlan: room.mealPlan, manualRate: room.nightlyRate, extraPersonRate: room.extraPersonRate,
+          ratePlanId: room.ratePlanId, mealPlan: room.mealPlan,
+          manualRate: room.nightlyRate ?? (keepPackage ? ex!.row.nightly_rate : undefined),
+          includesMealPlan: room.includesMealPlan ?? keepPackage,
+          gstRate: room.gstRate === undefined ? ex?.row.gst_rate_override : room.gstRate,
+          extraPersonRate: room.extraPersonRate ?? (keepExtras ? ex!.nights.at(-1)?.extra_person_amount : undefined),
         }));
         reused.push(false);
       }
@@ -192,7 +201,7 @@ export class ReservationsService {
       departure: input.departure,
       rooms: input.rooms.map((r) => ({
         reservationRoomId: r.reservationRoomId ?? null, roomTypeId: r.roomTypeId, roomId: r.roomId ?? null, adults: r.adults,
-        childAges: r.childAges, mealPlan: r.mealPlan, ratePlanId: r.ratePlanId ?? null, nightlyRate: r.nightlyRate ?? null, extraPersonRate: r.extraPersonRate ?? null,
+        childAges: r.childAges, mealPlan: r.mealPlan, ratePlanId: r.ratePlanId ?? null, nightlyRate: r.nightlyRate ?? null, includesMealPlan: r.includesMealPlan ?? false, gstRate: r.gstRate ?? null, extraPersonRate: r.extraPersonRate ?? null,
       })),
       exceptions: reasons.map((r) => r.description),
     };
@@ -216,10 +225,11 @@ export class ReservationsService {
       const rateAuthorisedBy = priced.reused[i] ? previous?.rate_authorised_by ?? null : quote.belowFloor ? auth?.authorisedBy ?? null : null;
       const { rows } = await q.query<IdRow>(
         `INSERT INTO reservation_rooms (property_id, reservation_id, room_type_id, arrival, departure, adults, child_ages,
-                                        rate_plan_id, meal_plan, nightly_rate, rate_authorised_by, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+                                        rate_plan_id, meal_plan, nightly_rate, rate_authorised_by, created_by, includes_meal_plan, gst_rate_override)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
         [actor.user.propertyId, reservationId, room.roomTypeId, input.arrival, input.departure, room.adults, room.childAges,
-          quote.ratePlanId, room.mealPlan, quote.averageRoomRate, rateAuthorisedBy, actor.user.id],
+          quote.ratePlanId, room.mealPlan, quote.averageRoomRate, rateAuthorisedBy, actor.user.id,
+          quote.includesMealPlan ?? (priced.reused[i] ? previous?.includes_meal_plan ?? false : false), quote.gstRate ?? null],
       );
       const rrId = rows[0]!.id;
       for (const n of quote.nights) {
@@ -238,7 +248,7 @@ export class ReservationsService {
       guestId: input.guestId, source: input.source, otaReference: input.otaReference, arrival: input.arrival, departure: input.departure, status: input.status,
       rooms: input.rooms.map((r, i) => ({
         roomTypeId: r.roomTypeId, roomId: r.roomId, adults: r.adults, children: r.childAges.length, mealPlan: r.mealPlan,
-        total: priced.quotes[i]!.total, keptAgreedRates: priced.reused[i],
+        total: priced.quotes[i]!.total, gstRate: priced.quotes[i]!.gstRate ?? null, includesMealPlan: r.includesMealPlan, keptAgreedRates: priced.reused[i],
       })),
     };
   }
@@ -654,12 +664,13 @@ export class ReservationsService {
       `SELECT * FROM reservation_room_nights WHERE reservation_room_id = ANY($1::uuid[])`, [roomRows.rows.map((x) => x.id)],
     );
     const quotes = await gather(q, roomRows.rows.map((x) => () => this.rates.quoteFromStoredNights(q, propertyId, x.room_type_id, x.rate_plan_id,
-      nightsByRoom.rows.filter((n) => n.reservation_room_id === x.id))));
+      nightsByRoom.rows.filter((n) => n.reservation_room_id === x.id), x.gst_rate_override)));
     const estimate = await this.rates.estimateTax(q, propertyId, quotes);
 
     const rooms = roomRows.rows.map((x) => ({
       id: x.id, roomTypeId: x.room_type_id, roomTypeName: x.room_type_name, roomId: x.room_id, roomNumber: x.room_number,
       adults: x.adults, childAges: x.child_ages.map(Number), mealPlan: x.meal_plan, nightlyRate: x.nightly_rate,
+      includesMealPlan: x.includes_meal_plan, gstRate: x.gst_rate_override,
       roomTotal: toMoneyString(x.room_total), extrasTotal: toMoneyString(x.extras_total), mealTotal: toMoneyString(x.meal_total),
       total: toMoneyString(money(x.room_total).plus(x.extras_total).plus(x.meal_total)), status: x.status, rateAuthorisedBy: x.rate_authorised_by,
     }));

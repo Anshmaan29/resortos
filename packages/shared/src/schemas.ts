@@ -176,11 +176,15 @@ export const reservationRoomSchema = z.object({
   childAges: z.array(z.number().int().min(0).max(17)).max(10).default([]),
   /** Manual room rate applied to every night. Omit to use rate plan / calendar prices. */
   nightlyRate: zNonNegativeMoney.optional(),
+  /** The manually agreed nightly price includes the selected meals; do not add a meal tariff. */
+  includesMealPlan: z.boolean().optional(),
+  /** A booking-specific GST percentage; null uses the property's dated tax rules. */
+  gstRate: zNonNegativeMoney.refine((v) => Number(v) <= 100, 'GST must be between 0 and 100%').nullable().optional(),
   /** Total extra adult/child charge per night; omit for configured prices, zero to waive. */
   extraPersonRate: zNonNegativeMoney.optional(),
   ratePlanId: zId.optional(),
   mealPlan: z.enum(MEAL_PLAN_CODES).default('EP'),
-});
+}).refine((r) => !r.includesMealPlan || r.nightlyRate !== undefined, { message: 'Enter the agreed room price', path: ['nightlyRate'] });
 
 const reservationFields = z.object({
   guestId: zId.optional(),

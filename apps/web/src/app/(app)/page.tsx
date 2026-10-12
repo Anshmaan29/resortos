@@ -41,6 +41,7 @@ export default function HomePage() {
           <Link href="/reservations/new"><Button><CalendarPlus className="h-4 w-4" />New booking</Button></Link>
           <Link href="/reservations/new?walkIn=1"><Button variant="outline"><UserPlus className="h-4 w-4" />Walk-in</Button></Link>
           <Link href="/check-in/express"><Button variant="outline"><Zap className="h-4 w-4" />Express check-in</Button></Link>
+          <Link href="/in-house"><Button variant="secondary"><LogOut className="h-4 w-4" />Check out</Button></Link>
         </div>
       </div>
 
@@ -71,7 +72,7 @@ export default function HomePage() {
           </ListBody>
         </Card>
         <Card>
-          <CardHeader title="Departures" description="Due to check out today" />
+          <CardHeader title="Departures" description="Due to check out today" action={<Link href="/in-house" className="text-sm font-semibold text-brand hover:underline">Check out guests →</Link>} />
           <ListBody loading={desk.isLoading} empty={desk.data?.departures.length === 0} emptyText="No departures due today">
             {desk.data?.departures.map((d) => (
               <Row key={d.id} href={`/reservations/${d.id}`}

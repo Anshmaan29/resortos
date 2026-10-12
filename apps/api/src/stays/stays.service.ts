@@ -203,6 +203,7 @@ export class StaysService {
           [rr.id, n.date, n.roomRate, n.extraPersonAmount, n.mealAmount, n.rateSource],
         );
       }
+      await q.query('UPDATE reservation_rooms SET includes_meal_plan=false, nightly_rate=$2 WHERE id=$1', [rr.id, quote.averageRoomRate]);
       if (auth) await this.ownerAuth.recordOverrides(q, actor, auth, { type: 'reservation', id: stay.reservation_id });
     }
 
@@ -268,10 +269,15 @@ export class StaysService {
     const rr = rrRows[0]!;
 
     // Price only the nights being added; the nights already stayed keep their agreed rates.
+    const agreedExtras = rr.includes_meal_plan ? (await q.query<{ extra_person_amount: string }>(
+      'SELECT extra_person_amount FROM reservation_room_nights WHERE reservation_room_id=$1 ORDER BY night_date DESC LIMIT 1', [rr.id],
+    )).rows[0]?.extra_person_amount : undefined;
     const quote = await this.rates.quote(q, actor.user.propertyId, {
       roomTypeId: rr.room_type_id, arrival: stay.expected_departure, departure: input.newDeparture,
       adults: rr.adults, childAges: rr.child_ages.map(Number), mealPlan: rr.meal_plan,
-      ...(input.nightlyRate ? { manualRate: input.nightlyRate } : {}),
+      ...(input.nightlyRate !== undefined ? { manualRate: input.nightlyRate } : rr.includes_meal_plan ? { manualRate: rr.nightly_rate } : {}),
+      includesMealPlan: rr.includes_meal_plan,
+      extraPersonRate: agreedExtras,
     });
     const reasons = quote.belowFloor
       ? [{

@@ -2,8 +2,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ArrowRight, BedDouble, Car, Crown, DoorOpen, Eye, LogOut, Phone } from 'lucide-react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 import { formatDate, formatDateTime, formatINR, formatMobile, ID_TYPE_LABELS, MEAL_PLAN_LABELS, nightsBetween } from '@resortos/shared';
 import { MessagesPanel } from '@/components/messages-panel';
 import { BillPanel } from '@/components/stay/bill-panel';
@@ -23,11 +23,20 @@ export default function StayPage() {
   const toast = useToast();
   const [shiftOpen, setShiftOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const searchParams = useSearchParams();
+  const checkoutRequested = searchParams.get('checkout') === '1';
+  const openedCheckout = useRef<string | null>(null);
 
   const stay = useQuery({ queryKey: ['stay', id], queryFn: () => api<StayDetail>(`/stays/${id}`) });
+  useEffect(() => {
+    if (checkoutRequested && stay.data?.status === 'in_house' && openedCheckout.current !== id) {
+      openedCheckout.current = id;
+      setCheckoutOpen(true);
+    }
+  }, [checkoutRequested, stay.data?.status, id]);
 
   const refreshAll = () => Promise.all(
-    ['stay', 'reservation', 'reservations', 'front-desk', 'rooms', 'availability', 'calendar', 'checkout-preview']
+    ['stay', 'stays', 'reservation', 'reservations', 'front-desk', 'rooms', 'availability', 'calendar', 'checkout-preview']
       .map((k) => qc.invalidateQueries({ queryKey: [k] })),
   );
 

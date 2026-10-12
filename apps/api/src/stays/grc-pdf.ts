@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import PDFDocument from 'pdfkit';
+import { addPdfBranding } from '../printing/branding';
 import { formatDate, formatDateTime, formatINR, formatTime, ID_TYPE_LABELS, MEAL_PLAN_LABELS, type IdType, type MealPlanCode } from '@resortos/shared';
 
 /**
@@ -253,6 +254,7 @@ export function renderGrcPdf(input: GrcPdfInput): Promise<Buffer> {
 
     doc.registerFont('body', FONT_PATH);
     doc.font('body');
+    addPdfBranding(doc);
 
     const { property, stay, guest } = input;
 
