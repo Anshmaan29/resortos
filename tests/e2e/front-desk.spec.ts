@@ -10,6 +10,8 @@ async function loginAs(page: Page, username: string, password: string) {
 const receptionist = (page: Page) => loginAs(page, 'priya', 'Aravali#Desk26');
 
 test('Save booking records WhatsApp agreement without an extra checkbox or send action @phone', async ({ page }, testInfo) => {
+  const invalidPreviews: number[] = [];
+  page.on('response', response => { if (response.url().endsWith('/reservations/estimate') && response.status() >= 400) invalidPreviews.push(response.status()); });
   await receptionist(page);
   await page.goto('/reservations/new');
   await page.getByLabel('First name').fill('Automatic');
@@ -33,6 +35,7 @@ test('Save booking records WhatsApp agreement without an extra checkbox or send 
   const booking = await created.json();
   expect(booking.rooms[0]).toMatchObject({ mealPlan: 'MAP', nightlyRate: '6000.00', gstRate: '7.50', includesMealPlan: true, extrasTotal: '300.00', mealTotal: '0.00' });
   expect(booking.estimate.grandTotal).toBe('6773.00');
+  expect(invalidPreviews).toEqual([]);
   expect(booking.guest.whatsappOptedIn).toBe(true);
   expect(booking.guest.whatsappConsentAt).toBeTruthy();
   await page.waitForURL(`/reservations/${booking.id}`);

@@ -102,14 +102,18 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
   });
 
   // Debounce the serialised input: a new object every render would never settle.
+  const pricingReady = lines.every((l) => (!l.useCustomPrice || validRate(l.manualRate) !== undefined)
+    && (!l.gstRate || validRate(l.gstRate) !== undefined && Number(l.gstRate) <= 100)
+    && (!l.manualExtras || validRate(l.manualExtras) !== undefined));
   const estimateJson = useDebounced(JSON.stringify({
+    pricingReady,
     reservationId: mode === 'edit' ? initial?.id : undefined, arrival, departure,
     rooms: lines.map((l) => ({ reservationRoomId: l.reservationRoomId, roomTypeId: l.roomTypeId, adults: l.adults, childAges: l.childAges, mealPlan: l.mealPlan, nightlyRate: l.useCustomPrice ? validRate(l.manualRate) : undefined, includesMealPlan: l.useCustomPrice ? true : undefined, gstRate: validRate(l.gstRate) ?? null, extraPersonRate: validRate(l.manualExtras) })),
   }));
-  const estimateInput = JSON.parse(estimateJson) as { reservationId?: string; arrival: string; departure: string; rooms: { roomTypeId: string }[] };
+  const { pricingReady: estimateReady, ...estimateInput } = JSON.parse(estimateJson) as { pricingReady: boolean; reservationId?: string; arrival: string; departure: string; rooms: { roomTypeId: string }[] };
   const estimate = useQuery({
     queryKey: ['booking-estimate', estimateJson],
-    enabled: nightsBetween(estimateInput.arrival || '2000-01-01', estimateInput.departure || '2000-01-01') >= 1 && estimateInput.rooms.every((r) => r.roomTypeId) && lines.every((l) => !l.useCustomPrice || validRate(l.manualRate) !== undefined),
+    enabled: estimateReady && nightsBetween(estimateInput.arrival || '2000-01-01', estimateInput.departure || '2000-01-01') >= 1 && estimateInput.rooms.every((r) => r.roomTypeId),
     placeholderData: (prev) => prev,
     queryFn: () => api<BookingEstimate>('/reservations/estimate', { method: 'POST', body: estimateInput }),
     retry: false,
@@ -350,8 +354,8 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
               <Row label="Dates" value={datesValid ? `${formatDate(arrival, { year: false })} → ${formatDate(departure, { year: false })}` : '—'} />
               <Row label="Nights" value={datesValid ? String(nights) : '—'} />
               <div className="my-1 border-t border-border" />
-              {lines.some((l) => l.useCustomPrice && validRate(l.manualRate) === undefined)
-                ? <p className="text-text-2">Enter each room’s price to calculate the total.</p>
+              {!pricingReady
+                ? <p className="text-text-2">Enter valid room prices, GST and extra-guest charges to calculate the total.</p>
                 : estimate.isError ? <ErrorBanner message={(estimate.error as Error).message} />
                   : <EstimateBreakdown estimate={estimate.data} loading={estimate.isFetching} />}
               {mode !== 'edit' && <div className="rounded-lg border border-border bg-surface-2 p-3 text-sm">
