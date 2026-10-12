@@ -3,7 +3,7 @@
 // copied into dist with the same relative path.
 import { cpSync, existsSync } from 'node:fs';
 
-const ASSET_DIRS = ['stays/assets'];
+const ASSET_DIRS = ['stays/assets', 'printing/assets'];
 
 for (const dir of ASSET_DIRS) {
   const from = `src/${dir}`;

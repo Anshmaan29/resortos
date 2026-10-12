@@ -100,4 +100,15 @@ describe('WhatsApp privacy and verification', () => {
     const values = whatsappParameters('booking_confirmation', { guest_name: 'Test\nGuest', mobile: 'private' } as never);
     expect(values[0]).toBe('Test Guest'); expect(values).not.toContain('private');
   });
+  it('adds Wi-Fi to the new welcome and keeps approved older parameter layouts usable', () => {
+    const vars = { guest_name: 'Guest', wifi: 'Network: TestGuest · Password: example-only' };
+    const latest = whatsappParameters('check_in_welcome', vars, 'resortos_check_in_welcome_en_v3');
+    expect(latest).toHaveLength(7);
+    expect(whatsappBody('check_in_welcome', latest, 'en', 'resortos_check_in_welcome_en_v3')).toContain('*Guest Wi-Fi:* Network: TestGuest · Password: example-only');
+    const previous = whatsappParameters('check_in_welcome', vars, 'resortos_check_in_welcome_en_v2');
+    expect(previous).toHaveLength(6);
+    expect(whatsappBody('check_in_welcome', previous, 'en', 'resortos_check_in_welcome_en_v2')).not.toContain('Wi-Fi');
+    expect(whatsappParameters('check_in_welcome', vars, 'resortos_check_in_welcome_en')).toHaveLength(6);
+    expect(whatsappParameters('check_in_welcome', vars, 'resortos_check_in_welcome_hi', 'hi')).toHaveLength(6);
+  });
 });

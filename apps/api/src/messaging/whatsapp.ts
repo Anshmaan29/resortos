@@ -9,8 +9,8 @@ export const WHATSAPP_WORDING: Record<TemplateKey, { body: string; variables: Te
     variables: ['guest_name', 'booking_number', 'resort_name', 'check_in_date', 'check_out_date', 'check_in_time', 'reception_phone'], documentHeader: false,
   },
   check_in_welcome: {
-    body: '*Welcome — check-in complete*\n\nHello {{1}},\nWelcome to {{2}}. Your check-in is complete and your room is ready.\n\n*Your room number:* {{3}}\n*Checkout date:* {{4}}\n*Checkout due by:* {{5}}\n\nFor assistance during your stay, please contact our reception team.\n*Reception phone:* {{6}}\n\nWe hope you have a comfortable stay with us.',
-    variables: ['guest_name', 'resort_name', 'room_number', 'check_out_date', 'checkout_time', 'reception_phone'], documentHeader: false,
+    body: '*Welcome — check-in complete*\n\nHello {{1}},\nWelcome to {{2}}. Your check-in is complete and your room is ready.\n\n*Your room number:* {{3}}\n*Checkout date:* {{4}}\n*Checkout due by:* {{5}}\n\n*Guest Wi-Fi:* {{7}}\n\nFor assistance during your stay, please contact our reception team.\n*Reception phone:* {{6}}\n\nWe hope you have a comfortable stay with us.',
+    variables: ['guest_name', 'resort_name', 'room_number', 'check_out_date', 'checkout_time', 'reception_phone', 'wifi'], documentHeader: false,
   },
   checkout_reminder: {
     body: '*Checkout reminder*\n\nHello {{1}},\nThis is a reminder about your scheduled checkout from {{2}}.\n\n*Your room number:* {{3}}\n*Checkout date:* {{4}}\n*Checkout due by:* {{5}}\n\nFor help with checkout or your bill, please contact our reception team.\n*Reception phone:* {{6}}\n\nThank you for staying with us.',
@@ -44,11 +44,14 @@ const HINDI_BODY: Record<TemplateKey, string> = {
 };
 export function whatsappWording(key: TemplateKey, language: 'en' | 'hi' = 'en', templateName?: string) {
   const body = language === 'hi' ? HINDI_BODY[key]
-    : templateName === 'resortos_' + key + '_en' ? LEGACY_EN_BODY[key] : WHATSAPP_WORDING[key].body;
-  return { ...WHATSAPP_WORDING[key], body };
+    : templateName === 'resortos_' + key + '_en' ? LEGACY_EN_BODY[key]
+      : key === 'check_in_welcome' && templateName === 'resortos_check_in_welcome_en_v2'
+        ? WHATSAPP_WORDING[key].body.replace('\n\n*Guest Wi-Fi:* {{7}}', '') : WHATSAPP_WORDING[key].body;
+  const oldWelcome = key === 'check_in_welcome' && (language === 'hi' || templateName === 'resortos_check_in_welcome_en' || templateName === 'resortos_check_in_welcome_en_v2');
+  return { ...WHATSAPP_WORDING[key], body, variables: oldWelcome ? WHATSAPP_WORDING[key].variables.filter(v => v !== 'wifi') : WHATSAPP_WORDING[key].variables };
 }
-export function whatsappParameters(key: TemplateKey, vars: Partial<Record<TemplateVariable, string>>) {
-  return WHATSAPP_WORDING[key].variables.map(v => (vars[v] || '—').replace(/\s+/g, ' ').trim().slice(0, 500));
+export function whatsappParameters(key: TemplateKey, vars: Partial<Record<TemplateVariable, string>>, templateName?: string, language: 'en' | 'hi' = 'en') {
+  return whatsappWording(key, language, templateName).variables.map(v => (vars[v] || '—').replace(/\s+/g, ' ').trim().slice(0, 500));
 }
 export function whatsappBody(key: TemplateKey, parameters: string[], language: 'en' | 'hi' = 'en', templateName?: string) {
   return whatsappWording(key, language, templateName).body.replace(/\{\{(\d+)\}\}/g, (_, n: string) => parameters[Number(n) - 1] ?? '—');
@@ -171,5 +174,5 @@ export class WhatsAppProvider implements MessageProvider {
   }
 }
 export const defaultBindings = (): TemplateBinding[] => TEMPLATE_KEYS.map(key => ({
-  key, language: 'en', languageCode: 'en', name: 'resortos_' + key + '_en_v2', active: true,
+  key, language: 'en', languageCode: 'en', name: 'resortos_' + key + (key === 'check_in_welcome' ? '_en_v3' : '_en_v2'), active: true,
 }));

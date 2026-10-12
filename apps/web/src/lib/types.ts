@@ -35,7 +35,7 @@ export interface ReservationDetail {
   groupName: string | null; billingMode: string; purpose: VisitPurpose | null; specialRequests: string | null; internalNotes: string | null;
   guest: { id: string; firstName: string; lastName: string; fullName: string; mobile: string; email: string | null; isVip: boolean; city: string | null; whatsappOptedIn?: boolean; whatsappConsentAt?: string | null };
   rooms: {
-    id: string; roomTypeId: string; roomTypeName: string; roomId: string | null; roomNumber: string | null; adults: number; childAges: number[]; mealPlan: MealPlanCode;
+    id: string; roomTypeId: string; roomTypeName: string; roomId: string | null; roomNumber: string | null; adults: number; childAges: number[]; mealPlan: MealPlanCode; includesMealPlan?: boolean; gstRate?: string | null;
     nightlyRate: string; roomTotal: string; extrasTotal: string; mealTotal: string; total: string; status: string; rateAuthorisedBy: string | null;
   }[];
   estimate: TaxEstimate;

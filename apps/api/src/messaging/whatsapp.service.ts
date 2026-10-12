@@ -116,7 +116,7 @@ export class WhatsAppService {
     const property = await this.messaging.settings(q, req.propertyId);
     const binding = settings.templates.find(t => t.key === req.templateKey && t.language === ctx.language)
       ?? settings.templates.find(t => t.key === req.templateKey && t.language === 'en');
-    const parameters = whatsappParameters(req.templateKey, { ...this.messaging.propertyVars(property), ...ctx.vars });
+    const parameters = whatsappParameters(req.templateKey, { ...this.messaging.propertyVars(property), ...ctx.vars }, binding?.name, binding?.language ?? 'en');
     const recipient = whatsappNumber(ctx.mobile ?? '') ?? '';
     const skip = req.skipReason ?? (!ctx.whatsappOptedIn ? 'The guest has not agreed to WhatsApp messages.'
       : !recipient ? 'The guest has no valid WhatsApp phone number on file.'

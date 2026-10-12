@@ -16,6 +16,10 @@ test('Save booking records WhatsApp agreement without an extra checkbox or send 
   await page.getByLabel('Last name').fill('Confirmation');
   await page.getByRole('textbox', { name: 'Mobile', exact: true }).fill(testInfo.project.name === 'phone' ? '9899920002' : '9899920001');
   await page.getByLabel('Email', { exact: true }).fill('automatic@example.com');
+  await page.getByLabel('Meal plan', { exact: true }).selectOption('MAP');
+  await page.getByLabel('Room price per night').fill('6000');
+  await page.getByLabel('GST %', { exact: true }).fill('7.5');
+  await page.getByLabel('Extra guest price per night').fill('300');
   await page.getByRole('textbox', { name: 'Arrival' }).fill('12/12/2026');
   await page.getByRole('textbox', { name: 'Departure' }).fill('13/12/2026');
   await page.getByRole('textbox', { name: 'Departure' }).blur();
@@ -27,6 +31,8 @@ test('Save booking records WhatsApp agreement without an extra checkbox or send 
   const created = await response;
   expect(created.request().postDataJSON().whatsappOptedIn).toBe(true);
   const booking = await created.json();
+  expect(booking.rooms[0]).toMatchObject({ mealPlan: 'MAP', nightlyRate: '6000.00', gstRate: '7.50', includesMealPlan: true, extrasTotal: '300.00', mealTotal: '0.00' });
+  expect(booking.estimate.grandTotal).toBe('6773.00');
   expect(booking.guest.whatsappOptedIn).toBe(true);
   expect(booking.guest.whatsappConsentAt).toBeTruthy();
   await page.waitForURL(`/reservations/${booking.id}`);
@@ -41,6 +47,7 @@ test('a returning guest who declined WhatsApp stays email only when saving anoth
   });
   await page.goto('/reservations/new');
   await page.getByLabel('Search existing guests').fill('9876543210');
+  await page.getByLabel('Room price per night').fill('6000');
   await page.getByRole('button').filter({hasText:'Rahul Sharma'}).first().click();
   await expect(page.getByText('WhatsApp is off for this guest.', { exact: false })).toBeVisible();
   await expect(page.getByText(/By saving, you confirm the guest agreed/)).toHaveCount(0);
@@ -107,11 +114,11 @@ test('below-minimum rate: four-digit Owner PIN typed on the physical keyboard, o
   await page.getByLabel('First name').fill('Kavya');
   await page.getByLabel('Last name').fill('Reddy');
   await page.getByLabel('Mobile').fill('9849012345');
-  await expect(page.getByLabel('Meal plan')).toHaveCount(0);
-  await page.getByLabel('Base room price per night').fill('2000');
-  await page.getByLabel('Extra adult / child charges per night').fill('375.50');
+  await expect(page.getByLabel('Meal plan')).toBeVisible();
+  await page.getByLabel('Room price per night').fill('2000');
+  await page.getByLabel('Extra guest price per night').fill('375.50');
   await expect(page.getByText('₹2,375.50', { exact: true }).first()).toBeVisible();
-  await page.getByLabel('Extra adult / child charges per night').fill('');
+  await page.getByLabel('Extra guest price per night').fill('');
   await expect(page.getByText('₹3,150', { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/Below the minimum rate of ₹3,200/)).toBeVisible();
   await expect(page.getByText('Estimated total incl. GST')).toBeVisible();
@@ -171,6 +178,7 @@ test('edit a booking, then cancel and rebook it', async ({ page }) => {
   await expect(page.getByText(/Cancelled .* The booking is kept in history/)).toBeVisible();
   await page.getByRole('button', { name: 'Rebook' }).click();
   await expect(page.getByRole('heading', { name: 'Rebook BK-000001' })).toBeVisible();
+  await page.getByLabel('Room price per night').fill('6000');
   await page.getByRole('button', { name: 'Create new booking' }).click();
   await expect(page.getByText(/Rebooked as BK-\d+/).first()).toBeVisible();
   await expect(page.getByText('Rebook of')).toBeVisible();

@@ -1,7 +1,7 @@
 /**
  * GST tax engine (spec §30).
  *
- * - Rates are NEVER hard-coded here; they come from dated tax rules.
+ * - Rates are never hard-coded: dated tax rules supply the rate and SAC, unless a booking explicitly overrides the percentage.
  * - The rule used is the one valid on each line's date of supply.
  * - Accommodation slabs are evaluated per room, per night, on the value
  *   actually charged after discount (`unitValue`).
@@ -36,6 +36,8 @@ export interface TaxableLine {
   taxableValue: MoneyString;
   /** Per-room-per-night value used for slab rules (accommodation). Defaults to taxableValue. */
   unitValue?: MoneyString;
+  /** Explicit booking agreement; SAC and supply dates still come from the applicable rule. */
+  ratePercentOverride?: MoneyString;
 }
 
 export type SupplyType = 'intra_state' | 'inter_state';
@@ -106,7 +108,9 @@ export function computeTax(
 ): TaxComputation {
   const taxed: TaxedLine[] = lines.map((line) => {
     const rule = resolveTaxRule(rules, line);
-    return { ...line, ruleId: rule.id, ratePercent: toMoneyString(rule.ratePercent), sac: rule.sac };
+    const rate = line.ratePercentOverride ?? rule.ratePercent;
+    if (money(rate).lt(0) || money(rate).gt(100)) throw new TaxRuleError('GST percentage must be between 0 and 100', line.key);
+    return { ...line, ruleId: rule.id, ratePercent: toMoneyString(rate), sac: rule.sac };
   });
 
   const byRate = new Map<string, TaxedLine[]>();

@@ -1,6 +1,6 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, BedDouble, Crown, Search } from 'lucide-react';
+import { ArrowRight, BedDouble, Crown, Search, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { formatDate, formatMobile, VISIT_PURPOSE_LABELS } from '@resortos/shared';
@@ -45,7 +45,7 @@ export default function InHousePage() {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="In house"
-        description={property.data ? `Business date ${formatDate(property.data.businessDate, { weekday: true })}` : undefined}
+        description={`To settle a guest’s bill and finish their stay, choose Check out beside their room.${property.data ? ` Today ${formatDate(property.data.today, { weekday: true })}.` : ''}`}
       />
 
       <div className="flex gap-2" role="tablist" aria-label="View">
@@ -122,6 +122,7 @@ function StaysTable({ query }: { query: ReturnType<typeof useQuery<StayListItem[
           <thead className="border-b border-border text-left text-xs uppercase tracking-wide text-text-3">
             <tr>
               <th className="px-5 py-2.5 font-medium">Room</th>
+              <th className="px-5 py-2.5 font-medium">Action</th>
               <th className="px-3 py-2.5 font-medium">Guest</th>
               <th className="px-3 py-2.5 font-medium">Guests</th>
               <th className="px-3 py-2.5 font-medium">Stay</th>
@@ -135,6 +136,10 @@ function StaysTable({ query }: { query: ReturnType<typeof useQuery<StayListItem[
                 <td className="px-5 py-3">
                   <Link href={`/stays/${s.id}`} className="num font-medium text-brand hover:underline">{s.roomNumber}</Link>
                   <span className="block text-xs text-text-3">{s.roomTypeName}</span>
+                </td>
+                <td className="px-5 py-3">
+                  {s.status === 'in_house' ? <Link href={`/stays/${s.id}?checkout=1`}><Button size="sm" aria-label={`Check out room ${s.roomNumber}`}><LogOut className="h-4 w-4" />Check out</Button></Link>
+                    : <Link href={`/stays/${s.id}`} className="text-brand hover:underline">View stay</Link>}
                 </td>
                 <td className="px-3 py-3">
                   <Link href={`/guests/${s.guestId}`} className="flex items-center gap-1.5 font-medium hover:underline">

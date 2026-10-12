@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import {
   addDays, BOOKING_SOURCE_LABELS, BOOKING_SOURCES, createReservationSchema, formatDate, formatINR, formatMobile, guestSchema,
-  money, nightsBetween, OTA_SOURCES, updateReservationSchema, VISIT_PURPOSE_LABELS, VISIT_PURPOSES,
+  money, nightsBetween, OTA_SOURCES, updateReservationSchema, VISIT_PURPOSE_LABELS, VISIT_PURPOSES, MEAL_PLAN_CODES,
   type BookingSource, type MealPlanCode, type VisitPurpose,
 } from '@resortos/shared';
 import { Button } from '@/components/ui/button';
@@ -31,12 +31,14 @@ interface RoomLine {
   childAges: number[];
   mealPlan: MealPlanCode;
   manualRate: string;
+  useCustomPrice: boolean;
+  gstRate: string;
   manualExtras: string;
 }
 
 type GuestChoice = Pick<Guest, 'id' | 'fullName' | 'mobile' | 'city' | 'isVip' | 'whatsappOptedIn' | 'whatsappConsentAt'> & { stays?: number };
 
-const newLine = (roomTypeId = ''): RoomLine => ({ key: crypto.randomUUID(), roomTypeId, roomId: '', adults: 2, childAges: [], mealPlan: 'EP', manualRate: '', manualExtras: '' });
+const newLine = (roomTypeId = ''): RoomLine => ({ key: crypto.randomUUID(), roomTypeId, roomId: '', adults: 2, childAges: [], mealPlan: 'EP', manualRate: '', useCustomPrice: true, gstRate: '', manualExtras: '' });
 const validRate = (v: string) => (/^\d+(\.\d{1,2})?$/.test(v) ? v : undefined);
 
 function useDebounced<T>(value: T, ms = 300) {
@@ -69,7 +71,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
   const [lines, setLines] = useState<RoomLine[]>(() => initial
     ? initial.rooms.filter((r) => mode === 'rebook' || r.status === 'reserved').map((r) => ({
         key: crypto.randomUUID(), reservationRoomId: mode === 'edit' ? r.id : undefined, roomTypeId: r.roomTypeId,
-        roomId: mode === 'edit' ? r.roomId ?? '' : '', adults: r.adults, childAges: r.childAges, mealPlan: mode === 'edit' ? r.mealPlan : 'EP', manualRate: '', manualExtras: '',
+        roomId: mode === 'edit' ? r.roomId ?? '' : '', adults: r.adults, childAges: r.childAges, mealPlan: r.mealPlan, manualRate: '', useCustomPrice: mode !== 'edit', gstRate: r.gstRate ?? '', manualExtras: '',
       }))
     : [newLine()]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -102,12 +104,12 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
   // Debounce the serialised input: a new object every render would never settle.
   const estimateJson = useDebounced(JSON.stringify({
     reservationId: mode === 'edit' ? initial?.id : undefined, arrival, departure,
-    rooms: lines.map((l) => ({ reservationRoomId: l.reservationRoomId, roomTypeId: l.roomTypeId, adults: l.adults, childAges: l.childAges, mealPlan: l.mealPlan, nightlyRate: validRate(l.manualRate), extraPersonRate: validRate(l.manualExtras) })),
+    rooms: lines.map((l) => ({ reservationRoomId: l.reservationRoomId, roomTypeId: l.roomTypeId, adults: l.adults, childAges: l.childAges, mealPlan: l.mealPlan, nightlyRate: l.useCustomPrice ? validRate(l.manualRate) : undefined, includesMealPlan: l.useCustomPrice ? true : undefined, gstRate: validRate(l.gstRate) ?? null, extraPersonRate: validRate(l.manualExtras) })),
   }));
   const estimateInput = JSON.parse(estimateJson) as { reservationId?: string; arrival: string; departure: string; rooms: { roomTypeId: string }[] };
   const estimate = useQuery({
     queryKey: ['booking-estimate', estimateJson],
-    enabled: nightsBetween(estimateInput.arrival || '2000-01-01', estimateInput.departure || '2000-01-01') >= 1 && estimateInput.rooms.every((r) => r.roomTypeId),
+    enabled: nightsBetween(estimateInput.arrival || '2000-01-01', estimateInput.departure || '2000-01-01') >= 1 && estimateInput.rooms.every((r) => r.roomTypeId) && lines.every((l) => !l.useCustomPrice || validRate(l.manualRate) !== undefined),
     placeholderData: (prev) => prev,
     queryFn: () => api<BookingEstimate>('/reservations/estimate', { method: 'POST', body: estimateInput }),
     retry: false,
@@ -141,7 +143,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
     specialRequests: specialRequests || undefined,
     rooms: lines.map((l) => ({
       reservationRoomId: l.reservationRoomId, roomTypeId: l.roomTypeId, roomId: l.roomId || undefined, adults: l.adults,
-      childAges: l.childAges, mealPlan: l.mealPlan, nightlyRate: validRate(l.manualRate), extraPersonRate: validRate(l.manualExtras),
+      childAges: l.childAges, mealPlan: l.mealPlan, nightlyRate: l.useCustomPrice ? validRate(l.manualRate) : undefined, includesMealPlan: l.useCustomPrice ? true : undefined, gstRate: validRate(l.gstRate) ?? null, extraPersonRate: validRate(l.manualExtras),
     })),
     ownerAuthorisationId,
     ...(mode === 'edit' ? { version: initial!.version } : {}),
@@ -185,8 +187,9 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
     const parsed = (mode === 'edit' ? updateReservationSchema : createReservationSchema).safeParse(body);
     if (!parsed.success) for (const i of parsed.error.issues) clientErrors[i.path.join('.')] ??= i.message;
     lines.forEach((line, i) => {
-      if (line.manualRate && validRate(line.manualRate) === undefined) clientErrors[`rooms.${i}.nightlyRate`] = 'Enter a valid price with up to two decimals';
+      if (line.useCustomPrice && validRate(line.manualRate) === undefined) clientErrors[`rooms.${i}.nightlyRate`] = 'Enter the agreed nightly price (up to two decimals)';
       if (line.manualExtras && validRate(line.manualExtras) === undefined) clientErrors[`rooms.${i}.extraPersonRate`] = 'Enter a valid price with up to two decimals';
+      if (line.gstRate && (validRate(line.gstRate) === undefined || Number(line.gstRate) > 100)) clientErrors[`rooms.${i}.gstRate`] = 'Enter GST between 0 and 100%';
     });
     setErrors(clientErrors);
     if (Object.keys(clientErrors).length) return;
@@ -315,6 +318,8 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
                     <motion.div key={line.key} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={{ duration: 0.2, ease: EASE_OUT }}>
                       <RoomLineEditor
                         index={i} line={line} canRemove={lines.length > 1} roomTypes={roomTypes.data ?? []}
+                        priceError={errors[`rooms.${i}.nightlyRate`]}
+                        gstError={errors[`rooms.${i}.gstRate`]} extrasError={errors[`rooms.${i}.extraPersonRate`]}
                         availability={avail} short={!!avail && requested > avail.available}
                         currentRoom={currentRoom ? { id: currentRoom.roomId!, number: currentRoom.roomNumber! } : undefined}
                         takenRoomIds={lines.filter((l) => l.key !== line.key).map((l) => l.roomId).filter(Boolean)}
@@ -345,7 +350,10 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
               <Row label="Dates" value={datesValid ? `${formatDate(arrival, { year: false })} → ${formatDate(departure, { year: false })}` : '—'} />
               <Row label="Nights" value={datesValid ? String(nights) : '—'} />
               <div className="my-1 border-t border-border" />
-              <EstimateBreakdown estimate={estimate.data} loading={estimate.isFetching && !estimate.data} />
+              {lines.some((l) => l.useCustomPrice && validRate(l.manualRate) === undefined)
+                ? <p className="text-text-2">Enter each room’s price to calculate the total.</p>
+                : estimate.isError ? <ErrorBanner message={(estimate.error as Error).message} />
+                  : <EstimateBreakdown estimate={estimate.data} loading={estimate.isFetching} />}
               {mode !== 'edit' && <div className="rounded-lg border border-border bg-surface-2 p-3 text-sm">
                 <p className="font-medium">{status === 'confirmed' ? 'Confirmation sends automatically' : 'Confirmation sends when the booking is confirmed'}</p>
                 <p className="mt-1 text-text-2">Email goes to the guest’s email address. {whatsappOptedIn ? 'WhatsApp goes to their mobile number.' : 'WhatsApp is off for this guest.'}</p>
@@ -403,10 +411,10 @@ export function EstimateBreakdown({ estimate, loading }: { estimate?: { tax: Boo
   );
 }
 
-function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short, currentRoom, takenRoomIds, datesValid, estimate, estimateError, onChange, onRemove }: {
+function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short, currentRoom, takenRoomIds, datesValid, estimate, estimateError, priceError, gstError, extrasError, onChange, onRemove }: {
   index: number; line: RoomLine; canRemove: boolean; roomTypes: RoomType[]; availability?: Availability['roomTypes'][number]; short: boolean;
   currentRoom?: { id: string; number: string }; takenRoomIds: string[]; datesValid: boolean;
-  estimate?: BookingEstimate['rooms'][number]; estimateError: string | null; onChange: (patch: Partial<RoomLine>) => void; onRemove: () => void;
+  estimate?: BookingEstimate['rooms'][number]; estimateError: string | null; priceError?: string; gstError?: string; extrasError?: string; onChange: (patch: Partial<RoomLine>) => void; onRemove: () => void;
 }) {
   const type = roomTypes.find((t) => t.id === line.roomTypeId);
   const guests = line.adults + line.childAges.length;
@@ -459,20 +467,35 @@ function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short
             )}
           </div>
         </div>
-        {line.mealPlan !== 'EP' && <p className="text-sm text-text-3">Existing booking includes {MEAL_LABEL[line.mealPlan]}. Its agreed meal charges are kept.</p>}
-        <Field label="Base room price per night" hint={line.reservationRoomId ? 'Leave empty to keep the agreed room price. Extra guest charges are added below.' : 'Leave empty for the configured room price. Extra guest charges are added below.'}>{(id, d) => (
+        <Field label="Meal plan">{(id) => (
+          <Select id={id} value={line.mealPlan} onChange={(e) => onChange({ mealPlan: e.target.value as MealPlanCode })}>
+            {MEAL_PLAN_CODES.map((p) => <option key={p} value={p}>{MEAL_LABEL[p]}</option>)}
+          </Select>
+        )}</Field>
+        <Field label="Room pricing">{(id) => (
+          <Select id={id} value={line.useCustomPrice ? 'custom' : 'configured'} onChange={(e) => onChange({ useCustomPrice: e.target.value === 'custom' })}>
+            <option value="custom">Enter custom price</option>
+            <option value="configured">{line.reservationRoomId ? 'Keep agreed / use standard tariff' : 'Use standard tariff'}</option>
+          </Select>
+        )}</Field>
+        <div className="grid gap-3 sm:col-span-2 sm:grid-cols-[2fr_1fr]">
+        {line.useCustomPrice ? <Field label="Room price per night" required error={priceError} hint="Includes the chosen meal plan. GST and extra guests are added separately.">{(id, d) => (
           <div className="relative">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-2">₹</span>
-            <Input id={id} aria-describedby={d} inputMode="decimal" className="pl-7 num" placeholder={type ? money(type.baseRate).toFixed(0) : ''} value={line.manualRate}
+            <Input id={id} aria-describedby={d} invalid={!!priceError} inputMode="decimal" className="pl-7 num" placeholder="Enter agreed amount" value={line.manualRate}
               onChange={(e) => onChange({ manualRate: e.target.value.replace(/[^\d.]/g, '') })} />
           </div>
+        )}</Field> : <p className="self-center text-sm text-text-2">{line.reservationRoomId ? 'Unchanged rooms keep the agreed price.' : 'Using the hotel’s standard tariff.'}</p>}
+        <Field label="GST %" error={gstError} hint="Blank = hotel setting. Applies to room, meal plan and extra guests.">{(id, d) => (
+          <Input id={id} aria-describedby={d} invalid={!!gstError} inputMode="decimal" value={line.gstRate} placeholder="Hotel setting" onChange={(e) => onChange({ gstRate: e.target.value.replace(/[^\d.]/g, '') })} />
         )}</Field>
-        <Field label="Extra adult / child charges per night" hint="Total for all extra guests. Leave empty for configured prices; enter 0 to waive. Add extra beds separately on the bill.">{(id, d) => (
-          <Input id={id} aria-describedby={d} inputMode="decimal" value={line.manualExtras}
+        </div>
+        <Field label="Extra guest price per night" error={extrasError} hint="Total for all extra adults / children. Blank = standard charges; enter 0 to include them at no extra cost.">{(id, d) => (
+          <Input id={id} aria-describedby={d} invalid={!!extrasError} inputMode="decimal" value={line.manualExtras}
             onChange={(e) => onChange({ manualExtras: e.target.value.replace(/[^\d.]/g, '') })} placeholder="Use configured prices" />
         )}</Field>
       </div>
-      {datesValid && line.roomTypeId && (
+      {line.useCustomPrice && validRate(line.manualRate) === undefined ? <p className="mt-3 text-sm text-text-2">Enter a room price to see the booking total.</p> : datesValid && line.roomTypeId && (
         estimateError ? <p className="mt-3 text-sm text-danger">{estimateError}</p>
           : !estimate ? <Skeleton className="mt-3 h-10" />
             : (

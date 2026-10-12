@@ -3,7 +3,8 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { ArrowRight, Zap } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { addDays, formatDate, formatINR, nightsBetween } from '@resortos/shared';
+import { addDays, formatDate, nightsBetween, MEAL_PLAN_CODES, MEAL_PLAN_LABELS, type MealPlanCode } from '@resortos/shared';
+import { EstimateBreakdown } from '@/components/booking/booking-form';
 import { Button } from '@/components/ui/button';
 import { DateField } from '@/components/ui/date-field';
 import { Field, Input, Select } from '@/components/ui/field';
@@ -12,7 +13,7 @@ import { Card, ErrorBanner, PageHeader, Skeleton } from '@/components/ui/surface
 import { api, ApiError, newIdempotencyKey } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useProperty } from '@/lib/session';
-import type { Availability, Quote, ReservationDetail } from '@/lib/types';
+import type { Availability, BookingEstimate, ReservationDetail } from '@/lib/types';
 
 /**
  * Express check-in for a walk-in (spec §18, PHASES "Before the pilot"): the booking and the check-in
@@ -29,9 +30,15 @@ export default function ExpressCheckInPage() {
   const [roomTypeId, setRoomTypeId] = useState('');
   const [roomId, setRoomId] = useState('');
   const [adults, setAdults] = useState('2');
-  const mealPlan = 'EP';
+  const [mealPlan, setMealPlan] = useState<MealPlanCode>('EP');
   const [rate, setRate] = useState('');
-  const key = useRef(newIdempotencyKey());
+  const [gstRate, setGstRate] = useState('');
+  const [extraRate, setExtraRate] = useState('');
+  const [whatsappOptedIn, setWhatsappOptedIn] = useState(true);
+  const key = useRef<{ body: string; key: string } | null>(null);
+  const validMoney = (v: string) => /^\d+(\.\d{1,2})?$/.test(v);
+  const pricesValid = validMoney(rate) && (!gstRate || validMoney(gstRate) && Number(gstRate) <= 100) && (!extraRate || validMoney(extraRate));
+  const roomInput = { roomTypeId, roomId, adults: Number(adults), mealPlan, nightlyRate: rate, includesMealPlan: true, gstRate: gstRate || null, extraPersonRate: extraRate || undefined };
   useEffect(() => { if (today && !departure) setDeparture(addDays(today, 1)); }, [today, departure]);
 
   const availability = useQuery({
@@ -39,8 +46,8 @@ export default function ExpressCheckInPage() {
     queryFn: () => api<Availability>('/availability', { query: { arrival: today, departure } }),
   });
   const quote = useQuery({
-    queryKey: ['quote', roomTypeId, today, departure, adults, mealPlan], enabled: Boolean(roomTypeId && departure > today),
-    queryFn: () => api<Quote>('/rates/quote', { query: { roomTypeId, arrival: today, departure, adults, mealPlan } }),
+    queryKey: ['express-estimate', roomTypeId, today, departure, adults, mealPlan, rate, gstRate, extraRate], enabled: Boolean(roomTypeId && departure > today && pricesValid),
+    queryFn: () => api<BookingEstimate>('/reservations/estimate', { method: 'POST', body: { arrival: today, departure, rooms: [roomInput] } }), retry: false,
   });
   const type = availability.data?.roomTypes.find((t) => t.roomTypeId === roomTypeId);
   // A walk-in goes into a room that is free and clean now.
@@ -48,12 +55,12 @@ export default function ExpressCheckInPage() {
 
   const start = useMutation({
     mutationFn: async (ownerAuthorisationId?: string) => {
+      const body = { guest: { ...guest, email: guest.email || undefined }, source: 'walk_in', arrival: today, departure,
+        rooms: [roomInput], ownerAuthorisationId, whatsappOptedIn };
+      const json = JSON.stringify(body);
+      if (!key.current || key.current.body !== json) key.current = { body: json, key: newIdempotencyKey() };
       const reservation = await api<ReservationDetail>('/reservations', {
-        method: 'POST', idempotencyKey: key.current,
-        body: {
-          guest: { ...guest, email: guest.email || undefined }, source: 'walk_in', arrival: today, departure,
-          rooms: [{ roomTypeId, roomId, adults: Number(adults), mealPlan, nightlyRate: rate || undefined }], ownerAuthorisationId,
-        },
+        method: 'POST', idempotencyKey: key.current.key, body,
       });
       return api<{ id: string }>('/check-in-drafts', { method: 'POST', body: { reservationId: reservation.id } });
     },
@@ -62,7 +69,7 @@ export default function ExpressCheckInPage() {
   });
   const approval = useOwnerApproval((id) => start.mutate(id));
   const fields = start.error instanceof ApiError ? start.error.fields : {};
-  const ready = guest.firstName && guest.mobile && roomTypeId && roomId && departure > today;
+  const ready = guest.firstName && guest.mobile && roomTypeId && roomId && departure > today && pricesValid;
 
   if (!property.data) return <Skeleton className="h-96" />;
   return (
@@ -118,17 +125,17 @@ export default function ExpressCheckInPage() {
         </div>
         <Card className="self-start p-4 lg:sticky lg:top-20">
           <h2 className="font-semibold">Price</h2>
-          {quote.data ? (
-            <div className="mt-3 flex flex-col gap-2 text-sm">
-              <div className="flex justify-between"><span className="text-text-2">{quote.data.nightCount} night{quote.data.nightCount > 1 ? 's' : ''} · room</span><span className="tabular-nums">{formatINR(quote.data.roomTotal)}</span></div>
-              {Number(quote.data.extrasTotal) > 0 && <div className="flex justify-between"><span className="text-text-2">Extra guests</span><span className="tabular-nums">{formatINR(quote.data.extrasTotal)}</span></div>}
-              {Number(quote.data.mealTotal) > 0 && <div className="flex justify-between"><span className="text-text-2">Meals</span><span className="tabular-nums">{formatINR(quote.data.mealTotal)}</span></div>}
-              <div className="flex justify-between border-t border-border pt-2 font-semibold"><span>Before GST</span><span className="tabular-nums">{formatINR(quote.data.total)}</span></div>
-              <Field label="Agreed room rate per night" hint={`Usual ${formatINR(quote.data.averageRoomRate)} · below ${formatINR(quote.data.minRate)} needs the owner`}>
-                {(id) => <Input id={id} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} placeholder={quote.data!.averageRoomRate} />}
-              </Field>
+          <div className="mt-3 flex flex-col gap-4">
+            <Field label="Meal plan">{(id) => <Select id={id} value={mealPlan} onChange={(e) => setMealPlan(e.target.value as MealPlanCode)}>{MEAL_PLAN_CODES.map((plan) => <option key={plan} value={plan}>{plan} · {MEAL_PLAN_LABELS[plan]}</option>)}</Select>}</Field>
+            <div className="grid grid-cols-[2fr_1fr] gap-3">
+              <Field label="Room price per night" required hint="Includes the chosen meal plan; before GST." error={fields['rooms.0.nightlyRate']}>{(id) => <Input id={id} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value.replace(/[^\d.]/g, ''))} placeholder="Agreed amount" />}</Field>
+              <Field label="GST %" hint="Blank = hotel setting" error={fields['rooms.0.gstRate']}>{(id) => <Input id={id} inputMode="decimal" value={gstRate} onChange={(e) => setGstRate(e.target.value.replace(/[^\d.]/g, ''))} placeholder="Hotel setting" />}</Field>
             </div>
-          ) : <p className="mt-3 text-sm text-text-3">Choose a room type to see the price.</p>}
+            <Field label="Extra guest price per night" hint="Total extra adult / child charges. Blank = standard; 0 = included." error={fields['rooms.0.extraPersonRate']}>{(id) => <Input id={id} inputMode="decimal" value={extraRate} onChange={(e) => setExtraRate(e.target.value.replace(/[^\d.]/g, ''))} />}</Field>
+            {quote.isError ? <ErrorBanner message={(quote.error as Error).message} /> : pricesValid && roomTypeId ? <EstimateBreakdown estimate={quote.data} loading={quote.isFetching} /> : <p className="text-sm text-text-2">Enter the room price to calculate the total.</p>}
+            <p className="text-xs text-text-2">{whatsappOptedIn ? 'By continuing, you confirm the guest agreed to receive booking, stay and payment messages from this hotel on WhatsApp.' : 'WhatsApp is off for this guest. Email messages still send automatically.'}</p>
+            <details><summary className="cursor-pointer text-sm text-brand">Change WhatsApp preference</summary><Field label="WhatsApp messages">{(id) => <Select id={id} value={whatsappOptedIn ? 'agreed' : 'declined'} onChange={(e) => setWhatsappOptedIn(e.target.value === 'agreed')}><option value="agreed">Guest agreed — send automatically</option><option value="declined">Guest declined — email only</option></Select>}</Field></details>
+          </div>
           <Button size="lg" className="mt-4 w-full" loading={start.isPending} disabled={!ready} onClick={() => start.mutate(undefined)}>
             <Zap className="h-4 w-4" aria-hidden />Continue to IDs and signature<ArrowRight className="h-4 w-4" aria-hidden />
           </Button>

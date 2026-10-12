@@ -28,6 +28,8 @@ export interface QuoteInput {
   ratePlanId?: string;
   mealPlan: MealPlanCode;
   manualRate?: MoneyString;
+  includesMealPlan?: boolean;
+  gstRate?: MoneyString | null;
   extraPersonRate?: MoneyString;
 }
 
@@ -58,6 +60,7 @@ export interface TaxEstimate {
 }
 
 export interface Quote {
+  gstRate?: MoneyString | null;
   roomTypeId: string;
   ratePlanId: string | null;
   nights: NightQuote[];
@@ -94,7 +97,7 @@ export class RatesService {
   }
 
   /** Quote rebuilt from nightly rates already agreed on a booking (used when an edit leaves a room unchanged). */
-  async quoteFromStoredNights(q: Queryable, propertyId: string, roomTypeId: string, ratePlanId: string | null, nights: NightRow[]): Promise<Quote> {
+  async quoteFromStoredNights(q: Queryable, propertyId: string, roomTypeId: string, ratePlanId: string | null, nights: NightRow[], gstRate?: string | null): Promise<Quote> {
     const rt = await this.roomType(q, propertyId, roomTypeId);
     const minRate = money(rt.min_rate);
     const nightQuotes: NightQuote[] = [...nights].sort((a, b) => a.night_date.localeCompare(b.night_date)).map((n) => ({
@@ -107,7 +110,7 @@ export class RatesService {
       label: null,
       belowFloor: money(n.room_rate).lt(minRate),
     }));
-    return this.summarise(roomTypeId, ratePlanId, nightQuotes, minRate, 1, { chargeableAdults: 0, freeChildren: 0, payingChildren: 0, extraAdults: 0, extraChildren: 0 });
+    return { ...this.summarise(roomTypeId, ratePlanId, nightQuotes, minRate, 1, { chargeableAdults: 0, freeChildren: 0, payingChildren: 0, extraAdults: 0, extraChildren: 0 }), gstRate };
   }
 
   private summarise(roomTypeId: string, ratePlanId: string | null, nights: NightQuote[], minRate: Decimal, minStay: number, occupancy: Quote['occupancy']): Quote {
@@ -147,8 +150,9 @@ export class RatesService {
     const lines: TaxableLine[] = [];
     rooms.forEach((room, i) => room.nights.forEach((n) => {
       const accommodation = money(n.roomRate).plus(n.extraPersonAmount);
-      lines.push({ key: `${i}:${n.date}:room`, taxCategory: 'accommodation', dateOfSupply: n.date, taxableValue: toMoneyString(accommodation), unitValue: toMoneyString(accommodation) });
-      if (money(n.mealAmount).gt(0)) lines.push({ key: `${i}:${n.date}:meal`, taxCategory: 'food', dateOfSupply: n.date, taxableValue: n.mealAmount });
+      const ratePercentOverride = room.gstRate ?? undefined;
+      lines.push({ key: `${i}:${n.date}:room`, taxCategory: 'accommodation', dateOfSupply: n.date, taxableValue: toMoneyString(accommodation), unitValue: toMoneyString(accommodation), ratePercentOverride });
+      if (money(n.mealAmount).gt(0)) lines.push({ key: `${i}:${n.date}:meal`, taxCategory: 'food', dateOfSupply: n.date, taxableValue: n.mealAmount, ratePercentOverride });
     }));
     const sum = (pick: (quote: Quote) => string) => toMoneyString(rooms.reduce((acc, r) => acc.plus(pick(r)), new Decimal(0)));
     const base = { roomTotal: sum((r) => r.roomTotal), extrasTotal: sum((r) => r.extrasTotal), mealTotal: sum((r) => r.mealTotal), taxableTotal: sum((r) => r.total) };
@@ -157,7 +161,7 @@ export class RatesService {
       const tax = computeTax(rules, lines);
       return {
         ...base, available: true, message: null, taxTotal: tax.taxTotal, roundOff: tax.roundOff, grandTotal: tax.grandTotal, groups: tax.groups,
-        usesPlaceholderRates: tax.lines.some((l) => placeholderIds.has(l.ruleId)),
+        usesPlaceholderRates: tax.lines.some((l) => l.ratePercentOverride === undefined && placeholderIds.has(l.ruleId)),
       };
     } catch (err) {
       if (!(err instanceof TaxRuleError)) throw err;
@@ -193,11 +197,14 @@ export class RatesService {
     const { rows: mealRows } = await q.query<Pick<MealPlanRow, 'adult_rate' | 'child_rate'>>(
       `SELECT adult_rate, child_rate FROM meal_plans WHERE property_id = $1 AND code = $2 AND is_active`, [propertyId, input.mealPlan],
     );
-    if (input.mealPlan !== 'EP' && !mealRows[0]) {
+    if (input.includesMealPlan && input.manualRate === undefined) {
+      throw new AppError(ERROR_CODES.VALIDATION, 'Enter the agreed nightly price when the meal plan is included.');
+    }
+    if (input.mealPlan !== 'EP' && !mealRows[0] && !input.includesMealPlan) {
       throw new AppError(ERROR_CODES.VALIDATION, `Meal plan ${input.mealPlan} is not set up for this property.`);
     }
     const meal = mealRows[0];
-    const mealPerNight = meal
+    const mealPerNight = meal && !input.includesMealPlan
       ? money(meal.adult_rate).times(chargeableAdults).plus(money(meal.child_rate).times(payingChildren))
       : new Decimal(0);
     const extraPerNight = input.extraPersonRate !== undefined
@@ -236,8 +243,8 @@ export class RatesService {
       };
     });
 
-    return this.summarise(input.roomTypeId, ratePlanId, nightQuotes, minRate, minStay,
-      { chargeableAdults, freeChildren, payingChildren, extraAdults, extraChildren });
+    return { ...this.summarise(input.roomTypeId, ratePlanId, nightQuotes, minRate, minStay,
+      { chargeableAdults, freeChildren, payingChildren, extraAdults, extraChildren }), gstRate: input.gstRate };
   }
 
   // ---------------- configuration (owner) ----------------

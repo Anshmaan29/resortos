@@ -91,7 +91,9 @@ test('a stay with food and an activity, paid card + UPI, checks out with a tax i
 
   await expect(page.getByRole('definition').filter({ hasText: /^₹0$/ })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Check out' }).click();
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Check out', exact: true }).click();
+  await page.getByRole('button', { name: 'Check out room 201', exact: true }).click();
   const checkout = page.getByRole('dialog', { name: 'Check out room 201?' });
   await expect(checkout.getByText('Tax invoice to be issued')).toBeVisible();
   // Checkout completes elapsed agreed room charges before settlement. The earlier

@@ -78,6 +78,7 @@ export type ReservationRoomStatus = 'reserved' | 'checked_in' | 'checked_out' | 
 export interface ReservationRoomRow {
   id: string; property_id: string; reservation_id: string; room_type_id: string; room_id: string | null; arrival: IsoDate; departure: IsoDate;
   adults: number; child_ages: (number | string)[]; rate_plan_id: string | null; meal_plan: MealPlanCode; nightly_rate: Money;
+  includes_meal_plan: boolean; gst_rate_override: Money | null;
   rate_authorised_by: string | null; status: ReservationRoomStatus; created_at: Date; version: number;
 }
 
