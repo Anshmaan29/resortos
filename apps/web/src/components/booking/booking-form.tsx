@@ -478,7 +478,7 @@ function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short
             <option value="configured">{line.reservationRoomId ? 'Keep agreed / use standard tariff' : 'Use standard tariff'}</option>
           </Select>
         )}</Field>
-        <div className="grid gap-3 sm:col-span-2 sm:grid-cols-[2fr_1fr]">
+        <div className="grid grid-cols-[2fr_1fr] gap-3 sm:col-span-2">
         {line.useCustomPrice ? <Field label="Room price per night" required error={priceError} hint="Includes the chosen meal plan. GST and extra guests are added separately.">{(id, d) => (
           <div className="relative">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-2">₹</span>
@@ -486,7 +486,7 @@ function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short
               onChange={(e) => onChange({ manualRate: e.target.value.replace(/[^\d.]/g, '') })} />
           </div>
         )}</Field> : <p className="self-center text-sm text-text-2">{line.reservationRoomId ? 'Unchanged rooms keep the agreed price.' : 'Using the hotel’s standard tariff.'}</p>}
-        <Field label="GST %" error={gstError} hint="Blank = hotel setting. Applies to room, meal plan and extra guests.">{(id, d) => (
+        <Field label="GST %" error={gstError} hint="Blank = hotel setting">{(id, d) => (
           <Input id={id} aria-describedby={d} invalid={!!gstError} inputMode="decimal" value={line.gstRate} placeholder="Hotel setting" onChange={(e) => onChange({ gstRate: e.target.value.replace(/[^\d.]/g, '') })} />
         )}</Field>
         </div>
