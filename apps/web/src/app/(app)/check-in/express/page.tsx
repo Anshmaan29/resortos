@@ -13,7 +13,7 @@ import { Card, ErrorBanner, PageHeader, Skeleton } from '@/components/ui/surface
 import { api, ApiError, newIdempotencyKey } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useProperty } from '@/lib/session';
-import type { Availability, BookingEstimate, ReservationDetail } from '@/lib/types';
+import type { Availability, BookingEstimate, ReservationDetail, RoomType } from '@/lib/types';
 
 /**
  * Express check-in for a walk-in (spec §18, PHASES "Before the pilot"): the booking and the check-in
@@ -36,9 +36,12 @@ export default function ExpressCheckInPage() {
   const [extraRate, setExtraRate] = useState('0');
   const [whatsappOptedIn, setWhatsappOptedIn] = useState(true);
   const key = useRef<{ body: string; key: string } | null>(null);
+  const roomTypes = useQuery({ queryKey: ['room-types'], queryFn: () => api<RoomType[]>('/room-types') });
+  const hasExtras = !!roomTypeId && Number(adults) > (roomTypes.data?.find((t) => t.id === roomTypeId)?.baseOccupancy ?? 1);
+  useEffect(() => { if (!hasExtras) setExtraRate('0'); }, [hasExtras]);
   const validMoney = (v: string) => /^\d+(\.\d{1,2})?$/.test(v);
-  const pricesValid = validMoney(rate) && (!gstRate || validMoney(gstRate) && Number(gstRate) <= 100) && (!extraRate || validMoney(extraRate));
-  const roomInput = { roomTypeId, roomId, adults: Number(adults), mealPlan, nightlyRate: rate, includesMealPlan: true, gstRate: gstRate || null, extraPersonRate: extraRate || undefined };
+  const pricesValid = validMoney(rate) && (!gstRate || validMoney(gstRate) && Number(gstRate) <= 100) && (!hasExtras || !extraRate || validMoney(extraRate));
+  const roomInput = { roomTypeId, roomId, adults: Number(adults), mealPlan, nightlyRate: rate, includesMealPlan: true, gstRate: gstRate || null, extraPersonRate: hasExtras ? extraRate || undefined : '0' };
   useEffect(() => { if (today && !departure) setDeparture(addDays(today, 1)); }, [today, departure]);
 
   const availability = useQuery({
@@ -131,7 +134,7 @@ export default function ExpressCheckInPage() {
               <Field label="Room price per night" required hint="Includes the chosen meal plan; before GST." error={fields['rooms.0.nightlyRate']}>{(id) => <Input id={id} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value.replace(/[^\d.]/g, ''))} placeholder="Agreed amount" />}</Field>
               <Field label="GST %" hint="Blank = hotel setting" error={gstRate && (!validMoney(gstRate) || Number(gstRate) > 100) ? 'Enter 0–100%' : fields['rooms.0.gstRate']}>{(id) => <Input id={id} inputMode="decimal" value={gstRate} onChange={(e) => setGstRate(e.target.value.replace(/[^\d.]/g, ''))} placeholder="Hotel setting" />}</Field>
             </div>
-            <Field label="Extra guest price per night" hint="Total extra adult / child charges. Blank = standard; 0 = included." error={fields['rooms.0.extraPersonRate']}>{(id) => <Input id={id} inputMode="decimal" value={extraRate} onChange={(e) => setExtraRate(e.target.value.replace(/[^\d.]/g, ''))} />}</Field>
+            {hasExtras && <Field label="Extra guest price per night" hint="Total extra adult / child charges. Blank = standard; 0 = included." error={fields['rooms.0.extraPersonRate']}>{(id) => <Input id={id} inputMode="decimal" value={extraRate} onChange={(e) => setExtraRate(e.target.value.replace(/[^\d.]/g, ''))} />}</Field>}
             {quote.isError ? <ErrorBanner message={(quote.error as Error).message} /> : pricesValid && roomTypeId ? <EstimateBreakdown estimate={quote.data} loading={quote.isFetching} /> : <p className="text-sm text-text-2">Enter the room price to calculate the total.</p>}
             <p className="text-xs text-text-2">{whatsappOptedIn ? 'By continuing, you confirm the guest agreed to receive booking, stay and payment messages from this hotel on WhatsApp.' : 'WhatsApp is off for this guest. Email messages still send automatically.'}</p>
             <details><summary className="cursor-pointer text-sm text-brand">Change WhatsApp preference</summary><Field label="WhatsApp messages">{(id) => <Select id={id} value={whatsappOptedIn ? 'agreed' : 'declined'} onChange={(e) => setWhatsappOptedIn(e.target.value === 'agreed')}><option value="agreed">Guest agreed — send automatically</option><option value="declined">Guest declined — email only</option></Select>}</Field></details>

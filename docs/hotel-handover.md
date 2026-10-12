@@ -57,3 +57,5 @@ Guest signatures are optional. In Registration & signature, reception may draw a
 The Today date updates automatically in India time and is used for new bookings and check-in. A separate Day closing date can show an older day until Night audit is completed. An unfinished audit no longer blocks a guest arriving today. Review outstanding arrivals and close the shift on the Night audit screen before completing day closing; the software does not mark guests as no-shows or close accounts automatically.
 
 All newly rendered PDF pages carry the supplied Voitto logo and VOITTO VENTURES masthead. Guest welcome email and the approved WhatsApp welcome template include the editable hotel Wi-Fi details. Existing archived registration files remain unchanged.
+
+The extra-guest price field appears only when adults exceed the room’s included occupancy or a child is present. Removing the last extra adult/child hides the field, clears its old value and sends zero extra charges in the preview and saved booking. This also applies to Express check-in’s adult count.

@@ -40,6 +40,8 @@ type GuestChoice = Pick<Guest, 'id' | 'fullName' | 'mobile' | 'city' | 'isVip' |
 
 const newLine = (roomTypeId = ''): RoomLine => ({ key: crypto.randomUUID(), roomTypeId, roomId: '', adults: 2, childAges: [], mealPlan: 'EP', manualRate: '', useCustomPrice: true, gstRate: '', manualExtras: '0' });
 const validRate = (v: string) => (/^\d+(\.\d{1,2})?$/.test(v) ? v : undefined);
+const hasExtraGuests = (line: RoomLine, types: RoomType[]) => line.childAges.length > 0
+  || line.adults > (types.find((t) => t.id === line.roomTypeId)?.baseOccupancy ?? 1);
 
 function useDebounced<T>(value: T, ms = 300) {
   const [v, setV] = useState(value);
@@ -104,11 +106,11 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
   // Debounce the serialised input: a new object every render would never settle.
   const pricingReady = lines.every((l) => (!l.useCustomPrice || validRate(l.manualRate) !== undefined)
     && (!l.gstRate || validRate(l.gstRate) !== undefined && Number(l.gstRate) <= 100)
-    && (!l.manualExtras || validRate(l.manualExtras) !== undefined));
+    && (!hasExtraGuests(l, roomTypes.data ?? []) || !l.manualExtras || validRate(l.manualExtras) !== undefined));
   const estimateJson = useDebounced(JSON.stringify({
     pricingReady,
     reservationId: mode === 'edit' ? initial?.id : undefined, arrival, departure,
-    rooms: lines.map((l) => ({ reservationRoomId: l.reservationRoomId, roomTypeId: l.roomTypeId, adults: l.adults, childAges: l.childAges, mealPlan: l.mealPlan, nightlyRate: l.useCustomPrice ? validRate(l.manualRate) : undefined, includesMealPlan: l.useCustomPrice ? true : undefined, gstRate: validRate(l.gstRate) ?? null, extraPersonRate: validRate(l.manualExtras) })),
+    rooms: lines.map((l) => ({ reservationRoomId: l.reservationRoomId, roomTypeId: l.roomTypeId, adults: l.adults, childAges: l.childAges, mealPlan: l.mealPlan, nightlyRate: l.useCustomPrice ? validRate(l.manualRate) : undefined, includesMealPlan: l.useCustomPrice ? true : undefined, gstRate: validRate(l.gstRate) ?? null, extraPersonRate: hasExtraGuests(l, roomTypes.data ?? []) ? validRate(l.manualExtras) : '0' })),
   }));
   const { pricingReady: estimateReady, ...estimateInput } = JSON.parse(estimateJson) as { pricingReady: boolean; reservationId?: string; arrival: string; departure: string; rooms: { roomTypeId: string }[] };
   const estimate = useQuery({
@@ -133,7 +135,11 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
   /** Rooms this booking already holds of a type on overlapping dates — not a shortage when editing. */
   const ownOfType = (roomTypeId: string) => (mode === 'edit' && initial && arrival < initial.departure && departure > initial.arrival
     ? initial.rooms.filter((r) => r.status === 'reserved' && r.roomTypeId === roomTypeId).length : 0);
-  const updateLine = (key: string, patch: Partial<RoomLine>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  const updateLine = (key: string, patch: Partial<RoomLine>) => setLines((ls) => ls.map((l) => {
+    if (l.key !== key) return l;
+    const next = { ...l, ...patch };
+    return hasExtraGuests(next, roomTypes.data ?? []) ? next : { ...next, manualExtras: '0' };
+  }));
 
   // ---------- submit ----------
   const idempotency = useRef<{ key: string; body: string } | null>(null);
@@ -147,7 +153,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
     specialRequests: specialRequests || undefined,
     rooms: lines.map((l) => ({
       reservationRoomId: l.reservationRoomId, roomTypeId: l.roomTypeId, roomId: l.roomId || undefined, adults: l.adults,
-      childAges: l.childAges, mealPlan: l.mealPlan, nightlyRate: l.useCustomPrice ? validRate(l.manualRate) : undefined, includesMealPlan: l.useCustomPrice ? true : undefined, gstRate: validRate(l.gstRate) ?? null, extraPersonRate: validRate(l.manualExtras),
+      childAges: l.childAges, mealPlan: l.mealPlan, nightlyRate: l.useCustomPrice ? validRate(l.manualRate) : undefined, includesMealPlan: l.useCustomPrice ? true : undefined, gstRate: validRate(l.gstRate) ?? null, extraPersonRate: hasExtraGuests(l, roomTypes.data ?? []) ? validRate(l.manualExtras) : '0',
     })),
     ownerAuthorisationId,
     ...(mode === 'edit' ? { version: initial!.version } : {}),
@@ -192,7 +198,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
     if (!parsed.success) for (const i of parsed.error.issues) clientErrors[i.path.join('.')] ??= i.message;
     lines.forEach((line, i) => {
       if (line.useCustomPrice && validRate(line.manualRate) === undefined) clientErrors[`rooms.${i}.nightlyRate`] = 'Enter the agreed nightly price (up to two decimals)';
-      if (line.manualExtras && validRate(line.manualExtras) === undefined) clientErrors[`rooms.${i}.extraPersonRate`] = 'Enter a valid price with up to two decimals';
+      if (hasExtraGuests(line, roomTypes.data ?? []) && line.manualExtras && validRate(line.manualExtras) === undefined) clientErrors[`rooms.${i}.extraPersonRate`] = 'Enter a valid price with up to two decimals';
       if (line.gstRate && (validRate(line.gstRate) === undefined || Number(line.gstRate) > 100)) clientErrors[`rooms.${i}.gstRate`] = 'Enter GST between 0 and 100%';
     });
     setErrors(clientErrors);
@@ -494,10 +500,10 @@ function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short
           <Input id={id} aria-describedby={d} invalid={!!gstError} inputMode="decimal" value={line.gstRate} placeholder="Hotel setting" onChange={(e) => onChange({ gstRate: e.target.value.replace(/[^\d.]/g, '') })} />
         )}</Field>
         </div>
-        <Field label="Extra guest price per night" error={extrasError} hint="Total for all extra adults / children. Blank = standard charges; enter 0 to include them at no extra cost.">{(id, d) => (
+        {hasExtraGuests(line, roomTypes) && <Field label="Extra guest price per night" error={extrasError} hint="Total for all extra adults / children. Blank = standard charges; enter 0 to include them at no extra cost.">{(id, d) => (
           <Input id={id} aria-describedby={d} invalid={!!extrasError} inputMode="decimal" value={line.manualExtras}
             onChange={(e) => onChange({ manualExtras: e.target.value.replace(/[^\d.]/g, '') })} placeholder="Use configured prices" />
-        )}</Field>
+        )}</Field>}
       </div>
       {line.useCustomPrice && validRate(line.manualRate) === undefined ? <p className="mt-3 text-sm text-text-2">Enter a room price to see the booking total.</p> : datesValid && line.roomTypeId && (
         estimateError ? <p className="mt-3 text-sm text-danger">{estimateError}</p>

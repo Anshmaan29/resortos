@@ -28,3 +28,5 @@ Guest Wi-Fi is stored in the hotel's editable settings, not in source code. Emai
 - No real guest message, booking, payment or check-in was created during this update's QA.
 
 Protected GitHub checks, production migration/deployment, and live Wi-Fi/template activation are verified separately in the release log. Physical printer/phone acceptance and accountant approval remain resort handover checks.
+
+The extra-guest price field appears only when adults exceed the room’s included occupancy or a child is present. Removing the last extra adult/child hides the field, clears its old value and sends zero extra charges in the preview and saved booking. This also applies to Express check-in’s adult count.

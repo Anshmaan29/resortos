@@ -22,6 +22,17 @@ test('Save booking records WhatsApp agreement without an extra checkbox or send 
   await page.getByLabel('Room price per night').fill('6000');
   await page.getByLabel('GST %', { exact: true }).fill('7.5');
   await page.getByLabel('Extra guest price per night').fill('300');
+  await page.getByRole('button', { name: 'Fewer adults' }).click();
+  await expect(page.getByLabel('Extra guest price per night')).toHaveCount(0);
+  await page.getByLabel('Child age').fill('7');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.getByLabel('Extra guest price per night')).toBeVisible();
+  await page.getByLabel('Extra guest price per night').fill('250');
+  await page.getByRole('button', { name: 'Remove child aged 7' }).click();
+  await expect(page.getByLabel('Extra guest price per night')).toHaveCount(0);
+  await page.getByRole('button', { name: 'More adults' }).click();
+  await expect(page.getByLabel('Extra guest price per night')).toHaveValue('0');
+  await page.getByLabel('Extra guest price per night').fill('300');
   await page.getByRole('textbox', { name: 'Arrival' }).fill('12/12/2026');
   await page.getByRole('textbox', { name: 'Departure' }).fill('13/12/2026');
   await page.getByRole('textbox', { name: 'Departure' }).blur();
