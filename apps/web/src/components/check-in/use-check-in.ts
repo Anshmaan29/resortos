@@ -38,16 +38,22 @@ export function useCheckIn(draftId: string, options: { pollDocuments: boolean; i
   const dirty = useRef(false);
   const [confirmed, setConfirmed] = useState(false);
 
-  // Adopt server state on first load, and whenever it moved on and we have nothing unsaved.
+  // Never render old room-line data against a freshly edited booking's room metadata.
+  const dataMatchesRooms = !!data && !!draft.data
+    && data.rooms.length === draft.data.reservationRoomIds.length
+    && data.rooms.every((room) => draft.data!.reservationRoomIds.includes(room.reservationRoomId));
+
+  // A booking edit replaces room IDs; its saved draft must supersede stale local room choices.
   useEffect(() => {
     if (!draft.data || draft.data.status !== 'active') return;
-    if (data === null || (!dirty.current && draft.data.version > version.current)) {
+    if (data === null || ((!dirty.current || !dataMatchesRooms) && draft.data.version > version.current)) {
+      if (!dataMatchesRooms) { dirty.current = false; setSaveState('saved'); }
       setData(draft.data.data);
       version.current = draft.data.version;
       const initial = optsRef.current.initialStep;
-      if (data === null) setStep(initial ? initial(draft.data.step) : Math.min(Math.max(draft.data.step, 1), 5));
+      if (data === null || !dataMatchesRooms) setStep(initial ? initial(draft.data.step) : Math.min(Math.max(draft.data.step, 1), 5));
     }
-  }, [draft.data, data]);
+  }, [draft.data, data, dataMatchesRooms]);
 
   const save = useCallback(async (next: CheckInDraft['data'], nextStep: number) => {
     setSaveState('saving');
@@ -71,11 +77,11 @@ export function useCheckIn(draftId: string, options: { pollDocuments: boolean; i
 
   // Debounced autosave while typing.
   useEffect(() => {
-    if (!data || !dirty.current) return;
+    if (!data || !dataMatchesRooms || draft.data?.status !== 'active' || !dirty.current) return;
     setSaveState('unsaved');
     const t = setTimeout(() => void save(data, step), 700);
     return () => clearTimeout(t);
-  }, [data, step, save]);
+  }, [data, step, save, dataMatchesRooms, draft.data?.status]);
 
   const change = useCallback((next: CheckInDraft['data']) => { dirty.current = true; setData(next); }, []);
   const refresh = useCallback(() => { void draft.refetch(); }, [draft]);
@@ -100,5 +106,5 @@ export function useCheckIn(draftId: string, options: { pollDocuments: boolean; i
   });
 
   const uploading = queue.items.some((i) => ['queued', 'uploading', 'verifying', 'waiting_network'].includes(i.status));
-  return { draft, reservation, queue, data, change, refresh, save, step, setStep, saveState, dirty, confirm, confirmed, uploading };
+  return { draft, reservation, queue, data: dataMatchesRooms ? data : null, change, refresh, save, step, setStep, saveState, dirty, confirm, confirmed, uploading };
 }

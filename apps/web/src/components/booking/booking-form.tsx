@@ -171,7 +171,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
         : api<ReservationDetail>('/reservations', { method: 'POST', body, idempotencyKey: idempotency.current.key });
     },
     onSuccess: async (res) => {
-      await Promise.all(['front-desk', 'reservations', 'reservation', 'rooms', 'availability', 'calendar'].map((k) => qc.invalidateQueries({ queryKey: [k] })));
+      await Promise.all(['front-desk', 'reservations', 'reservation', 'rooms', 'availability', 'calendar', 'check-in'].map((k) => qc.invalidateQueries({ queryKey: [k] })));
       toast('success', mode === 'edit' ? `Booking ${res.number} updated` : mode === 'rebook' ? `Rebooked as ${res.number}` : `Booking ${res.number} saved`);
       router.push(`/reservations/${res.id}`);
     },

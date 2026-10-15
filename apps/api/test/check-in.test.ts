@@ -366,3 +366,72 @@ describe('idempotent document creation', () => {
     expect(clash.body.code).toBe('IDEMPOTENCY_MISMATCH');
   });
 });
+
+describe('booking edits during check-in', () => {
+  it('switches Deluxe to Premium without losing uploaded documents and checks into 106', async () => {
+    const body = booking({ roomTypeId: f.type('DLX'), arrival: '2026-09-16', departure: '2026-09-17', adults: 1, nightlyRate: '6000' });
+    const created = (await post(owner, '/reservations', body).expect(201)).body;
+    const started = (await post(desk, '/check-in-drafts', { reservationId: created.id }, null).expect(200)).body;
+    const data = structuredClone(started.data);
+    data.rooms[0].occupants[0].idType = 'passport';
+    data.rooms[0].occupants[0].idLast4 = 'X123';
+    data.rooms[0].roomId = f.room('205');
+    data.consents.stayAndCompliance = true;
+    const saved = (await desk.patch(`/api/v1/check-in-drafts/${started.id}`).set('x-resortos', '1').send({ version: started.version, step: 5, data }).expect(200)).body;
+    const photo = await deskDocument(started.id, 'guest_photo', { occupantKey: 'r0a0' });
+    const id = await deskDocument(started.id, 'id_front', { occupantKey: 'r0a0', idType: 'passport' });
+    const updated = (await owner.patch(`/api/v1/reservations/${created.id}`).set('x-resortos', '1').set('idempotency-key', key()).send({
+      ...body, guest: undefined, guestId: created.guest.id, version: created.version,
+      rooms: [{ ...body.rooms[0], reservationRoomId: created.rooms[0].id, roomTypeId: f.type('PRE') }],
+    }).expect(200)).body;
+    const current = (await desk.get(`/api/v1/check-in-drafts/${started.id}`).expect(200)).body;
+    expect(current.reservation.rooms[0]).toMatchObject({ roomTypeId: f.type('PRE'), roomTypeName: 'Premium', reservationRoomId: updated.rooms[0].id });
+    expect(current.data.rooms[0].reservationRoomId).toBe(updated.rooms[0].id);
+    expect(current.data.rooms[0].roomId).toBeUndefined();
+    expect(current.data.rooms[0].occupants).toEqual(data.rooms[0].occupants);
+    expect(current.documents.map((d: any) => d.id)).toEqual(expect.arrayContaining([photo.id, id.id]));
+    expect(current.step).toBe(2);
+    expect(current.problems.some((p: any) => /already checked in or cancelled/.test(p.message))).toBe(false);
+    const resumed = (await post(desk, '/check-in-drafts', { reservationId: created.id }, null).expect(200)).body;
+    expect(resumed.id).toBe(started.id);
+    await desk.patch(`/api/v1/check-in-drafts/${started.id}`).set('x-resortos', '1').send({ version: saved.version, step: 2, data }).expect(409);
+    current.data.rooms[0].roomId = f.room('106');
+    await desk.patch(`/api/v1/check-in-drafts/${started.id}`).set('x-resortos', '1').send({ version: current.version, step: 5, data: current.data }).expect(200);
+    const confirmed = (await post(desk, `/check-in-drafts/${started.id}/confirm`, {}).expect(200)).body;
+    const stay = (await desk.get(`/api/v1/stays/${confirmed.stays[0].id}`).expect(200)).body;
+    expect(stay.roomNumber).toBe('106');
+    expect(stay.documents.map((d: any) => d.id)).toEqual(expect.arrayContaining([photo.id, id.id]));
+  });
+
+  it('closes the old scanner and starts fresh when the booking guest changes', async () => {
+    const body = booking({ roomTypeId: f.type('DLX'), arrival: '2026-09-16', departure: '2026-09-17', adults: 1 });
+    const created = (await post(owner, '/reservations', body).expect(201)).body;
+    const started = (await post(desk, '/check-in-drafts', { reservationId: created.id }, null).expect(200)).body;
+    await post(desk, `/check-in-drafts/${started.id}/capture-sessions`, {}, null).expect(201);
+    const other = booking({ roomTypeId: f.type('DLX'), arrival: body.arrival, departure: body.departure }).guest;
+    await owner.patch(`/api/v1/reservations/${created.id}`).set('x-resortos', '1').set('idempotency-key', key()).send({
+      ...body, guest: other, version: created.version, rooms: [{ ...body.rooms[0], reservationRoomId: created.rooms[0].id }],
+    }).expect(200);
+    expect((await desk.get(`/api/v1/check-in-drafts/${started.id}`).expect(200)).body.status).toBe('abandoned');
+    const [capture] = await sql('SELECT closed_reason FROM capture_sessions WHERE draft_id=$1', [started.id]);
+    expect(capture.closed_reason).toBe('abandoned');
+    const fresh = (await post(desk, '/check-in-drafts', { reservationId: created.id }, null).expect(200)).body;
+    expect(fresh.id).not.toBe(started.id);
+    expect(fresh.documents).toEqual([]);
+    expect(fresh.data.rooms[0].occupants[0].fullName).toBe(`${other.firstName} ${other.lastName}`);
+  });
+
+  it('starts fresh when the adult or child party changes', async () => {
+    const body = booking({ roomTypeId: f.type('DLX'), arrival: '2026-09-16', departure: '2026-09-17', adults: 1 });
+    const created = (await post(owner, '/reservations', body).expect(201)).body;
+    const started = (await post(desk, '/check-in-drafts', { reservationId: created.id }, null).expect(200)).body;
+    await owner.patch(`/api/v1/reservations/${created.id}`).set('x-resortos', '1').set('idempotency-key', key()).send({
+      ...body, guest: undefined, guestId: created.guest.id, version: created.version,
+      rooms: [{ ...body.rooms[0], reservationRoomId: created.rooms[0].id, adults: 2 }],
+    }).expect(200);
+    expect((await desk.get(`/api/v1/check-in-drafts/${started.id}`).expect(200)).body.status).toBe('abandoned');
+    const fresh = (await post(desk, '/check-in-drafts', { reservationId: created.id }, null).expect(200)).body;
+    expect(fresh.id).not.toBe(started.id);
+    expect(fresh.data.rooms[0].occupants).toHaveLength(2);
+  });
+});

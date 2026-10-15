@@ -59,3 +59,5 @@ The Today date updates automatically in India time and is used for new bookings 
 All newly rendered PDF pages carry the supplied Voitto logo and VOITTO VENTURES masthead. Guest welcome email and the approved WhatsApp welcome template include the editable hotel Wi-Fi details. Existing archived registration files remain unchanged.
 
 The extra-guest price field appears only when adults exceed the room’s included occupancy or a child is present. Removing the last extra adult/child hides the field, clears its old value and sends zero extra charges in the preview and saved booking. This also applies to Express check-in’s adult count.
+
+When a booking is edited after check-in has started, the draft follows the new room category and dates. Guest details and uploaded documents are retained when the primary guest and party are unchanged; review the room selection again. Changing the guest or party starts a fresh check-in so documents are never transferred to a different guest.

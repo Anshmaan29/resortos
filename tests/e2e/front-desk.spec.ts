@@ -197,3 +197,54 @@ test('edit a booking, then cancel and rebook it', async ({ page }) => {
   await expect(page.getByText(/Rebooked as BK-\d+/).first()).toBeVisible();
   await expect(page.getByText('Rebook of')).toBeVisible();
 });
+
+test('editing a started check-in to Premium lists room 106 @phone', async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (['error', 'warning'].includes(message.type())) errors.push(message.text()); });
+  await receptionist(page);
+  const types = await (await page.request.get('/api/v1/room-types')).json();
+  const deluxe = types.find((t: any) => t.code === 'DLX');
+  const premium = types.find((t: any) => t.code === 'PRE');
+  const response = await page.request.post('/api/v1/reservations', {
+    headers: { 'x-resortos': '1', 'idempotency-key': crypto.randomUUID() },
+    data: {
+      guest: { firstName: 'Category', lastName: 'Change', mobile: testInfo.project.name === 'phone' ? '9899910602' : '9899910601' },
+      source: 'walk_in', arrival: '2026-09-16', departure: '2026-09-17', whatsappOptedIn: false,
+      rooms: [{ roomTypeId: deluxe.id, adults: 1, nightlyRate: '6000', includesMealPlan: true, gstRate: '0', extraPersonRate: '0' }],
+    },
+  });
+  expect(response.status()).toBe(201);
+  const booking = await response.json();
+  await page.goto(`/reservations/${booking.id}`);
+  await page.getByRole('button', { name: 'Check in', exact: true }).click();
+  await page.waitForURL(/\/check-in\/[^/]+$/);
+  const originalDraftUrl = page.url();
+  await expect(page).toHaveTitle(/ResortOS/);
+  await page.getByRole('button', { name: /^(2\. )?Room$/ }).click();
+  await expect(page.getByRole('heading', { name: deluxe.name, exact: true })).toBeVisible();
+  await page.getByRole('link', { name: booking.number, exact: true }).click();
+  await page.getByRole('button', { name: 'Edit booking' }).click();
+  await page.getByLabel('Room type', { exact: true }).selectOption(premium.id);
+  await page.getByLabel('Room pricing', { exact: true }).selectOption('custom');
+  await page.getByRole('textbox', { name: 'Room price per night', exact: true }).fill('6000');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(page.getByText(`Booking ${booking.number} updated`)).toBeVisible();
+  await page.getByRole('button', { name: 'Check in', exact: true }).click();
+  await page.waitForURL(originalDraftUrl);
+  await expect(page.getByRole('heading', { name: premium.name, exact: true })).toBeVisible();
+  const roomSelect = page.getByRole('combobox', { name: 'Room', exact: true });
+  const option = roomSelect.locator('option').filter({ hasText: /^106$/ });
+  await expect(option).toHaveCount(1);
+  const savedRoom = page.waitForResponse(r => r.url().includes('/check-in-drafts/') && r.request().method() === 'PATCH' && r.status() === 200);
+  await roomSelect.selectOption({ label: '106' });
+  await savedRoom;
+  await expect(page.getByText('Room 106 is ready.')).toBeVisible();
+  const selectedId = await roomSelect.inputValue();
+  await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: premium.name, exact: true })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Room', exact: true })).toHaveValue(selectedId);
+  expect(errors).toEqual([]);
+  if (process.env.E2E_SCREENSHOTS) await page.screenshot({ path: `${process.env.E2E_SCREENSHOTS}/premium-room-106-${testInfo.project.name}.png`, fullPage: true });
+});

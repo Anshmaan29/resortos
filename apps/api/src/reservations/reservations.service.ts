@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
   addDays, BOOKING_SOURCE_LABELS, Decimal, ERROR_CODES, formatDate, formatINR, formatReference, money, nightsBetween, toMoneyString,
-  type BookingSource, type CancelReservationInput, type CreateReservationInput, type IsoDate, type NoShowInput, type ReservationEstimateInput,
+  type BookingSource, type CancelReservationInput, type CheckInDraftData, type CreateReservationInput, type IsoDate, type NoShowInput, type ReservationEstimateInput,
   type ReservationStatus, type UpdateReservationInput,
 } from '@resortos/shared';
 import { OwnerAuthorisationService, type Authorisation, type AuthorisationReason } from '../auth/owner-authorisation.service';
@@ -11,7 +11,7 @@ import { AppError, notFound, staleVersion } from '../common/errors';
 import { OutboxService } from '../common/outbox.service';
 import type { Actor } from '../common/request-context';
 import { DbService, gather, type Queryable } from '../db/db.service';
-import type { CountRow, IdRow, NightRow, ReservationRoomRow, ReservationRow } from '../db/rows';
+import type { CheckInDraftRow, CountRow, IdRow, NightRow, ReservationRoomRow, ReservationRow } from '../db/rows';
 import { GuestsService } from '../guests/guests.service';
 import { PropertyService } from '../property/property.service';
 import { RatesService, type Quote } from '../rates/rates.service';
@@ -219,6 +219,7 @@ export class ReservationsService {
   }
 
   private async writeRooms(q: Queryable, actor: Actor, reservationId: string, input: BookingInput, priced: PricedRooms, auth: Authorisation | null) {
+    const written: { previousId: string | undefined; id: string; input: RoomInput }[] = [];
     for (const [i, room] of input.rooms.entries()) {
       const quote = priced.quotes[i]!;
       const previous = room.reservationRoomId ? priced.existing.get(room.reservationRoomId)?.row : undefined;
@@ -232,6 +233,7 @@ export class ReservationsService {
           quote.includesMealPlan ?? (priced.reused[i] ? previous?.includes_meal_plan ?? false : false), quote.gstRate ?? null],
       );
       const rrId = rows[0]!.id;
+      written.push({ previousId: room.reservationRoomId, id: rrId, input: room });
       for (const n of quote.nights) {
         await q.query(
           `INSERT INTO reservation_room_nights (reservation_room_id, night_date, property_id, room_rate, extra_person_amount, meal_amount, rate_source)
@@ -241,6 +243,7 @@ export class ReservationsService {
       }
       if (room.roomId) await this.allocateRoom(q, actor, rrId, room.roomId);
     }
+    return written;
   }
 
   private summary(input: BookingInput, priced: PricedRooms) {
@@ -381,7 +384,38 @@ export class ReservationsService {
       [id, guestId, input.source, input.otaReference ?? null, input.arrival, input.departure, input.status,
         isGroup ? input.groupName : null, isGroup ? guestId : null, isGroup, input.specialRequests ?? null, input.internalNotes ?? null, actor.user.id, input.purpose ?? null],
     );
-    await this.writeRooms(q, actor, id, input, priced, auth);
+    const written = await this.writeRooms(q, actor, id, input, priced, auth);
+    const { rows: drafts } = await q.query<CheckInDraftRow>(
+      `SELECT * FROM check_in_drafts WHERE property_id=$1 AND reservation_id=$2 AND status='active' FOR UPDATE`,
+      [propertyId, id],
+    );
+    for (const draft of drafts) {
+      // Booking edits replace room-line IDs. Keep a draft's occupants and uploaded documents
+      // only when the primary guest and every selected room's party are unchanged.
+      const compatible = guestId === res.primary_guest_id && draft.reservation_room_ids.every((oldId) => {
+        const next = written.find((r) => r.previousId === oldId);
+        const old = existing.get(oldId)?.row;
+        return next && old && next.input.adults === old.adults && sameAges(old.child_ages, next.input.childAges);
+      });
+      if (!compatible) {
+        await q.query(`UPDATE check_in_drafts SET status='abandoned',updated_by=$2 WHERE id=$1`, [draft.id, actor.user.id]);
+        await q.query(`UPDATE capture_sessions SET closed_at=now(),closed_reason='abandoned' WHERE draft_id=$1 AND closed_at IS NULL`, [draft.id]);
+        await this.audit.record(q, actor, { action: 'check_in.abandoned', entityType: 'reservation', entityId: id,
+          after: { draftId: draft.id }, reason: 'Booking guest or party changed; start a fresh check-in to avoid reusing another guest’s documents.' });
+        continue;
+      }
+      const data = draft.data as CheckInDraftData;
+      const nextData: CheckInDraftData = { ...data, rooms: data.rooms.map((room) => {
+        const next = written.find((r) => r.previousId === room.reservationRoomId)!;
+        const old = existing.get(room.reservationRoomId)!.row;
+        const keepRoom = old.room_type_id === next.input.roomTypeId && res.arrival === input.arrival && res.departure === input.departure;
+        return { ...room, reservationRoomId: next.id, roomId: next.input.roomId ?? (keepRoom ? room.roomId : undefined) };
+      }) };
+      await q.query(`UPDATE check_in_drafts SET reservation_room_ids=$2,data=$3,step=LEAST(step,2),updated_by=$4 WHERE id=$1`,
+        [draft.id, nextData.rooms.map((r) => r.reservationRoomId), JSON.stringify(nextData), actor.user.id]);
+      await this.audit.record(q, actor, { action: 'check_in.booking_synchronised', entityType: 'reservation', entityId: id,
+        after: { draftId: draft.id, roomIds: nextData.rooms.map((r) => r.reservationRoomId), documentsPreserved: true } });
+    }
     if (auth) await this.ownerAuth.recordOverrides(q, actor, auth, { type: 'reservation', id });
 
     await this.audit.record(q, actor, {

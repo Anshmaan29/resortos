@@ -213,12 +213,17 @@ export class CheckInService {
    * Only VERIFIED documents count; anything still uploading blocks with a clear message.
    */
   async confirm(q: Queryable, actor: Actor, draftId: string) {
+    // Booking edits also update drafts: always lock the booking before the draft.
+    const { rows: resRows } = await q.query<ReservationRow>(
+      `SELECT r.* FROM reservations r JOIN check_in_drafts d ON d.reservation_id=r.id
+        WHERE d.id=$1 AND d.property_id=$2 AND r.property_id=$2 FOR UPDATE OF r`, [draftId, actor.user.propertyId],
+    );
+    if (!resRows[0]) throw notFound('Check-in');
     const { rows: dr } = await q.query<CheckInDraftRow>(`SELECT * FROM check_in_drafts WHERE id = $1 AND property_id = $2 FOR UPDATE`, [draftId, actor.user.propertyId]);
     const draft = dr[0];
     if (!draft) throw notFound('Check-in');
     if (draft.status !== 'active') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This check-in is already finished.');
 
-    const { rows: resRows } = await q.query<ReservationRow>(`SELECT * FROM reservations WHERE id = $1 FOR UPDATE`, [draft.reservation_id]);
     const res = resRows[0]!;
     if (!['confirmed', 'checked_in'].includes(res.status)) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This booking cannot be checked in.');
     const bd = await this.property.today(q, actor.user.propertyId);
