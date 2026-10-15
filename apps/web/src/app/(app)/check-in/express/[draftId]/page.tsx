@@ -24,8 +24,13 @@ export default function ExpressDraftPage() {
     useCheckIn(draftId, { pollDocuments: true, initialStep: () => 5, afterConfirm: 'stay' });
 
   if (draft.isError) return <ErrorBanner message={(draft.error as Error).message} onRetry={() => draft.refetch()} />;
+  if (draft.data && draft.data.status !== 'active' && !confirmed) {
+    return <div className="flex flex-col gap-4">
+      <ErrorBanner message={draft.data.status === 'confirmed' ? 'This check-in is already complete.' : 'The booking changed or this check-in was cancelled. Open Check in from the booking to continue with its current details.'} />
+      <Button variant="outline" onClick={() => window.location.assign(`/reservations/${draft.data!.reservationId}`)}>Back to booking</Button>
+    </div>;
+  }
   if (!draft.data || !data || !property.data) {
-    if (draft.data && draft.data.status !== 'active') return <ErrorBanner message={draft.data.status === 'confirmed' ? 'This check-in is already complete.' : 'This check-in was cancelled.'} />;
     return <Skeleton className="h-96" />;
   }
   const d = draft.data;
