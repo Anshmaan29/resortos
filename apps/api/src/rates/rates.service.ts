@@ -175,7 +175,7 @@ export class RatesService {
 
     const totalGuests = input.adults + input.childAges.length;
     if (totalGuests > rt.max_occupancy) {
-      throw new AppError(ERROR_CODES.VALIDATION, `${rt.name} allows at most ${rt.max_occupancy} guests.`, {
+      throw new AppError(ERROR_CODES.VALIDATION, `This room allows at most ${rt.max_occupancy} guests.`, {
         fields: [{ path: 'adults', message: `Maximum ${rt.max_occupancy} guests` }],
       });
     }

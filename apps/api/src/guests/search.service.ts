@@ -91,7 +91,7 @@ export class SearchService {
       ...rooms.rows.map((r): SearchHit => ({
         kind: 'room', id: r.id, href: r.stay_id ? `/stays/${r.stay_id}` : '/rooms',
         title: `Room ${r.number}`,
-        subtitle: r.guest_name ? `${r.type_name} · ${r.guest_name} in house` : `${r.type_name} · vacant`,
+        subtitle: r.guest_name ? `${r.guest_name} · in house` : 'Vacant',
         rank: 1,
       })),
       ...vehicles.rows.map((v): SearchHit => ({
