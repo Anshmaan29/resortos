@@ -10,6 +10,7 @@ export interface PropertyPolicies {
   receptionPhone: string | null; wifiDetails: string | null; locationLink: string | null; deskLockMinutes: number;
 }
 export interface Property {
+  bookingModel: 'hotel' | 'private_villa';
   id: string; name: string; legalName: string; addressLine1: string; addressLine2: string | null; city: string; stateCode: string;
   pinCode: string; gstin: string | null; phone: string; email: string | null; today: string; businessDate: string; checkInTime: string; checkOutTime: string;
   timezone: string; isPractice: boolean; version: number; policies: PropertyPolicies;

@@ -28,7 +28,7 @@ export class PropertyService {
   /** Missing setup is visible before the desk reaches a blocked payment or checkout. */
   async setupStatus(propertyId: string) {
     const { rows } = await this.db.query<{
-      rooms_tax: boolean; food_tax: boolean; cash: boolean; upi: boolean; rate_floors: boolean; reception: boolean;
+      rooms_tax: boolean; food_tax: boolean; activity_tax: boolean; cash: boolean; upi: boolean; rate_floors: boolean; reception: boolean;
     }>(`SELECT
       EXISTS (SELECT 1 FROM tax_rules t WHERE t.property_id=p.id AND t.tax_category='accommodation'
         AND p.current_business_date >= t.effective_from AND (t.effective_to IS NULL OR p.current_business_date <= t.effective_to)
@@ -36,6 +36,9 @@ export class PropertyService {
       EXISTS (SELECT 1 FROM tax_rules t WHERE t.property_id=p.id AND t.tax_category='food'
         AND p.current_business_date >= t.effective_from AND (t.effective_to IS NULL OR p.current_business_date <= t.effective_to)
         AND t.origin='configured') AS food_tax,
+      EXISTS (SELECT 1 FROM tax_rules t WHERE t.property_id=p.id AND t.tax_category='activity'
+        AND p.current_business_date >= t.effective_from AND (t.effective_to IS NULL OR p.current_business_date <= t.effective_to)
+        AND t.origin='configured') AS activity_tax,
       EXISTS (SELECT 1 FROM payment_accounts a WHERE a.property_id=p.id AND a.kind='cash' AND a.is_active) AS cash,
       EXISTS (SELECT 1 FROM payment_accounts a WHERE a.property_id=p.id AND a.kind='upi' AND a.is_active) AS upi,
       NOT EXISTS (SELECT 1 FROM room_types t WHERE t.property_id=p.id AND t.is_active AND t.min_rate=0) AS rate_floors,
@@ -43,7 +46,7 @@ export class PropertyService {
       FROM properties p WHERE p.id=$1`, [propertyId]);
     if (!rows[0]) throw notFound('Property');
     const r = rows[0];
-    return { roomTaxConfigured: r.rooms_tax, foodTaxConfigured: r.food_tax, cashConfigured: r.cash,
+    return { roomTaxConfigured: r.rooms_tax, foodTaxConfigured: r.food_tax, activityTaxConfigured: r.activity_tax, cashConfigured: r.cash,
       upiConfigured: r.upi, rateFloorsConfigured: r.rate_floors, receptionistConfigured: r.reception };
   }
 
@@ -65,7 +68,7 @@ export class PropertyService {
     const p = rows[0];
     if (!p) throw notFound('Property');
     return {
-      id: p.id, name: p.name, legalName: p.legal_name, addressLine1: p.address_line1, addressLine2: p.address_line2,
+      id: p.id, bookingModel: p.booking_model, name: p.name, legalName: p.legal_name, addressLine1: p.address_line1, addressLine2: p.address_line2,
       city: p.city, stateCode: p.state_code, pinCode: p.pin_code, gstin: p.gstin, phone: p.phone, email: p.email,
       checkInTime: String(p.check_in_time).slice(0, 5), checkOutTime: String(p.check_out_time).slice(0, 5),
       timezone: p.timezone, today: propertyToday(p), businessDate: p.current_business_date, isPractice: p.is_practice, version: p.version,

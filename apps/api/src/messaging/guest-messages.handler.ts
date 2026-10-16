@@ -13,7 +13,7 @@ import type { TemplateKey } from './templates';
 @Injectable()
 export class GuestMessagesHandler implements OutboxHandler {
   readonly name = 'guest-messages';
-  readonly topics = ['reservation.created', 'reservation.confirmed', 'stay.checked_in', 'invoice.issued', 'payment.recorded'] as const;
+  readonly topics = ['reservation.created', 'reservation.confirmed', 'stay.checked_in', 'invoice.issued', 'payment.recorded', 'villa.arrived'] as const;
 
   constructor(private readonly db: DbService, private readonly messaging: MessagingService, private readonly whatsapp: WhatsAppService) {}
 
@@ -40,6 +40,8 @@ export class GuestMessagesHandler implements OutboxHandler {
         if (!rows[0] || rows[0].status !== 'confirmed') return null;
         return { templateKey: 'booking_confirmation', sourceKey: `reservation:${event.aggregateId}:confirmation`, reservationId: event.aggregateId! };
       }
+      case 'villa.arrived':
+        return { templateKey:'check_in_welcome',sourceKey:`reservation:${event.aggregateId}:welcome`,reservationId:event.aggregateId! };
       case 'stay.checked_in': {
         // One welcome per booking, even when a family checks into three rooms at once.
         const reservationId = String(event.payload.reservationId ?? '');

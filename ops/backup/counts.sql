@@ -14,6 +14,8 @@ SELECT json_build_object(
   'audit_logs',        (SELECT count(*) FROM audit_logs),
   'outbox_events',     (SELECT count(*) FROM outbox_events),
   'nightly_rate_total',(SELECT coalesce(sum(nightly_rate), 0)::text FROM reservation_rooms),
+  'villa_bookings', (SELECT count(*) FROM villa_bookings),
+  'property_owner_access', (SELECT count(*) FROM property_owner_access),
   'folios', (SELECT count(*) FROM folios),
   'folio_lines', (SELECT count(*) FROM folio_lines),
   'payments', (SELECT count(*) FROM payments),

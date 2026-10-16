@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'Privacy policy',
-  description: 'Guest data and WhatsApp messaging privacy for Lakshmi Palace by Voitto and ResortOS.',
+  description: 'Guest data and messaging privacy for Lakshmi Palace by Voitto, Villa Sol by Voitto and ResortOS.',
   robots: { index: true, follow: false },
 };
 
@@ -13,14 +13,14 @@ export default function PrivacyPage() {
       <Link href="/login" className="text-sm font-medium text-brand underline underline-offset-4">ResortOS</Link>
       <article className="mt-6 rounded-xl border border-border bg-surface p-6 sm:p-10">
         <header className="mb-8 border-b border-border pb-6">
-          <p className="mb-2 text-sm text-text-2">Lakshmi Palace by Voitto · Voitto Ventures</p>
+          <p className="mb-2 text-sm text-text-2">Lakshmi Palace by Voitto · Villa Sol by Voitto · Voitto Ventures</p>
           <h1 className="text-3xl font-semibold tracking-tight">Privacy policy</h1>
-          <p className="mt-3 text-sm text-text-2">Updated 11 October 2026</p>
+          <p className="mt-3 text-sm text-text-2">Updated 17 October 2026</p>
         </header>
         <div className="space-y-7 text-base leading-7 text-text-2 [&_h2]:mb-2 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:text-text">
           <section>
             <h2>About this service</h2>
-            <p>This notice describes how the hotel uses ResortOS to manage reservations, stays, guest records, billing and guest messages. The Meta app named Voittoventures connects the hotel to the WhatsApp Business Platform. Contact the hotel reception for questions about your information.</p>
+            <p>This notice covers Lakshmi Palace by Voitto and Villa Sol by Voitto. Each property keeps separate operational records. It describes how each property uses ResortOS to manage reservations, stays, guest records, billing and guest messages. The Meta app named Voittoventures connects the hotel to the WhatsApp Business Platform. Contact the hotel reception for questions about your information.</p>
           </section>
           <section>
             <h2>Information we handle</h2>
@@ -46,7 +46,7 @@ export default function PrivacyPage() {
           </section>
           <section id="contact">
             <h2>Contact the hotel</h2>
-            <p>For privacy questions or a data request, contact Lakshmi Palace by Voitto reception in person or call <a href="tel:+919829204128" className="font-medium text-brand underline underline-offset-4">+91 98292 04128</a>. Please provide enough information to identify your booking without sending identity document photos or passwords through an unverified channel.</p>
+            <p>For privacy questions or a data request, contact your property’s reception in person. Villa Sol reception: +91 93522 04825. Lakshmi Palace reception: <a href="tel:+919829204128" className="font-medium text-brand underline underline-offset-4">+91 98292 04128</a>. Please provide enough information to identify your booking without sending identity document photos or passwords through an unverified channel.</p>
           </section>
         </div>
       </article>

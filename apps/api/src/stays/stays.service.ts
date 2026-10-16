@@ -243,6 +243,7 @@ export class StaysService {
   async extend(q: Queryable, actor: Actor, stayId: string, input: ExtendStayInput) {
     const stay = await this.lockStay(q, actor, stayId);
     if (stay.status !== 'in_house') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'Only a guest who is in house can have their stay extended.');
+    await q.query(`UPDATE villa_bookings SET ends_at=($3::date + (ends_at AT TIME ZONE 'Asia/Kolkata')::time) AT TIME ZONE 'Asia/Kolkata' WHERE id=$1 AND property_id=$2`,[stay.reservation_id,actor.user.propertyId,input.newDeparture]);
     if (input.newDeparture <= stay.expected_departure) {
       throw new AppError(
         ERROR_CODES.VALIDATION,

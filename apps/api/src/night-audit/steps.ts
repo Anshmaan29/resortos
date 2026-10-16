@@ -167,3 +167,15 @@ export const BUILT_IN_NIGHT_AUDIT_STEPS = [
   roomStatusCheckStep,
   summaryStep,
 ];
+
+/** Same-day private facility visits still have to be resolved before closing their accounting day. */
+export const villaDayVisitsStep: NightAuditStep = {
+  bookingModel:'private_villa',name:'villa_day_visits',title:'Villa pool and garden visits',order:25,blocking:true,
+  async inspect({q,propertyId,businessDate}:NightAuditContext):Promise<StepReport>{
+    const {rows}=await q.query<{id:string;number:string;status:string}>(`SELECT r.id,r.number,r.status FROM villa_bookings v JOIN reservations r ON r.id=v.id
+      WHERE v.property_id=$1 AND v.use_kind IN ('pool','garden') AND (
+       (r.status='confirmed' AND v.starts_at < (($2::date+1)::timestamp AT TIME ZONE 'Asia/Kolkata')) OR
+       (r.status='checked_in' AND v.ends_at < (($2::date+1)::timestamp AT TIME ZONE 'Asia/Kolkata')))`,[propertyId,businessDate]);
+    return {...emptyReport(),items:rows.map(r=>({id:r.id,label:r.number+(r.status==='checked_in'?' · Checkout pending':' · Arrival unresolved'),href:'/villa/bookings/'+r.id,actions:[]})),facts:{villaDayVisitsUnresolved:rows.length}};
+  },
+};

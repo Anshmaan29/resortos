@@ -51,6 +51,16 @@ Every business table needs all five, or it is not finished (CLAUDE.md, spec §48
 `guests`, `reservations`, `reservation_rooms`, `room_allocations`, `guest_credit_entries`,
 `reservation_room_nights`.
 
+### Private villa and property access — `0029`
+
+`property_owner_access` grants an active owner access to an additional property. Staff retain
+their home property; API headers and download query contexts are checked against those grants.
+`villa_bookings` extends a reservation with its use, actual start/end timestamps, manually entered
+guest count, price and GST. A PostgreSQL exclusion constraint reserves the whole property across
+all booking kinds. Same-day pool/garden use has a `villa` bill without a stay or identity documents.
+Deferred triggers preserve consistency with reservation dates and status. These tables are included
+in backup counts and restore integrity checks. Existing hotel defaults and records are preserved.
+
 ### Authorisation and throttling — `0004`
 `owner_authorisations`, `owner_overrides`, `known_devices`.
 

@@ -27,7 +27,7 @@ export async function createApp(): Promise<INestApplication> {
   app.use(requestIdMiddleware);
   app.use(cookieParser());
   app.useBodyParser('json', { limit: '1mb' });
-  app.enableCors({ origin: config.WEB_ORIGIN, credentials: true, allowedHeaders: ['content-type', 'idempotency-key', 'x-request-id', 'x-resortos'] });
+  app.enableCors({ origin: config.WEB_ORIGIN, credentials: true, allowedHeaders: ['content-type', 'idempotency-key', 'x-request-id', 'x-resortos', 'x-resortos-property'] });
 
   // CSRF defence (spec §57): unsafe methods must carry a custom header, which a
   // cross-site form or image cannot send without a CORS preflight we reject.

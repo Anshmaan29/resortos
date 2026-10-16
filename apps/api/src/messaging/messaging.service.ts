@@ -95,7 +95,7 @@ export class MessagingService {
       `SELECT p.version, (SELECT value FROM settings WHERE property_id=p.id AND key='daily_summary_recipients') AS recipients FROM properties p WHERE p.id=$1`, [propertyId],
     );
     const raw=rows[0]!.recipients;
-    const owners=await this.db.query<{email:string}>(`SELECT email FROM users WHERE property_id=$1 AND role='owner' AND is_active AND email IS NOT NULL`,[propertyId]);
+    const owners=await this.db.query<{email:string}>(`SELECT email FROM users WHERE role='owner' AND is_active AND email IS NOT NULL AND (property_id=$1 OR EXISTS(SELECT 1 FROM property_owner_access a WHERE a.user_id=users.id AND a.property_id=$1 AND a.is_active))`,[propertyId]);
     const recipients=Array.isArray(raw)?raw:raw?.recipients??owners.rows.map((r)=>r.email);
     return {
       enabled: settings.email_enabled, fromName: settings.email_from_name ?? '', fromAddress: settings.email_from_address ?? '', replyTo: settings.email_reply_to ?? '',
@@ -282,6 +282,13 @@ export class MessagingService {
       check_in_date: formatDate(r.arrival), check_out_date: formatDate(departure), nights: String(nightsBetween(r.arrival, departure)),
       advance_received: formatINR(r.advance), room_number: r.rooms ?? '',
     } satisfies TemplateVars);
+    const {rows: villa}=await q.query<{use_kind:string;guest_count:number;starts_at:Date;ends_at:Date}>(
+      `SELECT use_kind,guest_count,starts_at,ends_at FROM villa_bookings WHERE id=$1 AND property_id=$2`,[reservationId,propertyId]);
+    if(villa[0]){
+      const v=villa[0];const labels:Record<string,string>={one_bedroom:'One bedroom',both_bedrooms:'Both bedrooms + pool and garden',whole_villa:'Whole villa + pool and garden',pool:'Swimming pool',garden:'Garden'};
+      const fmt=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'});
+      Object.assign(vars,{booking_use:labels[v.use_kind],guest_count:String(v.guest_count),booking_start:fmt.format(v.starts_at),booking_end:fmt.format(v.ends_at)});
+    }
     return { vars, reservationId, stayId, guestId: r.guest_id, email: r.email, mobile: r.mobile, whatsappOptedIn: r.whatsapp_opted_in, language: r.preferred_language };
   }
 

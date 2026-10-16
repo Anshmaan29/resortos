@@ -6,7 +6,7 @@ import { addDays, formatDate, todayIn } from '@resortos/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, EmptyState, ErrorBanner, PageHeader, Skeleton } from '@/components/ui/surface';
 import { Pill } from '@/components/ui/status';
-import { api } from '@/lib/api';
+import { api, apiUrl } from '@/lib/api';
 import { useMe, useProperty } from '@/lib/session';
 import { SheetsSync } from '@/components/records/sheets-sync';
 import { PoliceRegisterTable } from '@/components/records/police-register-table';
@@ -155,7 +155,7 @@ function thisMonth(businessDate: string): Range {
 /** A download that looks like a button: same-origin href, so the session cookie rides along. */
 function DownloadLink({ href, children, kind = 'ghost' }: { href: string; children: React.ReactNode; kind?: 'secondary' | 'ghost' }) {
   return (
-    <a href={href}
+    <a href={href.startsWith('/api/v1') ? apiUrl(href.slice(7)) : href}
       className={`inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm ${kind === 'secondary' ? 'bg-surface-2 text-text hover:bg-surface-3' : 'text-text-2 hover:bg-surface-2 hover:text-text'}`}>
       {children}
     </a>

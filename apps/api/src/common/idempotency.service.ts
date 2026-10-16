@@ -42,12 +42,12 @@ export class IdempotencyService {
     );
 
     if (inserted.rowCount === 0) {
-      const { rows } = await q.query<{ request_hash: Buffer; response_body: T; completed_at: string | null }>(
-        `SELECT request_hash, response_body, completed_at FROM idempotency_keys WHERE user_id = $1 AND key = $2`,
+      const { rows } = await q.query<{ property_id: string; request_hash: Buffer; response_body: T; completed_at: string | null }>(
+        `SELECT property_id, request_hash, response_body, completed_at FROM idempotency_keys WHERE user_id = $1 AND key = $2`,
         [actor.user.id, key],
       );
       const existing = rows[0];
-      if (!existing || !existing.request_hash.equals(hash)) {
+      if (!existing || existing.property_id !== actor.user.propertyId || !existing.request_hash.equals(hash)) {
         throw new AppError(ERROR_CODES.IDEMPOTENCY_MISMATCH, 'This request key was already used for a different action.');
       }
       if (!existing.completed_at) {

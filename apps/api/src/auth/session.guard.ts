@@ -30,6 +30,13 @@ export class SessionGuard implements CanActivate {
     const session = await this.auth.authenticate(token);
     if (!session) throw new AppError(ERROR_CODES.UNAUTHENTICATED, 'Your session has ended. Please log in again.');
 
+    const header = req.header('x-resortos-property');
+    const downloadContext = req.method === 'GET' ? req.query.propertyContext : undefined;
+    if (downloadContext !== undefined && typeof downloadContext !== 'string') throw forbidden('Invalid resort context.');
+    if (header && downloadContext && header !== downloadContext) throw forbidden('The resort context does not match.');
+    const selected = header || downloadContext;
+    if (selected) session.user = await this.auth.propertyContext(session.user, selected);
+
     req.actor = {
       user: session.user,
       sessionId: session.sessionId,

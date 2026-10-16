@@ -265,6 +265,23 @@ export class AuthService {
     return { user: toSessionUser(row), sessionId: row.session_id };
   }
 
+  async propertyContext(user: SessionUser, propertyId: string): Promise<SessionUser> {
+    if (propertyId === user.propertyId) return user;
+    if (user.role !== 'owner' || !/^[0-9a-f-]{36}$/i.test(propertyId)) throw forbidden('You cannot access that resort.');
+    const { rows } = await this.db.query<{ id: string }>(
+      `SELECT property_id AS id FROM property_owner_access WHERE user_id=$1 AND property_id=$2 AND is_active`, [user.id, propertyId]);
+    if (!rows[0]) throw forbidden('You cannot access that resort.');
+    return { ...user, propertyId };
+  }
+
+  async accessibleProperties(user: SessionUser) {
+    const { rows } = await this.db.query<{ id: string; name: string; booking_model: string }>(
+      `SELECT p.id,p.name,p.booking_model FROM properties p WHERE p.id=(SELECT property_id FROM users WHERE id=$1)
+       OR ($2='owner' AND EXISTS(SELECT 1 FROM property_owner_access a WHERE a.user_id=$1 AND a.property_id=p.id AND a.is_active))
+       ORDER BY p.created_at,p.id`, [user.id,user.role]);
+    return rows.map(r=>({id:r.id,name:r.name,bookingModel:r.booking_model}));
+  }
+
   async logout(actor: Actor) {
     await this.db.tx({ userId: actor.user.id }, async (q) => {
       await q.query(`UPDATE sessions SET revoked_at = now(), revoked_reason = 'logout' WHERE id = $1 AND revoked_at IS NULL`, [actor.sessionId]);

@@ -219,7 +219,9 @@ export class InvoicesService {
     const fy = financialYearLabel(invoiceDate);
     const { rows: n } = await q.query<{ n: number }>(`SELECT next_document_number($1, $2, $3) AS n`, [propertyId, doc.series, fy]);
     const seq = n[0]!.n;
-    const number = formatDocumentNumber(doc.series, fy, seq);
+    const {rows:property}=await q.query<{booking_model:string}>(`SELECT booking_model FROM properties WHERE id=$1`,[propertyId]);
+    const prefix=property[0]?.booking_model==='private_villa'?({INV:'VSI',BOS:'VSB',CN:'VSC',DN:'VSD',RV:'VSR'} as const)[doc.series]:undefined;
+    const number = formatDocumentNumber(doc.series, fy, seq, prefix);
     const c = doc.composed;
     const paidTotal = sum(doc.paid.map((p) => p.amount));
 

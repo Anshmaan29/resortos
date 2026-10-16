@@ -55,6 +55,10 @@ export class AuthController {
     return { ok: true };
   }
 
+  @Get('properties')
+  @Roles('owner', 'receptionist', 'cleaner')
+  properties(@CurrentActor() actor: Actor) { return this.auth.accessibleProperties(actor.user); }
+
   @Get('me')
   @Roles('owner', 'receptionist', 'cleaner')
   me(@CurrentActor() actor: Actor) {

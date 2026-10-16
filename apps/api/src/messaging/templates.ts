@@ -15,6 +15,7 @@ export type Channel = 'email' | 'whatsapp' | 'sms';
 
 export const TEMPLATE_VARIABLES = [
   'guest_name', 'resort_name', 'booking_number', 'room_number', 'check_in_date', 'check_out_date', 'nights',
+  'booking_use', 'guest_count', 'booking_start', 'booking_end',
   'checkout_time', 'check_in_time', 'advance_received', 'balance', 'invoice_number', 'invoice_total',
   'receipt_number', 'amount', 'payment_method', 'reception_phone', 'location_link', 'wifi',
 ] as const;

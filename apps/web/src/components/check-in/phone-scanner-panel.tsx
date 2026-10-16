@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/surface';
-import { api } from '@/lib/api';
+import { api, apiUrl } from '@/lib/api';
 import type { DraftDocument } from './types';
 
 const ID_NAMES: Record<string, string> = { aadhaar: 'Aadhaar', passport: 'Passport', driving_licence: 'Driving licence', voter_id: 'Voter ID', pan: 'PAN card', other: 'Other ID' };
@@ -41,7 +41,7 @@ export function PhoneScannerPanel({ draftId, onDocumentsChanged }: { draftId: st
     if (!session) return;
     if (typeof EventSource === 'undefined') { setStreaming(false); return; }
     setStreaming(true);
-    const source = new EventSource(`/api/v1/capture-sessions/${session.sessionId}/events`);
+    const source = new EventSource(apiUrl(`/capture-sessions/${session.sessionId}/events`));
     let closed = false;
     source.onmessage = (event) => setLive(JSON.parse(event.data) as SessionStatus);
     source.onerror = () => {

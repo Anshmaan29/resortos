@@ -51,6 +51,7 @@ export interface StepResult {
  *    inserts rows must be protected by a database constraint, not by checking first.
  */
 export interface NightAuditStep {
+  bookingModel?: 'hotel' | 'private_villa';
   name: string;
   /** Staff-facing, shown on the screen. */
   title: string;

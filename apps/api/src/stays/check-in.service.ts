@@ -1,3 +1,4 @@
+import { assertVillaArrival } from '../villa/villa.service';
 import { assertRoomReady } from '../reservations/room-inventory';
 import { Injectable } from '@nestjs/common';
 import {
@@ -245,6 +246,7 @@ export class CheckInService {
     if (draft.status !== 'active') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This check-in is already finished.');
 
     const res = resRows[0]!;
+    await assertVillaArrival(q, actor.user.propertyId, res.id);
     if (!['confirmed', 'checked_in'].includes(res.status)) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This booking cannot be checked in.');
     const bd = await this.property.today(q, actor.user.propertyId);
     if (res.arrival > bd || res.departure <= bd) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'Check-in is only possible between the arrival day and the day before departure.');

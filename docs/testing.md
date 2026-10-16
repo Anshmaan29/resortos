@@ -143,6 +143,18 @@ which looks exactly like the application dropping connections under load. Bindin
 makes a burst behave like real traffic, and it took the 60-action audit-chain test from ten seconds
 and intermittently failing to well under one second and stable.
 
+## Villa Sol isolation and day use
+
+`apps/api/test/villa-private.test.ts` uses its own migrated/seeded database and dev-only messaging.
+It covers owner property grants, independent receptionist login and PIN approval, cross-property
+record/document/PDF/bill denial, private timed overlap prevention and concurrent saves, edits,
+advance/refund/cancellation, day-use arrival without identity capture, overnight verified documents,
+extension conflicts, payments, invoices, automatic email branding and unchanged source hotel rows.
+`apps/web/test/api.test.ts` covers per-tab request/download context and restricted browser storage.
+Manual Playwright checks additionally exercise the owner selector, separate tabs, a 50-person pool
+booking, housekeeping readiness, bill payment, checkout, and desktop/phone layouts. Real guest
+messages and production bookings are never used as test fixtures.
+
 ## Not automated (needs real devices)
 
 Camera capture and the phone scanner (milestone 1.8) must be tested manually on a real iPhone (Safari) and a real budget Android phone (Chrome), including an upload that drops and resumes on a weak network. Procedure and result table: `docs/phone-testing.md`.

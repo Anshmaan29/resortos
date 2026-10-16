@@ -213,7 +213,13 @@ export class ReservationsService {
   // Create / rebook
   // ---------------------------------------------------------------------------
 
-  async create(q: Queryable, actor: Actor, input: CreateReservationInput) {
+  private async assertBookingModel(q:Queryable,propertyId:string,privateVilla:boolean){
+    const {rows}=await q.query<{booking_model:string}>(`SELECT booking_model FROM properties WHERE id=$1`,[propertyId]);
+    if(rows[0]?.booking_model==='private_villa'&&!privateVilla)throw new AppError(ERROR_CODES.VALIDATION,'Use the Villa Sol booking screen to create or edit villa bookings.');
+  }
+
+  async create(q: Queryable, actor: Actor, input: CreateReservationInput, privateVilla = false) {
+    await this.assertBookingModel(q,actor.user.propertyId,privateVilla);
     const propertyId = actor.user.propertyId;
     const id = randomUUID();
     const businessDate = await this.property.today(q, propertyId);
@@ -287,7 +293,8 @@ export class ReservationsService {
   // Edit: same validation, limits, authorisation and audit as create
   // ---------------------------------------------------------------------------
 
-  async update(q: Queryable, actor: Actor, id: string, input: UpdateReservationInput) {
+  async update(q: Queryable, actor: Actor, id: string, input: UpdateReservationInput, privateVilla = false) {
+    await this.assertBookingModel(q,actor.user.propertyId,privateVilla);
     const propertyId = actor.user.propertyId;
     const { rows } = await q.query<ReservationRow>(`SELECT * FROM reservations WHERE id = $1 AND property_id = $2 FOR UPDATE`, [id, propertyId]);
     const res = rows[0];

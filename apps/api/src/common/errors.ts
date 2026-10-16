@@ -48,6 +48,7 @@ export function fromPgError(err: unknown): AppError | null {
   if (!e || typeof e.code !== 'string') return null;
   switch (e.code) {
     case '23P01': // exclusion_violation
+      if (e.constraint === 'no_overlapping_private_villa') return new AppError(ERROR_CODES.ROOM_UNAVAILABLE, 'Villa Sol is already booked for part of this time. Every booking reserves the whole property.');
       if (e.constraint === 'no_overlapping_room_allocations') {
         return new AppError(ERROR_CODES.ROOM_UNAVAILABLE, 'This room was just booked by someone else for these dates. Please choose another room.');
       }
@@ -93,6 +94,7 @@ export function fromPgError(err: unknown): AppError | null {
       }
       return new AppError(ERROR_CODES.CONFLICT, 'This record already exists.');
     case '23514': // check_violation (incl. status-machine trigger)
+      if (e.message?.includes('use the villa booking screen')) return new AppError(ERROR_CODES.VALIDATION, 'Use the Villa Sol booking screen to create or change this booking.');
       if (e.message?.includes('reservation cannot move')) {
         return new AppError(ERROR_CODES.INVALID_TRANSITION, 'This booking cannot be changed to that status.');
       }

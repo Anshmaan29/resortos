@@ -12,7 +12,7 @@ import { PropertyModule } from '../property/property.module';
 import { NIGHT_AUDIT_STEPS, type NightAuditStep } from './night-audit-pipeline';
 import { NightAuditController } from './night-audit.controller';
 import { NightAuditService } from './night-audit.service';
-import { BUILT_IN_NIGHT_AUDIT_STEPS } from './steps';
+import { BUILT_IN_NIGHT_AUDIT_STEPS, villaDayVisitsStep } from './steps';
 
 /**
  * Night audit and the business date (spec §35).
@@ -31,7 +31,7 @@ import { BUILT_IN_NIGHT_AUDIT_STEPS } from './steps';
       // posting (2.2), the open-shift check (2.4), the nightly integrity check (2.4b) and tomorrow's
       // daily cleaning (Sprint C).
       useFactory: (roomNights: RoomNightPostingStep, integrity: BalanceIntegrityStep, shifts: OpenShiftsStep, stayovers: StayoverCleaningStep, maintenance: MaintenanceDueStep): NightAuditStep[] =>
-        [...BUILT_IN_NIGHT_AUDIT_STEPS, shifts, roomNights, stayovers, maintenance, integrity],
+        [...BUILT_IN_NIGHT_AUDIT_STEPS, villaDayVisitsStep, shifts, roomNights, stayovers, maintenance, integrity],
       inject: [RoomNightPostingStep, BalanceIntegrityStep, OpenShiftsStep, StayoverCleaningStep, MaintenanceDueStep],
     },
   ],
