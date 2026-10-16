@@ -31,8 +31,14 @@ export default function ReservationPage() {
   const [advanceOpen, setAdvanceOpen] = useState(false);
   const router = useRouter();
   const startCheckIn = useMutation({
-    mutationFn: () => api<{ id: string }>('/check-in-drafts', { method: 'POST', body: { reservationId: id } }),
-    onSuccess: (draft) => router.push(`/check-in/${draft.id}`),
+    mutationFn: () => api<import('@/components/check-in/types').CheckInDraft>('/check-in-drafts', { method: 'POST', body: { reservationId: id } }),
+    onSuccess: async (draft) => {
+      // A booking edit may have replaced the draft's room lines. Navigate with the
+      // current server draft so a late cache refresh cannot reset the next choice.
+      await qc.cancelQueries({ queryKey: ['check-in', draft.id] });
+      qc.setQueryData(['check-in', draft.id], draft);
+      router.push(`/check-in/${draft.id}`);
+    },
     onError: (e) => toast('error', (e as Error).message),
   });
 

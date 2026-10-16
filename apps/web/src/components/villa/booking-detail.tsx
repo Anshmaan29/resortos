@@ -42,8 +42,12 @@ export function VillaBookingDetail({ id }: { id: string }) {
   });
   const checkIn = useMutation({
     mutationFn: () =>
-      api<{ id: string }>('/check-in-drafts', { method: 'POST', body: { reservationId: id } }),
-    onSuccess: (d) => router.push(`/check-in/${d.id}`),
+      api<import('@/components/check-in/types').CheckInDraft>('/check-in-drafts', { method: 'POST', body: { reservationId: id } }),
+    onSuccess: async (d) => {
+      await qc.cancelQueries({ queryKey: ['check-in', d.id] });
+      qc.setQueryData(['check-in', d.id], d);
+      router.push(`/check-in/${d.id}`);
+    },
   });
   if (booking.isError) return <ErrorBanner message={booking.error.message} />;
   if (!booking.data) return <Skeleton className="h-64" />;
