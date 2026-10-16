@@ -30,7 +30,7 @@ export class ReservationsController {
   @Get('availability')
   availability(@CurrentActor() actor: Actor, @Query() query: unknown) {
     const input = parse(availabilityQuerySchema, query);
-    return this.reservations.availability(actor.user.propertyId, input.arrival, input.departure, input.roomTypeId);
+    return this.reservations.availability(actor.user.propertyId, input.arrival, input.departure, input.roomTypeId, input.reservationId);
   }
 
   @Get('front-desk')

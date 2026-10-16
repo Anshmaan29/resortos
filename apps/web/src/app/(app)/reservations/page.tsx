@@ -79,7 +79,7 @@ function ReservationsList() {
                     <td className="px-4 py-3"><Link href={`/reservations/${r.id}`} className="font-medium num text-brand hover:underline" onClick={(e) => e.stopPropagation()}>{r.number}</Link>{r.groupName && <p className="text-xs text-text-3">{r.groupName}</p>}</td>
                     <td className="px-4 py-3"><p className="flex items-center gap-1 font-medium">{r.isVip && <Crown className="h-3.5 w-3.5 text-warning" aria-label="VIP" />}{r.guestName}</p><p className="text-xs text-text-2 num">{formatMobile(r.mobile)}</p></td>
                     <td className="px-4 py-3 num">{formatDate(r.arrival, { year: false })} → {formatDate(r.departure, { year: false })}<p className="text-xs text-text-3">{r.nights} night{r.nights > 1 ? 's' : ''}</p></td>
-                    <td className="px-4 py-3">{r.roomNumbers ?? <span className="text-text-3">Not assigned</span>}<p className="text-xs text-text-3">{r.roomTypes}</p></td>
+                    <td className="px-4 py-3">{r.roomNumbers ?? <span className="text-text-3">Not assigned</span>}</td>
                     <td className="px-4 py-3">{r.sourceLabel}{r.otaReference && <p className="text-xs text-text-3 num">{r.otaReference}</p>}</td>
                     <td className="px-4 py-3 text-right num">{formatINR(r.total)}</td>
                     <td className="px-4 py-3"><ReservationBadge status={r.status} /></td>
@@ -94,7 +94,7 @@ function ReservationsList() {
                   <Link href={`/reservations/${r.id}`} className="flex items-start gap-3 px-4 py-3 active:bg-surface-2">
                     <div className="min-w-0 flex-1">
                       <p className="flex items-center gap-1 truncate font-medium">{r.isVip && <Crown className="h-3.5 w-3.5 text-warning" />}{r.guestName}</p>
-                      <p className="text-sm text-text-2 num">{formatDate(r.arrival, { year: false })} → {formatDate(r.departure, { year: false })} · {r.roomNumbers ?? r.roomTypes}</p>
+                      <p className="text-sm text-text-2 num">{formatDate(r.arrival, { year: false })} → {formatDate(r.departure, { year: false })} · {r.roomNumbers ?? 'Room not assigned'}</p>
                       <p className="text-xs text-text-2 num">{formatMobile(r.mobile)} · {r.number} · {r.sourceLabel}</p>
                     </div>
                     <div className="flex flex-col items-end gap-1"><ReservationBadge status={r.status} /><span className="text-sm num">{formatINR(r.total)}</span></div>

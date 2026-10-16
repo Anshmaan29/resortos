@@ -87,6 +87,7 @@ describe('edit booking (same validation, limits and audit as create)', () => {
   });
 
   it('moving into a booked room fails and leaves the booking unchanged', async () => {
+    await sql("UPDATE rooms SET housekeeping_status='clean' WHERE id=$1", [f.room('201')]);
     await post(desk, '/reservations', booking({ roomTypeId: f.type('DLX'), roomId: f.room('201'), arrival: '2026-11-20', departure: '2026-11-22' })).expect(201);
     const mine = await post(desk, '/reservations', booking({ roomTypeId: f.type('DLX'), roomId: f.room('202'), arrival: '2026-11-20', departure: '2026-11-22' })).expect(201);
     const res = await patch(desk, mine.body.id, editBody(mine.body, {}, { roomId: f.room('201') }));

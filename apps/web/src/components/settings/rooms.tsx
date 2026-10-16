@@ -21,20 +21,20 @@ interface SetupRoom { id: string; number: string; roomTypeId: string; unitType: 
 export function RoomsSettings() {
   const types = useQuery({ queryKey: ['room-types', 'all'], queryFn: () => api<RoomType[]>('/room-types', { query: { includeInactive: 'true' } }) });
   const rooms = useQuery({ queryKey: ['rooms-setup'], queryFn: () => api<SetupRoom[]>('/rooms/setup') });
-  const [editType, setEditType] = useState<RoomType | 'new' | null>(null);
+  const [editType, setEditType] = useState<RoomType | null>(null);
   const [editRoom, setEditRoom] = useState<SetupRoom | 'new' | null>(null);
   if (!types.data || !rooms.data) return <Skeleton className="h-96" />;
-  const typeName = (id: string) => types.data!.find((t) => t.id === id)?.name ?? '—';
+  const labels = (id: string) => `Rooms ${rooms.data!.filter((r) => r.roomTypeId === id).map((r) => r.number).sort((a,b) => a.localeCompare(b,undefined,{numeric:true})).join(', ') || 'not assigned'}`;
+  const prices = types.data.map((t) => ({ ...t, name: labels(t.id) }));
   return (
     <div className="flex flex-col gap-5">
-      <Section title="Room types" description="Selling below the minimum rate needs the owner’s PIN."
-        action={<Button size="sm" onClick={() => setEditType('new')}><Plus className="h-4 w-4" aria-hidden />Add room type</Button>}>
-        {types.data.map((t) => (
+      <Section title="Standard prices and occupancy" description="Existing defaults are kept for these room numbers. Reception can enter the agreed price on each booking. Editing a row changes defaults for all rooms listed in that row.">
+        {prices.filter((t) => rooms.data.some((r) => r.roomTypeId === t.id)).map((t) => (
           <Row key={t.id} muted={!t.isActive}>
-            <span><span className="font-medium">{t.name}</span> <span className="text-text-3">{t.code} · {t.baseOccupancy}–{t.maxOccupancy} guests</span>{!t.isActive && <span className="ml-2"><Pill>Off</Pill></span>}</span>
+            <span><span className="font-medium">{t.name}</span> <span className="text-text-3">{t.baseOccupancy}–{t.maxOccupancy} guests</span>{!t.isActive && <span className="ml-2"><Pill>Off</Pill></span>}</span>
             <span className="flex items-center gap-4">
               <span className="tabular-nums">{formatINR(t.baseRate)} <span className="text-xs text-text-3">min {formatINR(t.minRate)}</span></span>
-              <Button size="sm" variant="ghost" onClick={() => setEditType(t)}>Edit</Button>
+              <Button size="sm" variant="ghost" onClick={() => setEditType(types.data.find((x) => x.id === t.id)!)}>Edit</Button>
             </span>
           </Row>
         ))}
@@ -43,43 +43,39 @@ export function RoomsSettings() {
         action={<Button size="sm" onClick={() => setEditRoom('new')} disabled={!types.data.length}><Plus className="h-4 w-4" aria-hidden />Add room</Button>}>
         {rooms.data.map((r) => (
           <Row key={r.id} muted={!r.isActive}>
-            <span><span className="font-medium">Room {r.number}</span> <span className="text-text-3">{typeName(r.roomTypeId)} · {r.unitType}{r.view ? ` · ${r.view} view` : ''}{r.building ? ` · ${r.building}` : ''}</span>{!r.isActive && <span className="ml-2"><Pill>Off</Pill></span>}</span>
+            <span><span className="font-medium">Room {r.number}</span> <span className="text-text-3">{r.unitType}{r.view ? ` · ${r.view} view` : ''}{r.building ? ` · ${r.building}` : ''}</span>{!r.isActive && <span className="ml-2"><Pill>Off</Pill></span>}</span>
             <Button size="sm" variant="ghost" onClick={() => setEditRoom(r)}>Edit</Button>
           </Row>
         ))}
       </Section>
-      {editType && <RoomTypeDialog type={editType === 'new' ? null : editType} onClose={() => setEditType(null)} />}
-      {editRoom && <RoomDialog room={editRoom === 'new' ? null : editRoom} types={types.data.filter((t) => t.isActive)} onClose={() => setEditRoom(null)} />}
+      {editType && <RoomTypeDialog type={editType} label={labels(editType.id)} onClose={() => setEditType(null)} />}
+      {editRoom && <RoomDialog room={editRoom === 'new' ? null : editRoom} types={prices.filter((t) => t.isActive)} onClose={() => setEditRoom(null)} />}
     </div>
   );
 }
 
-function RoomTypeDialog({ type, onClose }: { type: RoomType | null; onClose: () => void }) {
+function RoomTypeDialog({ type, label, onClose }: { type: RoomType; label: string; onClose: () => void }) {
   const [f, setF] = useState({
-    name: type?.name ?? '', code: type?.code ?? '', baseOccupancy: String(type?.baseOccupancy ?? 2), maxOccupancy: String(type?.maxOccupancy ?? 3),
+    name: type?.name ?? 'Room', code: type?.code ?? '', baseOccupancy: String(type?.baseOccupancy ?? 2), maxOccupancy: String(type?.maxOccupancy ?? 3),
     baseRate: type?.baseRate ?? '', minRate: type?.minRate ?? '', extraAdultRate: type?.extraAdultRate ?? '0', extraChildRate: type?.extraChildRate ?? '0',
     isActive: type?.isActive ?? true,
   });
-  const body = { ...f, baseOccupancy: Number(f.baseOccupancy), maxOccupancy: Number(f.maxOccupancy) };
-  const save = useSave(() => (type
-    ? api(`/room-types/${type.id}`, { method: 'PATCH', body: { ...body, version: type.version } })
-    : api('/room-types', { method: 'POST', body })), { invalidate: [['room-types']], success: 'Room type saved', onDone: onClose });
+  const body = { ...f, description: type.description ?? undefined, baseOccupancy: Number(f.baseOccupancy), maxOccupancy: Number(f.maxOccupancy) };
+  const save = useSave(() => api(`/room-types/${type.id}`, { method: 'PATCH', body: { ...body, version: type.version } }),
+    { invalidate: [['room-types']], success: 'Standard prices saved', onDone: onClose });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const belowMin = f.baseRate && f.minRate && money(f.baseRate).lt(f.minRate);
   return (
-    <Dialog open onClose={onClose} size="lg" title={type ? `Edit ${type.name}` : 'Add room type'}
+    <Dialog open onClose={onClose} size="lg" title={`Standard prices · ${label}`}
       footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={save.isPending} disabled={Boolean(belowMin)} onClick={() => save.mutate(undefined)}>Save</Button></>}>
       <div className="grid gap-4 sm:grid-cols-2">
         {save.error && <div className="sm:col-span-2"><ErrorBanner message={(save.error as Error).message} /></div>}
-        <Field label="Name" required error={save.fields.name}>{(id) => <Input id={id} value={f.name} onChange={set('name')} />}</Field>
-        <Field label="Short code" required hint="2–8 letters or digits, e.g. DLX" error={save.fields.code}>{(id) => <Input id={id} value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })} maxLength={8} />}</Field>
         <Field label="Guests included in the rate" required>{(id) => <Input id={id} inputMode="numeric" value={f.baseOccupancy} onChange={set('baseOccupancy')} />}</Field>
         <Field label="Most guests" required error={save.fields.maxOccupancy}>{(id) => <Input id={id} inputMode="numeric" value={f.maxOccupancy} onChange={set('maxOccupancy')} />}</Field>
         <Field label="Room rate per night" required error={save.fields.baseRate}>{(id) => <Input id={id} inputMode="decimal" value={f.baseRate} onChange={set('baseRate')} />}</Field>
         <Field label="Minimum rate" required hint="Below this needs Owner PIN. Set 0 to allow any manually entered price." error={belowMin ? 'The room rate cannot be below the minimum' : save.fields.minRate}>{(id) => <Input id={id} inputMode="decimal" value={f.minRate} onChange={set('minRate')} />}</Field>
         <Field label="Extra adult per night">{(id) => <Input id={id} inputMode="decimal" value={f.extraAdultRate} onChange={set('extraAdultRate')} />}</Field>
         <Field label="Extra child per night">{(id) => <Input id={id} inputMode="decimal" value={f.extraChildRate} onChange={set('extraChildRate')} />}</Field>
-        {type && <Toggle label="In use" hint="Switched-off room types cannot be booked" checked={f.isActive} onChange={(v) => setF({ ...f, isActive: v })} />}
       </div>
     </Dialog>
   );
@@ -101,7 +97,7 @@ function RoomDialog({ room, types, onClose }: { room: SetupRoom | null; types: R
       <div className="grid gap-4 sm:grid-cols-2">
         {save.error && <div className="sm:col-span-2"><ErrorBanner message={(save.error as Error).message} /></div>}
         <Field label="Room number" required error={save.fields.number}>{(id) => <Input id={id} value={f.number} onChange={set('number')} maxLength={10} />}</Field>
-        <Field label="Room type" required>{(id) => <Select id={id} value={f.roomTypeId} onChange={set('roomTypeId')}>{types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select>}</Field>
+        {!room && <Field label="Copy standard prices from" required>{(id) => <Select id={id} value={f.roomTypeId} onChange={set('roomTypeId')}>{types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select>}</Field>}
         <Field label="Kind">{(id) => <Select id={id} value={f.unitType} onChange={set('unitType')}>{UNIT_TYPES.map((u) => <option key={u} value={u}>{u}</option>)}</Select>}</Field>
         <Field label="View">{(id) => <Select id={id} value={f.view} onChange={set('view')}><option value="">—</option>{ROOM_VIEWS.map((v) => <option key={v} value={v}>{v}</option>)}</Select>}</Field>
         <Field label="Building / block">{(id) => <Input id={id} value={f.building} onChange={set('building')} maxLength={40} />}</Field>

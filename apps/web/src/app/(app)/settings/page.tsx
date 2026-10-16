@@ -18,7 +18,7 @@ import { useMe } from '@/lib/session';
 const SECTIONS: { key: string; label: string; icon: ComponentType<{ className?: string }>; owner: boolean; component: ComponentType }[] = [
   { key: 'property', label: 'Property', icon: Building, owner: true, component: PropertySettings },
   { key: 'policies', label: 'Policies & printing', icon: Settings2, owner: true, component: PolicySettings },
-  { key: 'rooms', label: 'Rooms & room types', icon: Bed, owner: true, component: RoomsSettings },
+  { key: 'rooms', label: 'Rooms', icon: Bed, owner: true, component: RoomsSettings },
   { key: 'rates', label: 'Room rates', icon: Tags, owner: true, component: RatesSettings },
   { key: 'tax', label: 'GST rules', icon: Percent, owner: false, component: TaxSettings },
   { key: 'staff', label: 'Staff & limits', icon: Users, owner: true, component: StaffSettings },

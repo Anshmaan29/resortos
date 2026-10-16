@@ -94,8 +94,8 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
   // ---------- data ----------
   const roomTypes = useQuery({ queryKey: ['room-types'], queryFn: () => api<RoomType[]>('/room-types') });
   const availability = useQuery({
-    queryKey: ['availability', arrival, departure], enabled: datesValid,
-    queryFn: () => api<Availability>('/availability', { query: { arrival, departure } }),
+    queryKey: ['availability', arrival, departure, mode === 'edit' ? initial?.id : null], enabled: datesValid,
+    queryFn: () => api<Availability>('/availability', { query: { arrival, departure, reservationId: mode === 'edit' ? initial?.id : undefined } }),
   });
   const debouncedSearch = useDebounced(search, 250);
   const guestResults = useQuery({
@@ -131,10 +131,6 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
     setSearch('');
   };
 
-  const availabilityFor = (roomTypeId: string) => availability.data?.roomTypes.find((t) => t.roomTypeId === roomTypeId);
-  /** Rooms this booking already holds of a type on overlapping dates — not a shortage when editing. */
-  const ownOfType = (roomTypeId: string) => (mode === 'edit' && initial && arrival < initial.departure && departure > initial.arrival
-    ? initial.rooms.filter((r) => r.status === 'reserved' && r.roomTypeId === roomTypeId).length : 0);
   const updateLine = (key: string, patch: Partial<RoomLine>) => setLines((ls) => ls.map((l) => {
     if (l.key !== key) return l;
     const next = { ...l, ...patch };
@@ -321,9 +317,9 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
               {errors.rooms && <p role="alert" className="text-sm text-danger">{errors.rooms}</p>}
               <AnimatePresence initial={false}>
                 {lines.map((line, i) => {
-                  const avail = availabilityFor(line.roomTypeId);
-                  const requested = lines.filter((l) => l.roomTypeId === line.roomTypeId).length - ownOfType(line.roomTypeId);
-                  const currentRoom = mode === 'edit' ? initial?.rooms.find((r) => r.id === line.reservationRoomId && r.roomTypeId === line.roomTypeId && r.roomId) : undefined;
+                  const avail = availability.data;
+                  const requested = lines.length;
+                  const currentRoom = mode === 'edit' ? initial?.rooms.find((r) => r.id === line.reservationRoomId && r.roomId) : undefined;
                   return (
                     <motion.div key={line.key} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={{ duration: 0.2, ease: EASE_OUT }}>
                       <RoomLineEditor
@@ -422,14 +418,14 @@ export function EstimateBreakdown({ estimate, loading }: { estimate?: { tax: Boo
 }
 
 function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short, currentRoom, takenRoomIds, datesValid, estimate, estimateError, priceError, gstError, extrasError, onChange, onRemove }: {
-  index: number; line: RoomLine; canRemove: boolean; roomTypes: RoomType[]; availability?: Availability['roomTypes'][number]; short: boolean;
+  index: number; line: RoomLine; canRemove: boolean; roomTypes: RoomType[]; availability?: Availability; short: boolean;
   currentRoom?: { id: string; number: string }; takenRoomIds: string[]; datesValid: boolean;
   estimate?: BookingEstimate['rooms'][number]; estimateError: string | null; priceError?: string; gstError?: string; extrasError?: string; onChange: (patch: Partial<RoomLine>) => void; onRemove: () => void;
 }) {
   const type = roomTypes.find((t) => t.id === line.roomTypeId);
   const guests = line.adults + line.childAges.length;
   const [childAge, setChildAge] = useState('');
-  const free = (availability?.freeRooms ?? []).filter((r) => !takenRoomIds.includes(r.id));
+  const free = (availability?.rooms ?? []).filter((r) => !takenRoomIds.includes(r.id)).sort((a,b) => a.number.localeCompare(b.number,undefined,{numeric:true}));
 
   return (
     <div className="rounded-lg border border-border p-4">
@@ -438,17 +434,15 @@ function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short
         {canRemove && <Button variant="ghost" size="sm" onClick={onRemove} aria-label={`Remove room ${index + 1}`}><Trash2 className="h-4 w-4" />Remove</Button>}
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Room type">{(id) => (
-          <Select id={id} value={line.roomTypeId} onChange={(e) => onChange({ roomTypeId: e.target.value, roomId: '' })}>
-            {roomTypes.map((t) => <option key={t.id} value={t.id}>{t.name} · from {formatINR(t.baseRate)}</option>)}
-          </Select>
-        )}</Field>
-        <Field label="Room number" hint={availability ? `${availability.available} ${type?.name ?? ''} free for all nights` : datesValid ? 'Checking…' : undefined}
-          error={short ? `Only ${availability!.available} free for these dates` : undefined}>{(id, d) => (
-          <Select id={id} aria-describedby={d} value={line.roomId} onChange={(e) => onChange({ roomId: e.target.value })}>
+        <Field label="Room number" className="sm:col-span-2" hint={availability ? `${free.length} ready rooms free for all nights · assign now or later` : datesValid ? 'Checking…' : undefined}
+          error={short ? `Only ${availability!.available} rooms free for these dates` : undefined}>{(id, d) => (
+          <Select id={id} aria-describedby={d} value={line.roomId} onChange={(e) => {
+            const chosen = free.find((r) => r.id === e.target.value);
+            onChange({ roomId: e.target.value, ...(chosen ? { roomTypeId: chosen.roomTypeId } : {}) });
+          }}>
             <option value="">Assign later</option>
-            {currentRoom && !free.some((r) => r.id === currentRoom.id) && <option value={currentRoom.id}>{currentRoom.number} · current room</option>}
-            {free.map((r) => <option key={r.id} value={r.id}>{r.number}{r.view ? ` · ${r.view} view` : ''}{r.housekeeping === 'dirty' ? ' · needs cleaning' : ''}</option>)}
+            {currentRoom && !free.some((r) => r.id === currentRoom.id) && <option value={currentRoom.id} disabled>{currentRoom.number} · not ready or no longer free</option>}
+            {free.map((r) => <option key={r.id} value={r.id}>{r.number}{r.view ? ` · ${r.view} view` : ''}</option>)}
           </Select>
         )}</Field>
         <div className="flex flex-col gap-1.5">
@@ -485,7 +479,7 @@ function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short
         <Field label="Room pricing">{(id) => (
           <Select id={id} value={line.useCustomPrice ? 'custom' : 'configured'} onChange={(e) => onChange({ useCustomPrice: e.target.value === 'custom' })}>
             <option value="custom">Enter custom price</option>
-            <option value="configured">{line.reservationRoomId ? 'Keep agreed price' : 'Use standard tariff'}</option>
+            <option value="configured" disabled={!line.reservationRoomId && !line.roomId}>{line.reservationRoomId ? 'Keep agreed price' : 'Use this room’s standard price'}</option>
           </Select>
         )}</Field>
         <div className="grid grid-cols-[2fr_1fr] gap-3 sm:col-span-2">

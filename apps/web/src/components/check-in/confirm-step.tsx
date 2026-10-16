@@ -1,4 +1,7 @@
 'use client';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+import type { Room } from '@/lib/types';
 import { CheckCircle2, CircleAlert, Crown, FileCheck2 } from 'lucide-react';
 import { formatDate, formatINR, nightsBetween } from '@resortos/shared';
 import { Card } from '@/components/ui/surface';
@@ -8,6 +11,7 @@ import type { CheckInDraft } from './types';
 /** Final review (spec §18.2). */
 export function ConfirmStep({ draft, data, reservation }: { draft: CheckInDraft; data: CheckInDraft['data']; reservation?: ReservationDetail }) {
   const r = draft.reservation;
+  const rooms = useQuery({ queryKey: ['rooms'], queryFn: () => api<Room[]>('/rooms') });
   const verified = draft.documents.filter((d) => d.status === 'verified');
   const adults = data.rooms.flatMap((x) => x.occupants).filter((o) => !o.isChild).length;
   const children = data.rooms.flatMap((x) => x.occupants).filter((o) => o.isChild).length;
@@ -19,7 +23,7 @@ export function ConfirmStep({ draft, data, reservation }: { draft: CheckInDraft;
         <div className="mt-4 flex flex-col gap-2 text-[15px]">
           {data.rooms.map((room) => {
             const info = r.rooms.find((x) => x.reservationRoomId === room.reservationRoomId)!;
-            return <p key={room.reservationRoomId} className="num">Room {info.roomNumber ?? '—'} · {info.roomTypeName} · {info.mealPlan}</p>;
+            return <p key={room.reservationRoomId} className="num">Room {rooms.data?.find((r) => r.id === (room.roomId ?? info.roomId))?.number ?? (room.roomId && room.roomId !== info.roomId ? '—' : info.roomNumber ?? '—')} · {info.mealPlan}</p>;
           })}
           <p className="num">{formatDate(r.arrival, { year: false })} → {formatDate(r.departure, { year: false })} ({nightsBetween(r.arrival, r.departure)} nights)</p>
         </div>

@@ -15,11 +15,11 @@ import type { CheckInDraftRow, CountRow, IdRow, NightRow, ReservationRoomRow, Re
 import { GuestsService } from '../guests/guests.service';
 import { PropertyService } from '../property/property.service';
 import { RatesService, type Quote } from '../rates/rates.service';
+import { assertRoomCapacity, assertRoomReady, lockRoomInventory, roomNights } from './room-inventory';
 
 type RoomInput = CreateReservationInput['rooms'][number];
 type BookingInput = Omit<CreateReservationInput, 'rebookedFromId'>;
 
-interface TypeNight { room_type_id: string; room_type_name: string; night: string; capacity: number; booked: number }
 interface ExistingLine { row: ReservationRoomRow; nights: NightRow[] }
 interface PricedRooms { quotes: Quote[]; reused: boolean[]; existing: Map<string, ExistingLine> }
 
@@ -41,90 +41,43 @@ export class ReservationsService {
   // Availability
   // ---------------------------------------------------------------------------
 
-  /** Capacity vs booked per room type per night. Sellable capacity excludes inactive and out-of-order rooms. */
-  private async typeNights(q: Queryable, propertyId: string, arrival: IsoDate, departure: IsoDate, roomTypeIds?: string[]): Promise<TypeNight[]> {
-    const { rows } = await q.query<{ room_type_id: string; room_type_name: string; night: string; capacity: string; booked: string }>(
-      `WITH nights AS (
-         SELECT d::date AS night FROM generate_series($2::date, $3::date - 1, interval '1 day') d
-       )
-       SELECT t.id AS room_type_id, t.name AS room_type_name, to_char(n.night, 'YYYY-MM-DD') AS night,
-              (SELECT count(*) FROM rooms r
-                WHERE r.room_type_id = t.id AND r.is_active
-                  AND NOT EXISTS (SELECT 1 FROM room_out_of_order o WHERE o.room_id = r.id AND o.status = 'active'
-                                    AND o.start_date <= n.night AND o.end_date > n.night)) AS capacity,
-              (SELECT count(*) FROM reservation_rooms rr
-                WHERE rr.room_type_id = t.id AND rr.status IN ('reserved', 'checked_in')
-                  AND rr.arrival <= n.night AND rr.departure > n.night) AS booked
-         FROM room_types t CROSS JOIN nights n
-        WHERE t.property_id = $1 AND t.is_active AND ($4::uuid[] IS NULL OR t.id = ANY($4::uuid[]))
-        ORDER BY t.sort_order, t.name, n.night`,
-      [propertyId, arrival, departure, roomTypeIds ?? null],
+  /** Every ready room is offered, regardless of its historical tariff profile. */
+  async availability(propertyId: string, arrival: IsoDate, departure: IsoDate, _roomTypeId?: string, reservationId?: string) {
+    const today = await this.property.today(this.db, propertyId);
+    const nights = await roomNights(this.db, propertyId, arrival, departure, reservationId);
+    const { rows } = await this.db.query<{ id: string; number: string; room_type_id: string; view: string | null; building: string | null; floor: string | null; housekeeping_status: string; service_status: string; max_occupancy: number }>(
+      `SELECT r.id,r.number,r.room_type_id,r.view,r.building,r.floor,r.housekeeping_status,r.service_status,t.max_occupancy
+         FROM rooms r JOIN room_types t ON t.id=r.room_type_id
+        WHERE r.property_id=$1 AND r.is_active AND r.service_status='in_service'
+          AND r.housekeeping_status IN ('clean','inspected')
+          AND NOT EXISTS (SELECT 1 FROM room_allocations a JOIN reservation_rooms rr ON rr.id=a.reservation_room_id
+             WHERE a.room_id=r.id AND a.status IN ('reserved','checked_in')
+               AND ($4::uuid IS NULL OR rr.reservation_id<>$4)
+               AND daterange(a.start_date,a.end_date,'[)') && daterange($2::date,$3::date,'[)'))
+          AND NOT EXISTS (SELECT 1 FROM room_out_of_order o WHERE o.room_id=r.id AND o.status='active'
+               AND daterange(o.start_date,o.end_date,'[)') && daterange($2::date,$3::date,'[)'))
+          AND ($2::date>$5::date OR NOT EXISTS (SELECT 1 FROM stays s WHERE s.room_id=r.id AND s.status='in_house'))
+        ORDER BY r.number COLLATE "C",r.id`, [propertyId,arrival,departure,reservationId ?? null,today],
     );
-    return rows.map((r) => ({ ...r, capacity: Number(r.capacity), booked: Number(r.booked) }));
+    const rooms = rows.map((r) => ({ id:r.id,number:r.number,roomTypeId:r.room_type_id,view:r.view,building:r.building,floor:r.floor,
+      housekeeping:r.housekeeping_status,service:r.service_status,maxOccupancy:r.max_occupancy }));
+    const available = Math.min(...nights.map((n) => n.available));
+    // Keep the legacy grouping for API compatibility; new screens use the single rooms list.
+    const profiles = await this.db.query<{ id: string }>('SELECT id FROM room_types WHERE property_id=$1 AND is_active ORDER BY sort_order,id',[propertyId]);
+    return { arrival,departure,nights:nightsBetween(arrival,departure),available,inventory:nights,rooms,
+      roomTypes:profiles.rows.map((t) => ({ roomTypeId:t.id,roomTypeName:'Room',available,nights,
+        freeRooms:rooms.filter((r) => r.roomTypeId===t.id) })) };
   }
 
-  async availability(propertyId: string, arrival: IsoDate, departure: IsoDate, roomTypeId?: string) {
-    const nights = await this.typeNights(this.db, propertyId, arrival, departure, roomTypeId ? [roomTypeId] : undefined);
-    const { rows: freeRooms } = await this.db.query<{ id: string; number: string; room_type_id: string; view: string | null; building: string | null; floor: string | null; housekeeping_status: string; service_status: string }>(
-      `SELECT r.id, r.number, r.room_type_id, r.view, r.building, r.floor, r.housekeeping_status, r.service_status
-         FROM rooms r JOIN room_types rt ON rt.id = r.room_type_id
-        WHERE r.property_id = $1 AND r.is_active AND ($4::uuid IS NULL OR r.room_type_id = $4)
-          AND NOT EXISTS (SELECT 1 FROM room_allocations a WHERE a.room_id = r.id AND a.status IN ('reserved','checked_in')
-                            AND daterange(a.start_date, a.end_date, '[)') && daterange($2::date, $3::date, '[)'))
-          AND NOT EXISTS (SELECT 1 FROM room_out_of_order o WHERE o.room_id = r.id AND o.status = 'active'
-                            AND daterange(o.start_date, o.end_date, '[)') && daterange($2::date, $3::date, '[)'))
-        ORDER BY rt.sort_order, r.sort_order, r.number`,
-      [propertyId, arrival, departure, roomTypeId ?? null],
-    );
-
-    const byType = new Map<string, { roomTypeId: string; roomTypeName: string; available: number; nights: { date: string; capacity: number; booked: number; available: number }[] }>();
-    for (const n of nights) {
-      const entry = byType.get(n.room_type_id) ?? { roomTypeId: n.room_type_id, roomTypeName: n.room_type_name, available: Number.MAX_SAFE_INTEGER, nights: [] };
-      const available = Math.max(0, n.capacity - n.booked);
-      entry.nights.push({ date: n.night, capacity: n.capacity, booked: n.booked, available });
-      entry.available = Math.min(entry.available, available);
-      byType.set(n.room_type_id, entry);
-    }
-    return {
-      arrival, departure, nights: nightsBetween(arrival, departure),
-      roomTypes: [...byType.values()].map((t) => ({
-        ...t,
-        freeRooms: freeRooms.filter((r) => r.room_type_id === t.roomTypeId).map((r) => ({
-          id: r.id, number: r.number, view: r.view, building: r.building, floor: r.floor, housekeeping: r.housekeeping_status, service: r.service_status,
-        })),
-      })),
-    };
-  }
-
-  // ---------------------------------------------------------------------------
-  // Shared booking pipeline: create, edit and rebook all run exactly this
-  // ---------------------------------------------------------------------------
-
-  /** Locks the room types involved so availability check + write cannot interleave (spec §13). */
+  /** All profiles share one inventory lock, including bookings without a room number yet. */
   private async lockRoomTypes(q: Queryable, propertyId: string, typeIds: string[]): Promise<Map<string, string>> {
-    const ids = [...new Set(typeIds)].sort();
-    const { rows } = await q.query<{ id: string; name: string }>(
-      `SELECT id, name FROM room_types WHERE property_id = $1 AND is_active AND id = ANY($2::uuid[]) ORDER BY id FOR UPDATE`,
-      [propertyId, ids],
-    );
-    if (rows.length !== ids.length) throw notFound('Room type');
-    return new Map(rows.map((r) => [r.id, r.name]));
+    const rows = await lockRoomInventory(q, propertyId);
+    if (typeIds.some((id) => !rows.some((r) => r.id===id))) throw notFound('Room pricing');
+    return new Map(rows.map((r) => [r.id, 'Room']));
   }
 
-  private async assertCapacity(q: Queryable, propertyId: string, arrival: IsoDate, departure: IsoDate, rooms: RoomInput[], typeNames: Map<string, string>) {
-    const typeIds = [...new Set(rooms.map((r) => r.roomTypeId))];
-    const nights = await this.typeNights(q, propertyId, arrival, departure, typeIds);
-    for (const typeId of typeIds) {
-      const requested = rooms.filter((r) => r.roomTypeId === typeId).length;
-      const short = nights.filter((n) => n.room_type_id === typeId && n.booked + requested > n.capacity);
-      if (short.length) {
-        throw new AppError(
-          ERROR_CODES.ROOM_UNAVAILABLE,
-          `Not enough ${typeNames.get(typeId)} rooms free on ${short.map((s) => formatDate(s.night, { year: false })).join(', ')}.`,
-          { roomTypeId: typeId, dates: short.map((s) => s.night) },
-        );
-      }
-    }
+  private async assertCapacity(q: Queryable, propertyId: string, arrival: IsoDate, departure: IsoDate, rooms: RoomInput[], _typeNames: Map<string,string>) {
+    await assertRoomCapacity(q,propertyId,arrival,departure,rooms.length);
   }
 
   private async existingLines(q: Queryable, reservationId: string): Promise<Map<string, ExistingLine>> {
@@ -147,7 +100,7 @@ export class ReservationsService {
     for (const room of rooms) {
       const ex = room.reservationRoomId ? existing.get(room.reservationRoomId) : undefined;
       if (room.reservationRoomId && !ex) throw new AppError(ERROR_CODES.VALIDATION, 'A room on this booking was changed by someone else. Reload and try again.');
-      const unchanged = !!ex && room.nightlyRate === undefined && ex.row.room_type_id === room.roomTypeId && ex.row.adults === room.adults
+      const unchanged = !!ex && room.nightlyRate === undefined && ex.row.adults === room.adults
         && sameAges(ex.row.child_ages, room.childAges) && ex.row.meal_plan === room.mealPlan
         && (room.ratePlanId ?? ex.row.rate_plan_id) === ex.row.rate_plan_id && ex.row.arrival === arrival && ex.row.departure === departure;
       if (unchanged) {
@@ -158,7 +111,7 @@ export class ReservationsService {
         // An existing custom package stays an agreement when dates/party size change. Staff can
         // explicitly replace its room price; unchanged extra-guest agreements are kept as well.
         const keepPackage = !!ex?.row.includes_meal_plan && room.nightlyRate === undefined
-          && ex.row.room_type_id === room.roomTypeId && ex.row.meal_plan === room.mealPlan;
+          && ex.row.meal_plan === room.mealPlan;
         const keepExtras = keepPackage && ex!.row.adults === room.adults && sameAges(ex!.row.child_ages, room.childAges);
         quotes.push(await this.rates.quote(q, propertyId, {
           roomTypeId: room.roomTypeId, arrival, departure, adults: room.adults, childAges: room.childAges,
@@ -407,8 +360,7 @@ export class ReservationsService {
       const data = draft.data as CheckInDraftData;
       const nextData: CheckInDraftData = { ...data, rooms: data.rooms.map((room) => {
         const next = written.find((r) => r.previousId === room.reservationRoomId)!;
-        const old = existing.get(room.reservationRoomId)!.row;
-        const keepRoom = old.room_type_id === next.input.roomTypeId && res.arrival === input.arrival && res.departure === input.departure;
+        const keepRoom = res.arrival === input.arrival && res.departure === input.departure;
         return { ...room, reservationRoomId: next.id, roomId: next.input.roomId ?? (keepRoom ? room.roomId : undefined) };
       }) };
       await q.query(`UPDATE check_in_drafts SET reservation_room_ids=$2,data=$3,step=LEAST(step,2),updated_by=$4 WHERE id=$1`,
@@ -454,23 +406,13 @@ export class ReservationsService {
 
   /** Assigns a specific room. The exclusion constraint is the final judge (spec §13). */
   private async allocateRoom(q: Queryable, actor: Actor, reservationRoomId: string, roomId: string) {
-    const { rows } = await q.query<{ arrival: string; departure: string; room_type_id: string; room_room_type_id: string; number: string; is_active: boolean }>(
-      `SELECT rr.arrival, rr.departure, rr.room_type_id, r.room_type_id AS room_room_type_id, r.number, r.is_active
-         FROM reservation_rooms rr, rooms r
-        WHERE rr.id = $1 AND r.id = $2 AND rr.property_id = $3 AND r.property_id = $3`,
-      [reservationRoomId, roomId, actor.user.propertyId],
+    const { rows } = await q.query<{ arrival: string; departure: string; adults: number; child_ages: number[] }>(
+      'SELECT arrival,departure,adults,child_ages FROM reservation_rooms WHERE id=$1 AND property_id=$2', [reservationRoomId,actor.user.propertyId],
     );
     const row = rows[0];
-    if (!row || !row.is_active) throw notFound('Room');
-    if (row.room_room_type_id !== row.room_type_id) {
-      throw new AppError(ERROR_CODES.VALIDATION, `Room ${row.number} is a different room type from this booking.`);
-    }
-    const { rows: ooo } = await q.query<{ one: number }>(
-      `SELECT 1 AS one FROM room_out_of_order WHERE room_id = $1 AND status = 'active'
-          AND daterange(start_date, end_date, '[)') && daterange($2::date, $3::date, '[)') LIMIT 1`,
-      [roomId, row.arrival, row.departure],
-    );
-    if (ooo[0]) throw new AppError(ERROR_CODES.ROOM_UNAVAILABLE, `Room ${row.number} is out of order during these dates.`);
+    if (!row) throw notFound('Booking room');
+    await assertRoomReady(q,actor.user.propertyId,roomId,row.arrival,row.departure,
+      await this.property.today(q,actor.user.propertyId),row.adults+row.child_ages.length);
 
     await q.query(
       `INSERT INTO room_allocations (property_id, reservation_room_id, room_id, start_date, end_date, created_by) VALUES ($1,$2,$3,$4,$5,$6)`,

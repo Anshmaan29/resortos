@@ -87,7 +87,7 @@ export class RoomNightPostingStep implements NightAuditStep {
             WHERE NOT EXISTS (SELECT 1 FROM folio_lines WHERE folio_id = $2 AND business_date = $3::date AND line_type = $4 AND source = 'night_audit')
            ON CONFLICT DO NOTHING RETURNING id`,
           [actor.user.propertyId, folio.id, row.night_date, part.lineType,
-           part.lineType === 'room_night' ? `Room — ${row.room_type_name}${row.includes_meal_plan && row.meal_plan !== 'EP' ? ` · ${row.meal_plan} included` : ''}` : part.lineType === 'meal' ? `Meal plan (${row.meal_plan})` : 'Extra person',
+           part.lineType === 'room_night' ? `Room ${row.room_number}${row.includes_meal_plan && row.meal_plan !== 'EP' ? ` · ${row.meal_plan} included` : ''}` : part.lineType === 'meal' ? `Meal plan (${row.meal_plan})` : 'Extra person',
            amount, part.taxCategory, row.room_id, actor.user.id, row.gst_rate_override],
         );
         posted += inserted.rowCount ?? 0;
@@ -157,7 +157,7 @@ export class RoomNightPostingStep implements NightAuditStep {
         const amount = row[part.column];
         if (!money(amount).gt(0)) continue;
         const name = part.lineType === 'room_night'
-          ? `Room — ${row.room_type_name}${row.includes_meal_plan && row.meal_plan !== 'EP' ? ` · ${row.meal_plan} included` : ''}`
+          ? `Room ${row.room_number}${row.includes_meal_plan && row.meal_plan !== 'EP' ? ` · ${row.meal_plan} included` : ''}`
           : part.lineType === 'meal'
             ? `Meal plan (${row.meal_plan})`
             : 'Extra person';

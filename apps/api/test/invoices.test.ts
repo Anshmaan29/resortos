@@ -21,6 +21,8 @@ const billOf = async (stayId: string, agent: Agent = desk) => (await agent.get(`
 
 /** A guest in house, with a room night posted as night audit would post it. */
 async function stay(room: string, type: string, nights: { date: string; rate: string }[] = [{ date: '2026-09-16', rate: '4000.00' }], agreed: object = {}) {
+  // A checked-out room must be cleaned before selling it again.
+  await sql("UPDATE rooms SET housekeeping_status='clean' WHERE id=$1",[f.room(room)]);
   mobile += 1;
   const created = await post(owner, '/reservations', {
     ...booking({ roomTypeId: f.type(type), roomId: f.room(room), arrival: '2026-09-16', departure: '2026-09-18', adults: 1 }),
@@ -123,7 +125,7 @@ describe('checkout settles the bill and issues the invoice', () => {
       expect.objectContaining({ ratePercent: '18.00', taxableValue: '3000.00', cgst: '270.00', sgst: '270.00' }),
     ]);
     expect(invoice.grandTotal).toBe('8328.00');
-    expect(invoice.lines.map((l: any) => l.description)).toEqual(['Room — Delux · Room 202', 'Paneer Tikka', 'Jeep Safari']);
+    expect(invoice.lines.map((l: any) => l.description)).toEqual(['Room 202', 'Paneer Tikka', 'Jeep Safari']);
     expect(invoice.placeOfSupply).toBe(invoice.seller.stateCode);
     expect(invoice.paid.reduce((t: number, p: any) => t + Number(p.amount), 0)).toBe(8328);
   });

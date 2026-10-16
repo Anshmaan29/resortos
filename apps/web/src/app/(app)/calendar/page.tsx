@@ -37,11 +37,7 @@ export default function CalendarPage() {
   });
 
   const days = useMemo(() => (from ? Array.from({ length: DAYS }, (_, i) => addDays(from, i)) : []), [from]);
-  const groups = useMemo(() => {
-    const m = new Map<string, CalendarData['rooms']>();
-    for (const r of cal.data?.rooms ?? []) m.set(r.roomTypeName, [...(m.get(r.roomTypeName) ?? []), r]);
-    return [...m.entries()];
-  }, [cal.data]);
+  const groups: [string, CalendarData['rooms']][] = [['Rooms', [...(cal.data?.rooms ?? [])].sort((a,b) => a.number.localeCompare(b.number,undefined,{numeric:true}))]];
 
   const nav = (delta: number) => from && setFrom(addDays(from, delta));
 
@@ -64,7 +60,7 @@ export default function CalendarPage() {
           <div className="flex flex-wrap gap-2">
             {cal.data.unassigned.map((u) => (
               <Link key={u.reservationRoomId} href={`/reservations/${u.reservationId}`} className="rounded-md border border-dashed border-border-strong px-3 py-1.5 text-sm hover:bg-surface-2">
-                <span className="font-medium">{u.guestName}</span> <span className="text-text-3">· {u.roomTypeName} · {formatDate(u.start, { year: false })}–{formatDate(u.end, { year: false })}</span>
+                <span className="font-medium">{u.guestName}</span> <span className="text-text-3">· {formatDate(u.start, { year: false })}–{formatDate(u.end, { year: false })}</span>
               </Link>
             ))}
           </div>

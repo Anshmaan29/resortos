@@ -18,6 +18,7 @@ test('Save booking records WhatsApp agreement without an extra checkbox or send 
   await page.getByLabel('Last name').fill('Confirmation');
   await page.getByRole('textbox', { name: 'Mobile', exact: true }).fill(testInfo.project.name === 'phone' ? '9899920002' : '9899920001');
   await page.getByLabel('Email', { exact: true }).fill('automatic@example.com');
+  await expect(page.getByRole('combobox', { name: 'Room type', exact: true })).toHaveCount(0);
   await page.getByLabel('Meal plan', { exact: true }).selectOption('MAP');
   await page.getByLabel('Room price per night').fill('6000');
   await page.getByLabel('GST %', { exact: true }).fill('7.5');
@@ -33,9 +34,11 @@ test('Save booking records WhatsApp agreement without an extra checkbox or send 
   await page.getByRole('button', { name: 'More adults' }).click();
   await expect(page.getByLabel('Extra guest price per night')).toHaveValue('0');
   await page.getByLabel('Extra guest price per night').fill('300');
-  await page.getByRole('textbox', { name: 'Arrival' }).fill('12/12/2026');
-  await page.getByRole('textbox', { name: 'Departure' }).fill('13/12/2026');
+  await page.getByRole('textbox', { name: 'Arrival' }).fill(testInfo.project.name === 'phone' ? '16/12/2026' : '12/12/2026');
+  await page.getByRole('textbox', { name: 'Departure' }).fill(testInfo.project.name === 'phone' ? '17/12/2026' : '13/12/2026');
   await page.getByRole('textbox', { name: 'Departure' }).blur();
+  await expect(page.getByLabel('Room number', { exact: true }).locator('option').filter({hasText:/^106$/})).toHaveCount(1);
+  await page.getByLabel('Room number', { exact: true }).selectOption({label:'106'});
   await expect(page.getByText('Confirmation sends automatically', { exact: true })).toBeVisible();
   await expect(page.getByText(/By saving, you confirm the guest agreed/)).toBeVisible();
   await expect(page.getByLabel('WhatsApp messages', { exact: true })).toBeHidden();
@@ -198,14 +201,13 @@ test('edit a booking, then cancel and rebook it', async ({ page }) => {
   await expect(page.getByText('Rebook of')).toBeVisible();
 });
 
-test('editing a started check-in to Premium lists room 106 @phone', async ({ page }, testInfo) => {
+test('all ready room numbers remain available during booking edits and check-in @phone', async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (['error', 'warning'].includes(message.type())) errors.push(message.text()); });
   await receptionist(page);
   const types = await (await page.request.get('/api/v1/room-types')).json();
   const deluxe = types.find((t: any) => t.code === 'DLX');
-  const premium = types.find((t: any) => t.code === 'PRE');
   const response = await page.request.post('/api/v1/reservations', {
     headers: { 'x-resortos': '1', 'idempotency-key': crypto.randomUUID() },
     data: {
@@ -222,17 +224,22 @@ test('editing a started check-in to Premium lists room 106 @phone', async ({ pag
   const originalDraftUrl = page.url();
   await expect(page).toHaveTitle(/ResortOS/);
   await page.getByRole('button', { name: /^(2\. )?Room$/ }).click();
-  await expect(page.getByRole('heading', { name: deluxe.name, exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Choose a room', exact: true })).toBeVisible();
+  const firstPicker = page.getByRole('combobox', { name: 'Room', exact: true });
+  for (const number of ['103','106','107']) await expect(firstPicker.locator('option').filter({hasText:new RegExp(`^${number}$`)})).toHaveCount(1);
+  for (const number of ['101','104','105','201']) await expect(firstPicker.locator('option').filter({hasText:new RegExp(`^${number}$`)})).toHaveCount(0);
+  await expect(page.locator('main')).not.toContainText(/Delux|Premium|Executive/);
   await page.getByRole('link', { name: booking.number, exact: true }).click();
   await page.getByRole('button', { name: 'Edit booking' }).click();
-  await page.getByLabel('Room type', { exact: true }).selectOption(premium.id);
+  await expect(page.getByRole('combobox', { name:'Room type', exact:true })).toHaveCount(0);
+  await page.getByLabel('Room number', {exact:true}).selectOption({label:'107'});
   await page.getByLabel('Room pricing', { exact: true }).selectOption('custom');
   await page.getByRole('textbox', { name: 'Room price per night', exact: true }).fill('6000');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(page.getByText(`Booking ${booking.number} updated`)).toBeVisible();
   await page.getByRole('button', { name: 'Check in', exact: true }).click();
   await page.waitForURL(originalDraftUrl);
-  await expect(page.getByRole('heading', { name: premium.name, exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Choose a room', exact: true })).toBeVisible();
   const roomSelect = page.getByRole('combobox', { name: 'Room', exact: true });
   const option = roomSelect.locator('option').filter({ hasText: /^106$/ });
   await expect(option).toHaveCount(1);
@@ -243,8 +250,12 @@ test('editing a started check-in to Premium lists room 106 @phone', async ({ pag
   const selectedId = await roomSelect.inputValue();
   await expect(page.getByText('Saved', { exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('heading', { name: premium.name, exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Choose a room', exact: true })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Room', exact: true })).toHaveValue(selectedId);
   expect(errors).toEqual([]);
-  if (process.env.E2E_SCREENSHOTS) await page.screenshot({ path: `${process.env.E2E_SCREENSHOTS}/premium-room-106-${testInfo.project.name}.png`, fullPage: true });
+  if (process.env.E2E_SCREENSHOTS) await page.screenshot({ path: `${process.env.E2E_SCREENSHOTS}/room-numbers-106-${testInfo.project.name}.png`, fullPage: true });
+  const cancelled = await page.request.post(`/api/v1/reservations/${booking.id}/cancel`, {
+    headers: {'x-resortos':'1','idempotency-key':crypto.randomUUID()}, data:{reason:'guest_request'},
+  });
+  expect(cancelled.status()).toBe(200);
 });

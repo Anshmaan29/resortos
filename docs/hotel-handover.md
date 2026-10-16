@@ -61,3 +61,13 @@ All newly rendered PDF pages carry the supplied Voitto logo and VOITTO VENTURES 
 The extra-guest price field appears only when adults exceed the room’s included occupancy or a child is present. Removing the last extra adult/child hides the field, clears its old value and sends zero extra charges in the preview and saved booking. This also applies to Express check-in’s adult count.
 
 When a booking is edited after check-in has started, the draft follows the new room category and dates. Guest details and uploaded documents are retained when the primary guest and party are unchanged; review the room selection again. Changing the guest or party starts a fresh check-in so documents are never transferred to a different guest.
+
+
+### Room numbers at reception
+
+- Choose the room number directly in bookings, check-in, express check-in and room shifts. There is no Deluxe, Premium or Executive selection.
+- All active, clean or inspected rooms in service are listed when free for every night of the requested stay. A guest still in house keeps the room occupied even after the scheduled departure time/date; complete checkout and cleaning before reusing it.
+- Existing bookings can use any suitable ready room without changing their agreed prices. Custom room prices, GST, extra guests and meal plans remain on the booking.
+- Bookings awaiting assignment share the hotel's total inventory. Conflicting allocations are still rejected by the database.
+- The owner sees existing standard prices under the room numbers they apply to. Changing one defaults row applies to every room number listed in that row.
+- New registration cards, bill charges and exports use room numbers. Previously issued invoices and historical records remain intact.

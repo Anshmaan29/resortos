@@ -283,7 +283,7 @@ export function renderGrcPdf(input: GrcPdfInput): Promise<Buffer> {
       ['Primary guest', guest.name],
       ['Mobile', guest.mobile],
       ['Address', guest.addressLines.join(', ')],
-      ['Room', `${stay.roomNumber} · ${stay.roomTypeName}`],
+      ['Room', stay.roomNumber],
       ['Meal plan', MEAL_PLAN_LABELS[stay.mealPlan]],
       ['Arrival', `${formatDate(stay.arrival)} · in at ${formatTime(stay.checkedInAt, property.timezone)}`],
       ['Departure', `${formatDate(stay.departure)} · by ${property.checkOutTime.slice(0, 5)}`],

@@ -12,11 +12,9 @@ import type { Room } from '@/lib/types';
 export default function RoomsPage() {
   const rooms = useQuery({ queryKey: ['rooms'], queryFn: () => api<Room[]>('/rooms'), refetchInterval: 20_000 });
   const [filter, setFilter] = useState<RoomDisplayState | 'all'>('all');
-  const [type, setType] = useState<string>('all');
 
-  const types = useMemo(() => [...new Map((rooms.data ?? []).map((r) => [r.roomTypeId, r.roomTypeName])).entries()], [rooms.data]);
   const counts = useMemo(() => (rooms.data ?? []).reduce<Record<string, number>>((a, r) => ({ ...a, [r.displayState]: (a[r.displayState] ?? 0) + 1 }), {}), [rooms.data]);
-  const visible = (rooms.data ?? []).filter((r) => (filter === 'all' || r.displayState === filter) && (type === 'all' || r.roomTypeId === type));
+  const visible = (rooms.data ?? []).filter((r) => (filter === 'all' || r.displayState === filter));
 
   return (
     <div>
@@ -27,12 +25,6 @@ export default function RoomsPage() {
           <Chip key={k} active={filter === k} onClick={() => setFilter(k)} color={ROOM_STATE[k].fg}>{ROOM_STATE[k].label} <span className="num opacity-70">{counts[k]}</span></Chip>
         ))}
       </div>
-      {types.length > 1 && (
-        <div className="mb-5 flex flex-wrap gap-2" role="group" aria-label="Filter by room type">
-          <Chip active={type === 'all'} onClick={() => setType('all')}>All types</Chip>
-          {types.map(([id, name]) => <Chip key={id} active={type === id} onClick={() => setType(id)}>{name}</Chip>)}
-        </div>
-      )}
       {rooms.isError && <ErrorBanner message={(rooms.error as Error).message} onRetry={() => rooms.refetch()} />}
       {rooms.isLoading ? <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-6">{Array.from({ length: 12 }, (_, i) => <Skeleton key={i} className="h-24" />)}</div>
         : <RoomBoard rooms={visible} />}

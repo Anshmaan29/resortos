@@ -22,7 +22,7 @@ export function GuestsStep({ draft, data, onChange }: { draft: CheckInDraft; dat
         };
         return (
           <Card key={room.reservationRoomId}>
-            <CardHeader title={data.rooms.length > 1 ? `Room ${i + 1} · ${info.roomTypeName}` : 'Guests staying'}
+            <CardHeader title={data.rooms.length > 1 ? `Room ${i + 1}` : 'Guests staying'}
               description={`${info.adults} adult${info.adults > 1 ? 's' : ''}${info.childAges.length ? ` and ${info.childAges.length} child${info.childAges.length > 1 ? 'ren' : ''}` : ''} on this booking. Names as on their ID.`} />
             <div className="flex flex-col gap-4 p-5">
               {room.occupants.map((o, k) => (

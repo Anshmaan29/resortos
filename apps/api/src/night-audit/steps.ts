@@ -32,7 +32,7 @@ export const arrivalsNotCheckedInStep: NightAuditStep = {
       ...emptyReport(),
       items: rows.map((r) => ({
         id: r.id,
-        label: `${r.number} · ${r.guest_name} · ${r.room_number ?? r.room_type_name}${r.arrival < businessDate ? ` · due ${formatDate(r.arrival)}` : ''}`,
+        label: `${r.number} · ${r.guest_name} · ${r.room_number ?? 'Room not assigned'}${r.arrival < businessDate ? ` · due ${formatDate(r.arrival)}` : ''}`,
         href: `/reservations/${r.id}`,
         // A tentative booking was never confirmed, so it cannot become a no-show (§12.3's state
         // machine): there is nothing to hold the guest to. It is cancelled or moved to tomorrow.

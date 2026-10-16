@@ -66,7 +66,7 @@ export function fromPgError(err: unknown): AppError | null {
         return new AppError(ERROR_CODES.CONFLICT, 'A room with this number already exists.');
       }
       if (e.constraint === 'room_types_property_id_code_key') {
-        return new AppError(ERROR_CODES.CONFLICT, 'A room type with this code already exists.');
+        return new AppError(ERROR_CODES.CONFLICT, 'Standard room prices with this code already exist.');
       }
       if (e.constraint === 'night_audits_one_per_date') {
         // Two people completed the audit at the same moment. Nothing was lost: the other run is

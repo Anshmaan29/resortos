@@ -93,7 +93,7 @@ export class RatesService {
 
   async roomType(q: Queryable, propertyId: string, roomTypeId: string): Promise<RoomTypeRow> {
     const { rows } = await q.query<RoomTypeRow>(`SELECT * FROM room_types WHERE id = $1 AND property_id = $2 AND is_active`, [roomTypeId, propertyId]);
-    if (!rows[0]) throw notFound('Room type');
+    if (!rows[0]) throw notFound('Room pricing');
     return rows[0];
   }
 
@@ -317,7 +317,7 @@ export class RatesService {
           [actor.user.propertyId, input.ratePlanId, roomTypeId, input.label, input.startDate, input.endDate, input.daysOfWeek,
             input.rate, input.minStay ?? null, input.priority, actor.user.id],
         );
-        if (!rows[0]) throw notFound('Rate plan or room type');
+        if (!rows[0]) throw notFound('Rate plan or room pricing');
         ids.push(rows[0].id);
       }
       await this.audit.record(q, actor, { action: 'rate_calendar.added', entityType: 'rate_plan', entityId: input.ratePlanId, after: input });

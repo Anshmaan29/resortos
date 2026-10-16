@@ -66,7 +66,7 @@ export default function StayPage() {
               {s.earlyDeparture && <Pill tone="neutral">Left early</Pill>}
             </div>
             <p className="mt-1 text-sm text-text-2">
-              {s.guestName} · {s.roomTypeName} · {MEAL_PLAN_LABELS[s.mealPlan]} · checked in {formatDateTime(s.checkedInAt)}
+              {s.guestName} · {MEAL_PLAN_LABELS[s.mealPlan]} · checked in {formatDateTime(s.checkedInAt)}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

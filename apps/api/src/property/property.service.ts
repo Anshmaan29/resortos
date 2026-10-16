@@ -158,7 +158,7 @@ export class PropertyService {
   async updateRoomType(actor: Actor, id: string, input: RoomTypeInput & { isActive?: boolean }, expectedVersion: number) {
     return this.db.tx({ userId: actor.user.id }, async (q) => {
       const { rows: beforeRows } = await q.query<RoomTypeRow>(`SELECT * FROM room_types WHERE id = $1 AND property_id = $2 FOR UPDATE`, [id, actor.user.propertyId]);
-      if (!beforeRows[0]) throw notFound('Room type');
+      if (!beforeRows[0]) throw notFound('Room pricing');
       const { rows } = await q.query<RoomTypeRow>(
         `UPDATE room_types SET code=$4, name=$5, description=$6, base_occupancy=$7, max_occupancy=$8, base_rate=$9, min_rate=$10,
                 extra_adult_rate=$11, extra_child_rate=$12, is_active=COALESCE($13, is_active), updated_by=$14
@@ -206,7 +206,7 @@ export class PropertyService {
             LIMIT 1
          ) occ ON true
         WHERE r.property_id = $1 AND r.is_active
-        ORDER BY rt.sort_order, rt.name, r.sort_order, r.number`,
+        ORDER BY r.number, r.id`,
       [propertyId, day],
     );
     return rows.map((r) => {

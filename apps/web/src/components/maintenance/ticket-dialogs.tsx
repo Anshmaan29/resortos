@@ -93,7 +93,7 @@ export function ReportProblemDialog({ staff, onClose }: { staff: MaintenanceStaf
             {(id) => (
               <Select id={id} value={f.roomId} onChange={(e) => setF({ ...f, roomId: e.target.value })}>
                 <option value="">Choose…</option>
-                {(rooms.data ?? []).map((r) => <option key={r.id} value={r.id}>{r.number} · {r.roomTypeName}</option>)}
+                {(rooms.data ?? []).map((r) => <option key={r.id} value={r.id}>{r.number}</option>)}
               </Select>
             )}
           </Field>

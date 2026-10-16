@@ -135,7 +135,6 @@ function StaysTable({ query }: { query: ReturnType<typeof useQuery<StayListItem[
               <tr key={s.id} className="hover:bg-surface-2">
                 <td className="px-5 py-3">
                   <Link href={`/stays/${s.id}`} className="num font-medium text-brand hover:underline">{s.roomNumber}</Link>
-                  <span className="block text-xs text-text-3">{s.roomTypeName}</span>
                 </td>
                 <td className="px-5 py-3">
                   {s.status === 'in_house' ? <Link href={`/stays/${s.id}?checkout=1`}><Button size="sm" aria-label={`Check out room ${s.roomNumber}`}><LogOut className="h-4 w-4" />Check out</Button></Link>
