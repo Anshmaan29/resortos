@@ -147,8 +147,8 @@ export class ExportsService {
     );
     return {
       title: 'Stays',
-      columns: ['Room', 'Room type', 'Status', 'Checked in', 'Expected out', 'Checked out', 'Occupants', 'Persons', 'Booking guest', 'Mobile', 'Source'],
-      rows: rows.map((r) => [r.room, r.room_type, r.status, r.checked_in, r.expected_out, r.checked_out, r.occupants, num(r.persons), r.guest, r.mobile, r.source]),
+      columns: ['Room', 'Status', 'Checked in', 'Expected out', 'Checked out', 'Occupants', 'Persons', 'Booking guest', 'Mobile', 'Source'],
+      rows: rows.map((r) => [r.room, r.status, r.checked_in, r.expected_out, r.checked_out, r.occupants, num(r.persons), r.guest, r.mobile, r.source]),
     };
   }
 

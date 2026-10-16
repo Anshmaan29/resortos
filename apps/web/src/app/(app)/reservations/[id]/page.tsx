@@ -187,8 +187,8 @@ function RoomRow({ reservation, room, onChanged }: { reservation: ReservationDet
   const [editing, setEditing] = useState(false);
   const canAssign = room.status === 'reserved' && reservation.canEdit;
   const avail = useQuery({
-    queryKey: ['availability', reservation.arrival, reservation.departure, room.roomTypeId], enabled: editing,
-    queryFn: () => api<Availability>('/availability', { query: { arrival: reservation.arrival, departure: reservation.departure, roomTypeId: room.roomTypeId } }),
+    queryKey: ['availability', reservation.arrival, reservation.departure, reservation.id], enabled: editing,
+    queryFn: () => api<Availability>('/availability', { query: { arrival: reservation.arrival, departure: reservation.departure, reservationId: reservation.id } }),
   });
   const assign = useMutation({
     mutationFn: (roomId: string | null) => api(`/reservation-rooms/${room.id}/assign`, { method: 'POST', body: { roomId }, idempotencyKey: newIdempotencyKey() }),
@@ -202,7 +202,7 @@ function RoomRow({ reservation, room, onChanged }: { reservation: ReservationDet
     <li className="flex flex-wrap items-center gap-3 px-5 py-4">
       <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-2 text-text-2"><BedDouble className="h-5 w-5" /></span>
       <div className="min-w-0 flex-1">
-        <p className="font-medium">{room.roomNumber ? `Room ${room.roomNumber}` : 'Room not assigned'} <span className="font-normal text-text-2">· {room.roomTypeName}</span></p>
+        <p className="font-medium">{room.roomNumber ? `Room ${room.roomNumber}` : 'Room not assigned'}</p>
         <p className="text-sm text-text-2">{room.adults} adult{room.adults > 1 ? 's' : ''}{room.childAges.length ? ` · children ${room.childAges.join(', ')} yrs` : ''} · {room.mealPlan}</p>
         <p className="text-sm text-text-2 num">
           Room {formatINR(room.roomTotal)}{extras ? ` · extra guests ${formatINR(room.extrasTotal)}` : ''}{meals ? ` · ${room.mealPlan === 'CP' ? 'breakfast' : 'meals'} ${formatINR(room.mealTotal)}` : ''}
@@ -215,7 +215,7 @@ function RoomRow({ reservation, room, onChanged }: { reservation: ReservationDet
           <Select aria-label="Choose room" className="h-9 w-44" defaultValue="" disabled={avail.isLoading || assign.isPending}
             onChange={(e) => e.target.value && assign.mutate(e.target.value === 'none' ? null : e.target.value)}>
             <option value="" disabled>{avail.isLoading ? 'Loading…' : 'Choose room'}</option>
-            {avail.data?.roomTypes[0]?.freeRooms.map((fr) => <option key={fr.id} value={fr.id}>{fr.number}{fr.view ? ` · ${fr.view}` : ''}</option>)}
+            {avail.data?.rooms.filter((fr) => !reservation.rooms.some((other) => other.id !== room.id && other.roomId === fr.id)).sort((a,b) => a.number.localeCompare(b.number,undefined,{numeric:true})).map((fr) => <option key={fr.id} value={fr.id}>{fr.number}{fr.view ? ` · ${fr.view}` : ''}</option>)}
             {room.roomNumber && <option value="none">Unassign</option>}
           </Select>
           <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>Cancel</Button>

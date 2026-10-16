@@ -45,7 +45,7 @@ function RoomCard({ room, onClick, compact }: { room: Room; onClick: () => void;
       {!compact && (
         <span className="flex w-full items-center gap-1 truncate text-xs text-text-3">
           {room.currentReservation?.isVip && <Crown className="h-3 w-3 shrink-0 text-warning" aria-label="VIP" />}
-          {room.currentReservation?.guestName ?? room.roomTypeName}
+          {room.currentReservation?.guestName ?? (room.view ? `${room.view} view` : 'Room')}
         </span>
       )}
     </button>
@@ -75,7 +75,6 @@ function RoomDrawer({ room, onClose }: { room: Room | null; onClose: () => void 
       {room && (
         <div className="flex flex-col gap-6">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-            <Item k="Type" v={room.roomTypeName} />
             <Item k="Unit" v={<span className="capitalize">{room.unitType}{room.view ? ` · ${room.view} view` : ''}</span>} />
             <Item k="Housekeeping" v={<span className="capitalize">{room.housekeeping}</span>} />
             <Item k="Service" v={<span className="capitalize">{room.service.replace(/_/g, ' ')}</span>} />

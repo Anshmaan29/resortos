@@ -17,13 +17,15 @@ import { Row, Section, Toggle, useSave } from './common';
 
 interface RatePlan { id: string; code: string; name: string; kind: string; isDefault: boolean; isActive: boolean }
 interface MealPlan { id: string; code: MealPlanCode; name: string; adultRate: string; childRate: string; postSeparately: boolean; isActive: boolean }
-interface CalendarEntry { id: string; ratePlanName: string; roomTypeName: string; label: string; startDate: string; endDate: string; daysOfWeek: number[]; rate: string; minStay: number | null; priority: number }
+interface CalendarEntry { id: string; ratePlanName: string; roomTypeName: string; roomTypeId: string; label: string; startDate: string; endDate: string; daysOfWeek: number[]; rate: string; minStay: number | null; priority: number }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** Rate plans, seasonal and weekend prices (spec §11.1), and meal plans (§11.2). */
 export function RatesSettings() {
   const property = useProperty();
+  const rooms = useQuery({ queryKey: ['rooms-setup'], queryFn: () => api<{number:string;roomTypeId:string}[]>('/rooms/setup') });
+  const roomLabel = (id:string) => `Rooms ${(rooms.data ?? []).filter((r) => r.roomTypeId===id).map((r) => r.number).sort((a,b) => a.localeCompare(b,undefined,{numeric:true})).join(', ') || 'not assigned'}`;
   const plans = useQuery({ queryKey: ['rate-plans'], queryFn: () => api<RatePlan[]>('/rate-plans') });
   const meals = useQuery({ queryKey: ['meal-plans'], queryFn: () => api<MealPlan[]>('/meal-plans') });
   const today = property.data?.businessDate;
@@ -51,9 +53,9 @@ export function RatesSettings() {
 
       <Section title="Seasonal and weekend prices" description="Higher priority wins where prices overlap (festival over weekend over season). The next twelve months."
         action={<Button size="sm" onClick={() => setAdding(true)}><Plus className="h-4 w-4" aria-hidden />Add price</Button>}>
-        {!calendar.data?.length ? <p className="px-4 py-6 text-sm text-text-3">No special prices — every night uses the room type’s rate.</p> : calendar.data.map((c) => (
+        {!calendar.data?.length ? <p className="px-4 py-6 text-sm text-text-3">No special prices — each room keeps its standard price unless reception enters a custom price.</p> : calendar.data.map((c) => (
           <Row key={c.id}>
-            <span><span className="font-medium">{c.label}</span> <span className="text-text-3">{c.roomTypeName} · {c.ratePlanName} · {formatDate(c.startDate, { year: false })}–{formatDate(addDays(c.endDate, -1), { year: false })}
+            <span><span className="font-medium">{c.label}</span> <span className="text-text-3">{roomLabel(c.roomTypeId)} · {c.ratePlanName} · {formatDate(c.startDate, { year: false })}–{formatDate(addDays(c.endDate, -1), { year: false })}
               {c.daysOfWeek.length ? ` · ${c.daysOfWeek.map((d) => DAYS[d]).join(', ')}` : ''}{c.minStay ? ` · min ${c.minStay} nights` : ''}</span></span>
             <span className="flex items-center gap-3"><span className="tabular-nums">{formatINR(c.rate)}</span>
               <Button size="sm" variant="ghost" loading={off.isPending && off.variables === c.id} onClick={() => off.mutate(c.id)}>Switch off</Button></span>
@@ -114,6 +116,8 @@ function RatePlanDialog({ plan, onClose }: { plan: RatePlan | null; onClose: () 
 
 function CalendarDialog({ plans, today, onClose }: { plans: RatePlan[]; today: string; onClose: () => void }) {
   const types = useQuery({ queryKey: ['room-types'], queryFn: () => api<RoomType[]>('/room-types') });
+  const rooms = useQuery({ queryKey: ['rooms-setup'], queryFn: () => api<{number:string;roomTypeId:string}[]>('/rooms/setup') });
+  const roomLabel = (id:string) => `Rooms ${(rooms.data ?? []).filter((r) => r.roomTypeId===id).map((r) => r.number).sort((a,b) => a.localeCompare(b,undefined,{numeric:true})).join(', ') || 'not assigned'}`;
   const [f, setF] = useState({ ratePlanId: plans.find((p) => p.isDefault)?.id ?? plans[0]?.id ?? '', roomTypeIds: [] as string[], label: '', startDate: today, endDate: addDays(today, 7), days: [] as number[], rate: '', minStay: '', priority: '10' });
   const save = useSave(() => api('/rate-calendar', { method: 'POST', body: {
     ratePlanId: f.ratePlanId, roomTypeIds: f.roomTypeIds, label: f.label, startDate: f.startDate, endDate: f.endDate, daysOfWeek: f.days,
@@ -128,10 +132,10 @@ function CalendarDialog({ plans, today, onClose }: { plans: RatePlan[]; today: s
         <Field label="Name" required hint="e.g. Diwali, Weekend">{(id) => <Input id={id} value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} maxLength={60} />}</Field>
         <Field label="Rate plan">{(id) => <Select id={id} value={f.ratePlanId} onChange={(e) => setF({ ...f, ratePlanId: e.target.value })}>{plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>}</Field>
         <div className="sm:col-span-2">
-          <p className="mb-1.5 text-sm font-medium text-text-2">Room types</p>
+          <p className="mb-1.5 text-sm font-medium text-text-2">Apply to rooms</p>
           <div className="flex flex-wrap gap-2">{(types.data ?? []).map((t) => (
             <button key={t.id} type="button" aria-pressed={f.roomTypeIds.includes(t.id)} onClick={() => setF({ ...f, roomTypeIds: toggle(f.roomTypeIds, t.id) })}
-              className={cn('rounded-full border px-3 py-1.5 text-sm', f.roomTypeIds.includes(t.id) ? 'border-brand bg-brand-soft text-brand' : 'border-border text-text-2')}>{t.name}</button>
+              className={cn('rounded-full border px-3 py-1.5 text-sm', f.roomTypeIds.includes(t.id) ? 'border-brand bg-brand-soft text-brand' : 'border-border text-text-2')}>{roomLabel(t.id)}</button>
           ))}</div>
         </div>
         <Field label="From" required>{(id) => <DateField id={id} value={f.startDate} onChange={(v) => setF({ ...f, startDate: v })} min={today} />}</Field>

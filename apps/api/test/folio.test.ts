@@ -225,7 +225,7 @@ describe('night audit posts the room charges', () => {
     const posted = body.lines.filter((l: any) => l.source === 'night_audit' && l.businessDate === '2026-09-16');
     expect(posted.length).toBeGreaterThan(0);
     const room = posted.find((l: any) => l.lineType === 'room_night');
-    expect(room.name).toMatch(/^Room — /);
+    expect(room.name).toMatch(/^Room \d+/);
     expect(room.taxCategory).toBe('accommodation');
     expect(Number(room.amount)).toBeGreaterThan(0);
 

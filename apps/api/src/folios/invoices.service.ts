@@ -95,9 +95,12 @@ export class InvoicesService {
     const draft: InvoiceDraftLine[] = lines.filter((l) => l.line_type !== 'discount').map((l) => {
       const t = tax.lines.find((x) => x.lineId === l.id)!;
       const discount = discounts.get(l.id) ?? money(0);
+      // Old posted charges retain their original rows; newly issued invoices use room numbers.
+      const name = l.line_type === 'room_night' && l.room_number && l.name.startsWith('Room — ')
+        ? l.name.replace(/^Room — [^·]+/, `Room ${l.room_number} `).trim() : l.name;
       return {
         folioLineId: l.id, creditsLineId: null, businessDate: l.business_date,
-        description: `${l.name}${l.room_number && l.line_type === 'room_night' ? ` · Room ${l.room_number}` : ''}`,
+        description: `${name}${l.room_number && l.line_type === 'room_night' && !name.startsWith(`Room ${l.room_number}`) ? ` · Room ${l.room_number}` : ''}`,
         sac: t.sac, quantity: l.quantity, rate: l.unit_rate, gross: toMoneyString(l.amount),
         discount: toMoneyString(discount), taxable: t.net, gstRate: registered ? t.ratePercent : '0.00',
       };

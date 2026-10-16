@@ -15,14 +15,9 @@ test('express check-in: one form creates the walk-in booking and opens the whole
   await expect(page.getByLabel('Meal plan')).toBeVisible();
   await page.getByLabel('First name').fill('Arjun');
   await page.getByLabel('Mobile').fill('9829012345');
-  // Whichever type still has a clean, free room after the earlier specs, and the first such room.
-  const types = page.getByRole('button', { name: /free for these nights/ });
+  // All ready rooms are offered directly, without a category step.
+  await expect(page.getByText('Room type', {exact:true})).toHaveCount(0);
   const rooms = page.getByRole('group', { name: 'Clean free rooms' }).getByRole('button');
-  for (let i = 0; i < await types.count(); i += 1) {
-    if (await types.nth(i).isDisabled()) continue;
-    await types.nth(i).click();
-    if (await rooms.first().isVisible().catch(() => false)) break;
-  }
   await rooms.first().click();
   await page.getByLabel('Meal plan').selectOption('CP');
   await page.getByLabel('Room price per night').fill('6000');

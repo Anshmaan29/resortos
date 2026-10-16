@@ -52,7 +52,6 @@ function MyTaskCard({ task }: { task: MyTask }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="num text-3xl font-semibold leading-none text-text">{task.roomNumber}</p>
-          <p className="mt-1.5 truncate text-sm text-text-2">{task.roomTypeName}</p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           <Pill tone={task.kind === 'checkout' ? 'warning' : task.kind === 'stayover' ? 'info' : 'neutral'}>

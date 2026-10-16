@@ -17,6 +17,7 @@ afterAll(async () => { await app.close(); });
 
 describe('double-booking protection (spec §13)', () => {
   it('two concurrent bookings of the same room: exactly one succeeds', async () => {
+    await sql("UPDATE rooms SET housekeeping_status='clean' WHERE id=$1", [f.room('203')]);
     const body = () => booking({ roomTypeId: f.type('DLX'), roomId: f.room('203'), arrival: '2026-10-05', departure: '2026-10-08' });
     const results = await Promise.all([post(desk, '/reservations', body()), post(owner, '/reservations', body())]);
     const statuses = results.map((r) => r.status).sort();
@@ -26,13 +27,15 @@ describe('double-booking protection (spec §13)', () => {
     expect(rows[0].n).toBe(1);
   });
 
-  it('many concurrent unassigned bookings never exceed room-type capacity', async () => {
-    // Executive has 2 rooms (101, 107).
-    const attempts = Array.from({ length: 6 }, () =>
+  it('concurrent unassigned bookings share the entire hotel and never exceed total capacity', async () => {
+    // A historical two-room tariff must not limit the shared inventory of 18 rooms.
+    const [inventory] = await sql<{capacity:number}>("SELECT count(*)::int AS capacity FROM rooms WHERE is_active AND service_status='in_service'");
+    const capacity = inventory!.capacity;
+    const attempts = Array.from({ length: capacity + 2 }, () =>
       post(desk, '/reservations', booking({ roomTypeId: f.type('EXE'), arrival: '2026-11-10', departure: '2026-11-12', adults: 2 })));
     const results = await Promise.all(attempts);
-    expect(results.filter((r) => r.status === 201)).toHaveLength(2);
-    expect(results.filter((r) => r.status === 409)).toHaveLength(4);
+    expect(results.filter((r) => r.status === 201)).toHaveLength(capacity);
+    expect(results.filter((r) => r.status === 409)).toHaveLength(2);
   });
 
   it('allows checkout and new arrival in the same room on the same day', async () => {

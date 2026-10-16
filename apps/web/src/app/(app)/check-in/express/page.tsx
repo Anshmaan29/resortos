@@ -52,9 +52,8 @@ export default function ExpressCheckInPage() {
     queryKey: ['express-estimate', roomTypeId, today, departure, adults, mealPlan, rate, gstRate, extraRate], enabled: Boolean(roomTypeId && departure > today && pricesValid),
     queryFn: () => api<BookingEstimate>('/reservations/estimate', { method: 'POST', body: { arrival: today, departure, rooms: [roomInput] } }), retry: false,
   });
-  const type = availability.data?.roomTypes.find((t) => t.roomTypeId === roomTypeId);
   // A walk-in goes into a room that is free and clean now.
-  const rooms = (type?.freeRooms ?? []).filter((r) => ['clean', 'inspected'].includes(r.housekeeping));
+  const rooms = (availability.data?.rooms ?? []).sort((a,b) => a.number.localeCompare(b.number,undefined,{numeric:true}));
 
   const start = useMutation({
     mutationFn: async (ownerAuthorisationId?: string) => {
@@ -72,7 +71,7 @@ export default function ExpressCheckInPage() {
   });
   const approval = useOwnerApproval((id) => start.mutate(id));
   const fields = start.error instanceof ApiError ? start.error.fields : {};
-  const ready = guest.firstName && guest.mobile && roomTypeId && roomId && departure > today && pricesValid;
+  const ready = guest.firstName && guest.mobile && roomTypeId && roomId && rooms.some((r) => r.id === roomId) && departure > today && pricesValid;
 
   if (!property.data) return <Skeleton className="h-96" />;
   return (
@@ -102,28 +101,13 @@ export default function ExpressCheckInPage() {
               <Field label="Leaving on" required error={fields.departure}>{(id) => <DateField id={id} value={departure} onChange={setDeparture} min={addDays(today, 1)} />}</Field>
               <Field label="Adults" required>{(id) => <Input id={id} inputMode="numeric" value={adults} onChange={(e) => setAdults(e.target.value.replace(/\D/g, ''))} />}</Field>
             </div>
-            <p className="mb-2 mt-5 text-sm font-medium text-text-2">Room type</p>
-            {availability.isLoading ? <Skeleton className="h-20" /> : (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {(availability.data?.roomTypes ?? []).map((t) => (
-                  <button key={t.roomTypeId} type="button" disabled={t.available < 1} onClick={() => { setRoomTypeId(t.roomTypeId); setRoomId(''); setRate(''); }}
-                    className={cn('rounded-lg border px-3 py-2.5 text-left text-sm transition-colors disabled:opacity-40', roomTypeId === t.roomTypeId ? 'border-brand bg-brand-soft' : 'border-border hover:border-border-strong')}>
-                    <span className="font-medium">{t.roomTypeName}</span><span className="block text-xs text-text-3">{t.available} free for these nights</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            {type && (
-              <>
-                <p className="mb-2 mt-5 text-sm font-medium text-text-2">Room <span className="font-normal text-text-3">(clean and free)</span></p>
-                {rooms.length ? (
-                  <div className="flex flex-wrap gap-2" role="group" aria-label="Clean free rooms">{rooms.map((r) => (
-                    <button key={r.id} type="button" onClick={() => setRoomId(r.id)} aria-pressed={roomId === r.id}
-                      className={cn('min-w-16 rounded-lg border px-3 py-2 text-sm font-medium', roomId === r.id ? 'border-brand bg-brand text-brand-contrast' : 'border-border hover:border-border-strong')}>{r.number}</button>
-                  ))}</div>
-                ) : <p className="text-sm text-warning">No clean room of this type is free. Choose another type or have a room cleaned.</p>}
-              </>
-            )}
+            <p className="mb-2 mt-5 text-sm font-medium text-text-2">Room <span className="font-normal text-text-3">(clean and free)</span></p>
+            {availability.isLoading ? <Skeleton className="h-20" /> : rooms.length ? (
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Clean free rooms">{rooms.map((r) => (
+                <button key={r.id} type="button" onClick={() => { setRoomId(r.id); setRoomTypeId(r.roomTypeId); }} aria-pressed={roomId === r.id}
+                  className={cn('min-w-16 rounded-lg border px-3 py-2 text-sm font-medium', roomId === r.id ? 'border-brand bg-brand text-brand-contrast' : 'border-border hover:border-border-strong')}>{r.number}</button>
+              ))}</div>
+            ) : <p className="text-sm text-warning">No clean room is free for all nights. Check housekeeping or choose different dates.</p>}
           </Card>
         </div>
         <Card className="self-start p-4 lg:sticky lg:top-20">

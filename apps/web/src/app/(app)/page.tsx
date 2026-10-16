@@ -66,7 +66,7 @@ export default function HomePage() {
             {desk.data?.arrivals.map((a) => (
               <Row key={a.id} href={`/reservations/${a.id}`}
                 title={<>{a.isVip && <Crown className="h-3.5 w-3.5 text-warning" aria-label="VIP" />}{a.guestName}</>}
-                meta={`${a.roomNumbers ? `Room ${a.roomNumbers}` : `${a.roomTypes} · room not assigned`} · ${a.nights} night${a.nights > 1 ? 's' : ''} · ${a.sourceLabel}`}
+                meta={`${a.roomNumbers ? `Room ${a.roomNumbers}` : 'Room not assigned'} · ${a.nights} night${a.nights > 1 ? 's' : ''} · ${a.sourceLabel}`}
                 right={<div className="flex flex-col items-end gap-1"><ReservationBadge status={a.status} /><span className="text-xs text-text-3 num">{formatINR(a.total)}</span></div>} />
             ))}
           </ListBody>

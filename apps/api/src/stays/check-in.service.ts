@@ -1,3 +1,4 @@
+import { assertRoomReady } from '../reservations/room-inventory';
 import { Injectable } from '@nestjs/common';
 import {
   checkInDraftDataSchema, ERROR_CODES, formatDate, ID_TYPES_WITH_BACK, normalizeVehicleNumber, type CheckInDraftData,
@@ -166,6 +167,18 @@ export class CheckInService {
     const problems: CheckInProblem[] = [];
     const { rows: rooms } = await q.query<ReservationRoomRow>(`SELECT * FROM reservation_rooms WHERE id = ANY($1::uuid[])`, [draft.reservation_room_ids]);
     const { rows: docs } = await q.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE draft_id = $1 ORDER BY created_at, id`, [draft.id]);
+    const today = await this.property.today(q, draft.property_id);
+    const { rows: readiness } = await q.query<{ id:string; number:string; is_active:boolean; housekeeping_status:string; service_status:string; max_occupancy:number; blocked:boolean }>(
+      `SELECT r.id,r.number,r.is_active,r.housekeeping_status,r.service_status,t.max_occupancy,
+        (EXISTS (SELECT 1 FROM stays s WHERE s.room_id=r.id AND s.status='in_house')
+         OR EXISTS (SELECT 1 FROM room_out_of_order o WHERE o.room_id=r.id AND o.status='active'
+           AND daterange(o.start_date,o.end_date,'[)') && daterange($3::date,GREATEST($3::date+1,$4::date),'[)'))
+         OR EXISTS (SELECT 1 FROM room_allocations a WHERE a.room_id=r.id AND a.status IN ('reserved','checked_in')
+           AND a.reservation_room_id<>ALL($5::uuid[])
+           AND daterange(a.start_date,a.end_date,'[)') && daterange($3::date,GREATEST($3::date+1,$4::date),'[)'))) AS blocked
+       FROM rooms r JOIN room_types t ON t.id=r.room_type_id WHERE r.property_id=$1 AND r.id=ANY($2::uuid[])`,
+      [draft.property_id,data.rooms.map((r) => r.roomId ?? rooms.find((rr) => rr.id===r.reservationRoomId)?.room_id).filter(Boolean),today,rooms[0]?.departure ?? today,draft.reservation_room_ids],
+    );
     const currentDocs = latestDocuments(docs);
     const docsFor = (occupantKey: string | null, type: string) => currentDocs.filter((d) => d.doc_type === type && d.occupant_key === occupantKey);
 
@@ -182,6 +195,13 @@ export class CheckInService {
       if (!rr) { problems.push({ path: `rooms.${i}`, message: `${label}room is no longer part of this booking` }); return; }
       if (rr.status !== 'reserved') problems.push({ path: `rooms.${i}`, message: `${label}already checked in or cancelled` });
       if (!roomData.roomId && !rr.room_id) problems.push({ path: `rooms.${i}.roomId`, message: `${label}assign a room` });
+      const chosenId = roomData.roomId ?? rr.room_id;
+      const chosen = readiness.find((r) => r.id===chosenId);
+      if (chosenId && (!chosen?.is_active || chosen.service_status!=='in_service' || !['clean','inspected'].includes(chosen.housekeeping_status) || chosen.blocked)) {
+        problems.push({ path:`rooms.${i}.roomId`,message:`${label}room ${chosen?.number ?? ''} is not ready or no longer free; choose a ready room` });
+      }
+      if (chosen && rr.adults+rr.child_ages.length>chosen.max_occupancy) problems.push({ path:`rooms.${i}.roomId`,message:`${label}room ${chosen.number} allows at most ${chosen.max_occupancy} guests` });
+
 
       const adults = roomData.occupants.filter((o) => !o.isChild);
       const children = roomData.occupants.filter((o) => o.isChild);
@@ -250,6 +270,7 @@ export class CheckInService {
     for (const roomData of data.rooms) {
       const { rows: fresh } = await q.query<ReservationRoomRow>(`SELECT * FROM reservation_rooms WHERE id = $1`, [roomData.reservationRoomId]);
       const rr = fresh[0]!;
+      await assertRoomReady(q,actor.user.propertyId,rr.room_id!,bd,rr.departure,bd,rr.adults+rr.child_ages.length);
       const { rowCount } = await q.query(
         `UPDATE room_allocations SET status = 'checked_in' WHERE reservation_room_id = $1 AND status = 'reserved' AND room_id = $2`, [rr.id, rr.room_id],
       );

@@ -1,3 +1,4 @@
+import { assertRoomCapacity, assertRoomReady, lockRoomInventory } from '../reservations/room-inventory';
 import { Inject, Injectable } from '@nestjs/common';
 import { ERROR_CODES, formatDate, formatINR, type ExtendStayInput, type RoomShiftInput, type StayListQuery } from '@resortos/shared';
 import { OwnerAuthorisationService } from '../auth/owner-authorisation.service';
@@ -170,21 +171,7 @@ export class StaysService {
     if (!to || !to.is_active) throw notFound('Room');
     if (to.service_status !== 'in_service') throw new AppError(ERROR_CODES.ROOM_UNAVAILABLE, `Room ${to.number} is not in service.`);
 
-    // Changing room type moves the booking's inventory to the new type; check it under lock.
-    if (to.room_type_id !== rr.room_type_id) {
-      await q.query(`SELECT id FROM room_types WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`, [[rr.room_type_id, to.room_type_id].sort()]);
-      const { rows: cap } = await q.query<{ night: string; capacity: string; booked: string }>(
-        `WITH nights AS (SELECT d::date AS night FROM generate_series($2::date, $3::date - 1, interval '1 day') d)
-         SELECT to_char(n.night, 'YYYY-MM-DD') AS night,
-                (SELECT count(*) FROM rooms r WHERE r.room_type_id = $1 AND r.is_active
-                   AND NOT EXISTS (SELECT 1 FROM room_out_of_order o WHERE o.room_id = r.id AND o.status = 'active' AND o.start_date <= n.night AND o.end_date > n.night)) AS capacity,
-                (SELECT count(*) FROM reservation_rooms x WHERE x.room_type_id = $1 AND x.status IN ('reserved','checked_in') AND x.arrival <= n.night AND x.departure > n.night) AS booked
-           FROM nights n`,
-        [to.room_type_id, bd, stay.expected_departure],
-      );
-      const short = cap.filter((c) => Number(c.booked) + 1 > Number(c.capacity));
-      if (short.length) throw new AppError(ERROR_CODES.ROOM_UNAVAILABLE, `No ${to.type_name} room is free on ${short.map((c) => formatDate(c.night, { year: false })).join(', ')}.`);
-    }
+    await assertRoomReady(q,actor.user.propertyId,to.id,bd,stay.expected_departure,bd,rr.adults+rr.child_ages.length);
 
     let authorisedBy: string | null = null;
     if (input.rateDecision === 'new_room_type_rate') {
@@ -223,7 +210,7 @@ export class StaysService {
       `INSERT INTO room_allocations (property_id, reservation_room_id, room_id, start_date, end_date, status, created_by) VALUES ($1,$2,$3,$4,$5,'checked_in',$6)`,
       [actor.user.propertyId, rr.id, to.id, bd, stay.expected_departure, actor.user.id],
     );
-    await q.query(`UPDATE reservation_rooms SET room_id = $2, room_type_id = $3 WHERE id = $1`, [rr.id, to.id, to.room_type_id]);
+    await q.query(`UPDATE reservation_rooms SET room_id = $2, room_type_id = $3 WHERE id = $1`, [rr.id, to.id, input.rateDecision === 'new_room_type_rate' ? to.room_type_id : rr.room_type_id]);
     await q.query(`UPDATE stays SET room_id = $2 WHERE id = $1`, [stayId, to.id]);
     await q.query(`SELECT set_config('resortos.reason', $1, true)`, [`Room shift to ${to.number}: ${input.reason}`]);
     // The room left behind needs a full clean, like a checkout; the trigger opens that task (0021).
@@ -267,6 +254,9 @@ export class StaysService {
 
     const { rows: rrRows } = await q.query<ReservationRoomRow>(`SELECT * FROM reservation_rooms WHERE id = $1 FOR UPDATE`, [stay.reservation_room_id]);
     const rr = rrRows[0]!;
+
+    await lockRoomInventory(q,actor.user.propertyId);
+    await assertRoomCapacity(q,actor.user.propertyId,stay.expected_departure,input.newDeparture,1,rr.id);
 
     // Price only the nights being added; the nights already stayed keep their agreed rates.
     const agreedExtras = rr.includes_meal_plan ? (await q.query<{ extra_person_amount: string }>(

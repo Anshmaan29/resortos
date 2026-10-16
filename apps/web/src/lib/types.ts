@@ -14,7 +14,7 @@ export interface Property {
   pinCode: string; gstin: string | null; phone: string; email: string | null; today: string; businessDate: string; checkInTime: string; checkOutTime: string;
   timezone: string; isPractice: boolean; version: number; policies: PropertyPolicies;
 }
-export interface RoomType { id: string; code: string; name: string; baseOccupancy: number; maxOccupancy: number; baseRate: string; minRate: string; extraAdultRate: string; extraChildRate: string; isActive: boolean; version: number }
+export interface RoomType { id: string; code: string; name: string; description: string | null; baseOccupancy: number; maxOccupancy: number; baseRate: string; minRate: string; extraAdultRate: string; extraChildRate: string; isActive: boolean; version: number }
 export interface Room {
   id: string; number: string; roomTypeId: string; roomTypeName: string; roomTypeCode: string; unitType: string; view: string | null;
   building: string | null; floor: string | null; housekeeping: HousekeepingStatus; service: ServiceStatus; occupancy: OccupancyStatus;
@@ -59,9 +59,15 @@ export interface FrontDesk {
   inHouseRooms: number; roomCounts: Partial<Record<RoomDisplayState, number>>; totalRooms: number;
 }
 export interface Guest { id: string; firstName: string; lastName: string; fullName: string; mobile: string; email: string | null; city: string | null; isVip: boolean; stays?: number; lastStay?: string | null; version: number; whatsappOptedIn?: boolean; whatsappConsentAt?: string | null }
+export interface AvailableRoom {
+  id: string; number: string; roomTypeId: string; view: string | null; building: string | null; floor: string | null;
+  housekeeping: string; service: string; maxOccupancy: number;
+}
 export interface Availability {
-  arrival: string; departure: string; nights: number;
-  roomTypes: { roomTypeId: string; roomTypeName: string; available: number; nights: { date: string; capacity: number; booked: number; available: number }[]; freeRooms: { id: string; number: string; view: string | null; housekeeping: string }[] }[];
+  arrival: string; departure: string; nights: number; available: number;
+  inventory: { date: string; capacity: number; booked: number; available: number }[];
+  rooms: AvailableRoom[];
+  roomTypes: { roomTypeId: string; roomTypeName: string; available: number; nights: { date: string; capacity: number; booked: number; available: number }[]; freeRooms: AvailableRoom[] }[];
 }
 export interface Quote {
   nights: { date: string; roomRate: string; extraPersonAmount: string; mealAmount: string; total: string; rateSource: string; label: string | null; belowFloor: boolean }[];

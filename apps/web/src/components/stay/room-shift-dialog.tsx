@@ -44,15 +44,13 @@ export function RoomShiftDialog({ stay, open, onClose, onDone }: {
     queryFn: () => api<Availability>('/availability', { query: { arrival: stay.businessDate, departure: stay.expectedDeparture } }),
   });
 
-  const rooms = (avail.data?.roomTypes ?? []).flatMap((t) =>
-    t.freeRooms.filter((r) => r.id !== stay.roomId).map((r) => ({ ...r, roomTypeId: t.roomTypeId, roomTypeName: t.roomTypeName })));
+  const rooms = (avail.data?.rooms ?? []).filter((r) => r.id !== stay.roomId).sort((a,b) => a.number.localeCompare(b.number,undefined,{numeric:true}));
   const chosen = rooms.find((r) => r.id === toRoomId);
-  const typeChanges = !!chosen && chosen.roomTypeId !== stay.roomTypeId;
 
-  // What the new room type would cost, so "new room type rate" is not a blind choice.
+  // Show the new room’s standard price before the receptionist chooses it.
   const quote = useQuery({
     queryKey: ['rates/quote', chosen?.roomTypeId, stay.businessDate, stay.expectedDeparture, stay.adults, stay.mealPlan],
-    enabled: open && typeChanges,
+    enabled: open && !!chosen,
     queryFn: () => api<Quote>('/rates/quote', {
       query: {
         roomTypeId: chosen!.roomTypeId, arrival: stay.businessDate, departure: stay.expectedDeparture,
@@ -94,7 +92,7 @@ export function RoomShiftDialog({ stay, open, onClose, onDone }: {
         description={`The bill stays the same and both rooms are kept in the stay's history. Room ${stay.roomNumber} becomes dirty for housekeeping.`}
         footer={<>
           <Button variant="outline" onClick={onClose}>Keep room {stay.roomNumber}</Button>
-          <Button disabled={!toRoomId} loading={shift.isPending} onClick={() => { setFormError(null); shift.mutate(undefined); }}>
+          <Button disabled={!chosen} loading={shift.isPending} onClick={() => { setFormError(null); shift.mutate(undefined); }}>
             Move to room {chosen?.number ?? '…'}
           </Button>
         </>}
@@ -106,7 +104,7 @@ export function RoomShiftDialog({ stay, open, onClose, onDone }: {
                 <option value="" disabled>{avail.isLoading ? 'Loading…' : rooms.length ? 'Choose a room' : 'No other room is free for these dates'}</option>
                 {rooms.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.number} · {r.roomTypeName}{r.view ? ` · ${r.view}` : ''}{r.housekeeping === 'dirty' || r.housekeeping === 'cleaning' ? ` · ${r.housekeeping}` : ''}
+                    {r.number}{r.view ? ` · ${r.view}` : ''}{r.housekeeping === 'dirty' || r.housekeeping === 'cleaning' ? ` · ${r.housekeeping}` : ''}
                   </option>
                 ))}
               </Select>
@@ -116,10 +114,8 @@ export function RoomShiftDialog({ stay, open, onClose, onDone }: {
           {chosen && (
             <div className="flex flex-wrap items-center gap-2 rounded-md bg-surface-2 px-3 py-2.5 text-sm">
               <span className="num font-medium">{stay.roomNumber}</span>
-              <span className="text-text-3">{stay.roomTypeName}</span>
               <ArrowRight className="h-4 w-4 text-text-3" aria-hidden />
               <span className="num font-medium">{chosen.number}</span>
-              <span className="text-text-3">{chosen.roomTypeName}</span>
               <span className="ml-auto text-text-3">{formatDate(stay.businessDate, { year: false })} → {formatDate(stay.expectedDeparture, { year: false })}</span>
             </div>
           )}
@@ -133,17 +129,17 @@ export function RoomShiftDialog({ stay, open, onClose, onDone }: {
           </Field>
           <Field label="Note">{(id) => <Textarea id={id} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional detail" />}</Field>
 
-          {typeChanges && (
+          {chosen && (
             <fieldset className="flex flex-col gap-2 rounded-md border border-border p-3">
               <legend className="px-1 text-sm font-medium text-text-2">Room rate</legend>
               <p className="text-sm text-text-3">
-                {chosen!.roomTypeName} is a different room type. Current rate {formatINR(stay.nightlyRate)} per night ({MEAL_PLAN_LABELS[stay.mealPlan]}).
+                Current rate {formatINR(stay.nightlyRate)} per night ({MEAL_PLAN_LABELS[stay.mealPlan]}).
               </p>
               {(['keep_rate', 'new_room_type_rate'] as const).map((value) => (
                 <label key={value} className="flex items-start gap-2.5 text-sm">
                   <input type="radio" name="rateDecision" className="mt-1" checked={rateDecision === value} onChange={() => setRateDecision(value)} />
                   <span>
-                    <span className="font-medium">{value === 'keep_rate' ? `Keep ${formatINR(stay.nightlyRate)} per night` : 'Use the new room type’s rate'}</span>
+                    <span className="font-medium">{value === 'keep_rate' ? `Keep ${formatINR(stay.nightlyRate)} per night` : 'Use the new room’s standard price'}</span>
                     {value === 'new_room_type_rate' && (
                       <span className="block text-text-3">
                         {quote.isLoading ? 'Working out the rate…'

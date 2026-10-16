@@ -368,7 +368,7 @@ describe('idempotent document creation', () => {
 });
 
 describe('booking edits during check-in', () => {
-  it('switches Deluxe to Premium without losing uploaded documents and checks into 106', async () => {
+  it('preserves documents and the selected room across a tariff edit, and can check into any ready room', async () => {
     const body = booking({ roomTypeId: f.type('DLX'), arrival: '2026-09-16', departure: '2026-09-17', adults: 1, nightlyRate: '6000' });
     const created = (await post(owner, '/reservations', body).expect(201)).body;
     const started = (await post(desk, '/check-in-drafts', { reservationId: created.id }, null).expect(200)).body;
@@ -387,7 +387,7 @@ describe('booking edits during check-in', () => {
     const current = (await desk.get(`/api/v1/check-in-drafts/${started.id}`).expect(200)).body;
     expect(current.reservation.rooms[0]).toMatchObject({ roomTypeId: f.type('PRE'), roomTypeName: 'Premium', reservationRoomId: updated.rooms[0].id });
     expect(current.data.rooms[0].reservationRoomId).toBe(updated.rooms[0].id);
-    expect(current.data.rooms[0].roomId).toBeUndefined();
+    expect(current.data.rooms[0].roomId).toBe(f.room('205'));
     expect(current.data.rooms[0].occupants).toEqual(data.rooms[0].occupants);
     expect(current.documents.map((d: any) => d.id)).toEqual(expect.arrayContaining([photo.id, id.id]));
     expect(current.step).toBe(2);
@@ -397,6 +397,12 @@ describe('booking edits during check-in', () => {
     await desk.patch(`/api/v1/check-in-drafts/${started.id}`).set('x-resortos', '1').send({ version: saved.version, step: 2, data }).expect(409);
     current.data.rooms[0].roomId = f.room('106');
     await desk.patch(`/api/v1/check-in-drafts/${started.id}`).set('x-resortos', '1').send({ version: current.version, step: 5, data: current.data }).expect(200);
+    await sql("UPDATE rooms SET housekeeping_status='dirty' WHERE id=$1", [f.room('106')]);
+    const unready = (await desk.get(`/api/v1/check-in-drafts/${started.id}`).expect(200)).body;
+    expect(unready.problems.some((p:any) => /room 106 is not ready/.test(p.message))).toBe(true);
+    await post(desk, `/check-in-drafts/${started.id}/confirm`, {}).expect(409);
+    expect((await desk.get(`/api/v1/reservations/${created.id}`).expect(200)).body.status).toBe('confirmed');
+    await sql("UPDATE rooms SET housekeeping_status='clean' WHERE id=$1", [f.room('106')]);
     const confirmed = (await post(desk, `/check-in-drafts/${started.id}/confirm`, {}).expect(200)).body;
     const stay = (await desk.get(`/api/v1/stays/${confirmed.stays[0].id}`).expect(200)).body;
     expect(stay.roomNumber).toBe('106');

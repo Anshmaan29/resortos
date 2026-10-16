@@ -193,7 +193,6 @@ function BoardRoomCard({ room, staff }: { room: HousekeepingRoom; staff: Houseke
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="num text-lg font-semibold leading-tight text-text">{room.number}</p>
-          <p className="truncate text-xs text-text-3">{room.roomTypeName}</p>
         </div>
         <HousekeepingPill status={room.housekeeping} />
       </div>

@@ -7,7 +7,7 @@ Priority: **Data safety → Correctness → Security → Usability → Reliabili
 2.  Never hard-delete reservations, stays, folio lines, payments, invoices, notes, shifts, documents, or audit logs.
 3.  Multi-record changes run in one transaction with audit + outbox (`DbService.tx`, `AuditService`, `OutboxService`).
 4.  Every mutation supports idempotency keys (`IdempotencyService.run` inside the same transaction).
-5.  Double booking is prevented by the `no_overlapping_room_allocations` exclusion constraint; room-type inventory is checked under a `FOR UPDATE` lock on `room_types`.
+5.  Double booking is prevented by the `no_overlapping_room_allocations` exclusion constraint; hotel-wide room inventory is checked under a `FOR UPDATE` lock on all property tariff profiles in `room_types`. Categories are not used for room selection. Existing tariff records preserve agreed pricing; reception chooses from all ready room numbers.
 6.  Backend enforces roles, receptionist limits, and Owner PIN via `OwnerAuthorisationService.require`: approvals are single-use, expire in 2 minutes, and are bound to a hash of the exact request scope. PIN failure counters and pending approvals are written outside the business transaction.
 7.  Money: NUMERIC(14,2) in DB, `@resortos/shared` money helpers (decimal.js) in code, strings in API. The pg driver returns NUMERIC/DATE as strings — keep it that way.
 8.  Invoice numbers come from `document_counters`, never a SEQUENCE.

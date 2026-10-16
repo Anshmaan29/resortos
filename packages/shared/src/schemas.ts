@@ -418,7 +418,7 @@ export const stayListQuerySchema = z.object({
 export type StayListQuery = z.infer<typeof stayListQuerySchema>;
 
 export const availabilityQuerySchema = z
-  .object({ arrival: zIsoDate, departure: zIsoDate, roomTypeId: zId.optional() })
+  .object({ arrival: zIsoDate, departure: zIsoDate, roomTypeId: zId.optional(), reservationId: zId.optional() })
   .refine((v) => nightsBetween(v.arrival, v.departure) >= 1, { message: 'Departure must be after arrival', path: ['departure'] });
 
 // ---------- check-in (spec §17–§20) ----------
