@@ -51,6 +51,8 @@ afterAll(async () => {
 // the API, while confirmed stay rows are prepared with SQL. Every operation under
 // audit (charges, money, checkout, exports, maintenance) uses the real API/database.
 async function makeStay(room: string, name: string, arrivedAt: string | null = null, departure = '2026-09-18', businessDateIn = DATE) {
+  // Reused checkout fixtures must be cleaned before the next arrival, just like reception.
+  await sql("UPDATE rooms SET housekeeping_status='clean' WHERE id=$1 AND NOT EXISTS (SELECT 1 FROM stays s WHERE s.room_id=rooms.id AND s.status='in_house')", [f.room(room)]);
   const reservation = await post(owner, '/reservations', {
     guest: { firstName: 'Audit', lastName: name, mobile: `98${String(mobile++).padStart(8, '0')}` },
     source: 'walk_in', arrival: DATE, departure,
