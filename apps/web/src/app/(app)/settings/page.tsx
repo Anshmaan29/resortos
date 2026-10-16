@@ -13,7 +13,7 @@ import { OwnerSecuritySettings } from '@/components/settings/security';
 import { TaxSettings } from '@/components/settings/tax';
 import { PageHeader, Skeleton } from '@/components/ui/surface';
 import { cn } from '@/lib/cn';
-import { useMe } from '@/lib/session';
+import { useMe, useProperty } from '@/lib/session';
 
 const SECTIONS: { key: string; label: string; icon: ComponentType<{ className?: string }>; owner: boolean; component: ComponentType }[] = [
   { key: 'property', label: 'Property', icon: Building, owner: true, component: PropertySettings },
@@ -32,10 +32,11 @@ const SECTIONS: { key: string; label: string; icon: ComponentType<{ className?: 
 
 function SettingsInner() {
   const me = useMe();
+  const property=useProperty();
   const params = useSearchParams();
   const router = useRouter();
   if (!me.data) return <Skeleton className="h-96" />;
-  const visible = SECTIONS.filter((s) => s.key === 'tax' ? ['owner', 'receptionist'].includes(me.data!.role) : !s.owner || me.data!.role === 'owner');
+  const visible = SECTIONS.filter(s=>property.data?.bookingModel!=='private_villa'||!['rooms','rates'].includes(s.key)).filter((s) => s.key === 'tax' ? ['owner', 'receptionist'].includes(me.data!.role) : !s.owner || me.data!.role === 'owner');
   const active = visible.find((s) => s.key === params.get('tab')) ?? visible[0]!;
   const Active = active.component;
   return (

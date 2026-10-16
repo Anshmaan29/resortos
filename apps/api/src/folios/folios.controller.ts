@@ -37,6 +37,12 @@ export class FoliosController {
     return this.folios.forStay(actor, parse(zId, id));
   }
 
+  /** Day-use bookings have a bill without an overnight stay. */
+  @Get('folios/:id')
+  forFolio(@CurrentActor() actor: Actor, @Param('id') id: string) {
+    return this.folios.detail(this.db, actor.user.propertyId, parse(zId, id));
+  }
+
   @Post('folios/:id/charges')
   @HttpCode(200)
   addCharge(@CurrentActor() actor: Actor, @Req() req: AppRequest, @IdempotencyKey() key: string | undefined, @Param('id') id: string, @Body() body: unknown) {

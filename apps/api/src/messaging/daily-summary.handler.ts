@@ -50,7 +50,7 @@ export class DailySummaryHandler implements OutboxHandler {
       const raw = settings[0]?.value;
       const configured = Array.isArray(raw) ? (raw as string[]) : (raw as { recipients?: string[] } | null)?.recipients ?? null;
       const { rows: owners } = await q.query<{ email: string | null }>(
-        `SELECT email FROM users WHERE property_id = $1 AND role = 'owner' AND is_active AND email IS NOT NULL`, [event.propertyId],
+        `SELECT email FROM users WHERE role='owner' AND is_active AND email IS NOT NULL AND (property_id=$1 OR EXISTS(SELECT 1 FROM property_owner_access a WHERE a.user_id=users.id AND a.property_id=$1 AND a.is_active))`, [event.propertyId],
       );
       const recipients = configured ?? owners.map((o) => o.email!).filter(Boolean);
       if (!recipients.length) return; // nowhere to send it; the day log still holds the numbers

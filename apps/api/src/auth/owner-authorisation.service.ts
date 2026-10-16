@@ -144,7 +144,7 @@ export class OwnerAuthorisationService {
   /** PIN check with 5-strike lock that survives rollbacks. */
   private async verifyPin(actor: Actor, ownerUserId: string, pin: string): Promise<string> {
     const { rows } = await this.db.query<{ id: string; owner_pin_hash: string | null; owner_pin_locked_until: Date | null }>(
-      `SELECT id, owner_pin_hash, owner_pin_locked_until FROM users WHERE id = $1 AND property_id = $2 AND role = 'owner' AND is_active`,
+      `SELECT id, owner_pin_hash, owner_pin_locked_until FROM users WHERE id = $1 AND role = 'owner' AND is_active AND (property_id=$2 OR EXISTS (SELECT 1 FROM property_owner_access a WHERE a.user_id=users.id AND a.property_id=$2 AND a.is_active))`,
       [ownerUserId, actor.user.propertyId],
     );
     const owner = rows[0];
@@ -176,7 +176,7 @@ export class OwnerAuthorisationService {
 
   async listOwners(propertyId: string) {
     const { rows } = await this.db.query<{ id: string; full_name: string }>(
-      `SELECT id, full_name FROM users WHERE property_id = $1 AND role = 'owner' AND is_active AND owner_pin_hash IS NOT NULL ORDER BY full_name`,
+      `SELECT id, full_name FROM users WHERE role = 'owner' AND is_active AND (property_id=$1 OR EXISTS (SELECT 1 FROM property_owner_access a WHERE a.user_id=users.id AND a.property_id=$1 AND a.is_active)) AND owner_pin_hash IS NOT NULL ORDER BY full_name`,
       [propertyId],
     );
     return rows.map((r) => ({ id: r.id, fullName: r.full_name }));

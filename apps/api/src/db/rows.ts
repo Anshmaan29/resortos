@@ -11,6 +11,7 @@ export interface CountRow { n: string }
 export interface IdRow { id: string }
 
 export interface PropertyRow {
+  booking_model: 'hotel' | 'private_villa';
   id: string; name: string; legal_name: string; address_line1: string; address_line2: string | null; city: string;
   state_code: string; pin_code: string; gstin: string | null; phone: string; email: string | null; logo_path: string | null;
   check_in_time: string; check_out_time: string; timezone: string; financial_year_start_month: number;

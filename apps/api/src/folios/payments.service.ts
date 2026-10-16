@@ -193,6 +193,9 @@ export class PaymentsService {
       if (!rows[0]) throw notFound('Bill');
       return { folioId: rows[0].id, reservationId: rows[0].reservation_id, guestId: rows[0].guest_id, folioClosed: rows[0].status === 'closed' };
     }
+    // Private-villa advances serialize with cancellation without changing hotel locking behavior.
+    await q.query<{id:string}>(`SELECT r.id FROM reservations r JOIN properties p ON p.id=r.property_id
+      WHERE r.id=$1 AND r.property_id=$2 AND p.booking_model='private_villa' FOR UPDATE OF r`,[target.reservationId,propertyId]);
     const { rows } = await q.query<{ id: string; guest_id: string; status: string }>(
       `SELECT id, primary_guest_id AS guest_id, status FROM reservations WHERE id = $1 AND property_id = $2`,
       [target.reservationId, propertyId],
@@ -205,8 +208,8 @@ export class PaymentsService {
     }
     // Once the guest is in house there is a bill, and an advance belongs on it.
     const { rows: folio } = await q.query<{ id: string }>(
-      `SELECT f.id FROM folios f JOIN stays s ON s.id = f.stay_id
-        WHERE f.reservation_id = $1 AND s.status = 'in_house' ORDER BY f.opened_at, f.id LIMIT 1`,
+      `SELECT f.id FROM folios f LEFT JOIN stays s ON s.id = f.stay_id
+        WHERE f.reservation_id = $1 AND (s.status = 'in_house' OR (f.kind='villa' AND f.status='open')) ORDER BY f.opened_at, f.id LIMIT 1`,
       [rows[0].id],
     );
     return { folioId: folio[0]?.id ?? null, reservationId: rows[0].id, guestId: rows[0].guest_id, folioClosed: false };

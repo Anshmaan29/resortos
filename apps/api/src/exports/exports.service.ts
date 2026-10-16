@@ -87,14 +87,18 @@ export class ExportsService {
   // ---------------- datasets ----------------
 
   private async bookings(q: Queryable, propertyId: string, from: string, to: string) {
+    const {rows:prop}=await q.query<{booking_model:string}>(`SELECT booking_model FROM properties WHERE id=$1`,[propertyId]);
+    const villa=prop[0]?.booking_model==='private_villa';
     const { rows } = await q.query<Record<string, string | null>>(
       `SELECT r.number, g.first_name || ' ' || g.last_name AS guest, g.mobile, r.source, r.ota_reference,
               to_char(r.arrival, 'YYYY-MM-DD') AS arrival, to_char(r.departure, 'YYYY-MM-DD') AS departure,
               r.status, r.group_name, r.purpose,
-              (SELECT sum(rr.adults) FROM reservation_rooms rr WHERE rr.reservation_id = r.id)::text AS guests_count,
+              COALESCE(v.guest_count,(SELECT sum(rr.adults) FROM reservation_rooms rr WHERE rr.reservation_id = r.id))::text AS guests_count,
+              v.use_kind, to_char(v.starts_at AT TIME ZONE prop.timezone,'YYYY-MM-DD HH24:MI') AS villa_from, to_char(v.ends_at AT TIME ZONE prop.timezone,'YYYY-MM-DD HH24:MI') AS villa_until,
               (SELECT count(*) FROM reservation_rooms rr WHERE rr.reservation_id = r.id)::text AS rooms_count,
               u.full_name AS created_by_name, to_char(r.created_at AT TIME ZONE prop.timezone, 'YYYY-MM-DD HH24:MI') AS created_at
          FROM reservations r
+         LEFT JOIN villa_bookings v ON v.id=r.id AND v.property_id=r.property_id
          JOIN properties prop ON prop.id=r.property_id
          JOIN guests g ON g.id = r.primary_guest_id
          LEFT JOIN users u ON u.id = r.created_by
@@ -104,8 +108,8 @@ export class ExportsService {
     );
     return {
       title: 'Bookings',
-      columns: ['Booking', 'Guest', 'Mobile', 'Source', 'OTA reference', 'Arrival', 'Departure', 'Status', 'Group', 'Purpose', 'Guests', 'Rooms', 'Booked by', 'Booked at'],
-      rows: rows.map((r) => [r.number, r.guest, r.mobile, r.source, r.ota_reference, r.arrival, r.departure, r.status, r.group_name, r.purpose, num(r.guests_count), num(r.rooms_count), r.created_by_name, r.created_at]),
+      columns: ['Booking', 'Guest', 'Mobile', 'Source', 'OTA reference', 'Arrival', 'Departure', 'Status', 'Group', 'Purpose', 'Guests', 'Rooms', 'Booked by', 'Booked at', ...(villa ? ['Villa use', 'Villa start', 'Villa end'] : [])],
+      rows: rows.map((r) => [r.number, r.guest, r.mobile, r.source, r.ota_reference, r.arrival, r.departure, r.status, r.group_name, r.purpose, num(r.guests_count), num(r.rooms_count), r.created_by_name, r.created_at, ...(villa ? [r.use_kind, r.villa_from, r.villa_until] : [])]),
     };
   }
 

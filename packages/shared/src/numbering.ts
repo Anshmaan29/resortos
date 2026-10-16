@@ -2,9 +2,10 @@
 /** INV tax invoice · BOS bill of supply · CN credit note · DN debit note · RV receipt voucher. */
 export type DocumentSeries = 'INV' | 'BOS' | 'CN' | 'DN' | 'RV';
 
-export function formatDocumentNumber(series: DocumentSeries, financialYear: string, n: number): string {
+export function formatDocumentNumber(series: DocumentSeries, financialYear: string, n: number, prefix?: string): string {
   if (!Number.isInteger(n) || n < 1) throw new Error('Document number must be a positive integer');
-  const out = `${series}/${financialYear}/${String(n).padStart(5, '0')}`;
+  if (prefix && !/^[A-Z]{2,3}$/.test(prefix)) throw new Error("Invalid document prefix");
+  const out = `${prefix??series}/${financialYear}/${String(n).padStart(5, '0')}`;
   if (out.length > 16) throw new Error(`Document number exceeds 16 characters: ${out}`);
   return out;
 }

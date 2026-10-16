@@ -23,7 +23,7 @@ import type { Bill, BillLine, BillPayment, ChargeItem, DiscountPreview } from '@
 const DOC_LABELS = { tax_invoice: 'Tax invoice', bill_of_supply: 'Bill of supply', credit_note: 'Credit note', debit_note: 'Debit note' } as const;
 
 /** Staff word is "Bill", never "folio" (CLAUDE.md conventions). */
-export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolean }) {
+export function BillPanel({ stayId, canEdit, folioId }: { stayId: string; canEdit: boolean; folioId?: string }) {
   const [addOpen, setAddOpen] = useState(false);
   const [voiding, setVoiding] = useState<BillLine | null>(null);
   const [payOpen, setPayOpen] = useState(false);
@@ -35,7 +35,7 @@ export function BillPanel({ stayId, canEdit }: { stayId: string; canEdit: boolea
   const me = useMe();
   const isOwner = me.data?.role === 'owner';
 
-  const bill = useQuery({ queryKey: ['bill', stayId], queryFn: () => api<Bill>(`/stays/${stayId}/bill`) });
+  const bill = useQuery({ queryKey: ['bill', stayId], queryFn: () => api<Bill>(folioId ? `/folios/${folioId}` : `/stays/${stayId}/bill`) });
 
   if (bill.isLoading) return <Skeleton className="h-64" />;
   if (bill.isError) return <ErrorBanner message={(bill.error as Error).message} onRetry={() => bill.refetch()} />;

@@ -49,6 +49,11 @@ export class NightAuditService {
     @Inject(NIGHT_AUDIT_STEPS) private readonly steps: NightAuditStep[],
   ) {}
 
+  private async stepsFor(ctx:NightAuditContext){
+    const {rows}=await ctx.q.query<{booking_model:string}>(`SELECT booking_model FROM properties WHERE id=$1`,[ctx.propertyId]);
+    return inOrder(this.steps.filter(step=>!step.bookingModel||step.bookingModel===rows[0]?.booking_model));
+  }
+
   /** Who may complete an audit: the owner always, a receptionist only if the owner allows it (§35.2). */
   private async assertMayRun(q: Queryable, actor: Actor): Promise<void> {
     if (actor.user.role === 'owner') return;
@@ -72,7 +77,7 @@ export class NightAuditService {
     const steps = [];
     let blocked = false;
     let facts: Record<string, unknown> = {};
-    for (const step of inOrder(this.steps)) {
+    for (const step of await this.stepsFor(ctx)) {
       const report = await step.inspect(ctx);
       if (step.blocking && report.items.length) blocked = true;
       facts = { ...facts, ...report.facts };
@@ -166,7 +171,7 @@ export class NightAuditService {
     const blockers: { step: string; title: string; items: NightAuditItem[] }[] = [];
     let facts: Record<string, unknown> = {};
     const reports = [];
-    for (const step of inOrder(this.steps)) {
+    for (const step of await this.stepsFor(ctx)) {
       const report = await step.inspect(ctx);
       facts = { ...facts, ...report.facts };
       reports.push({ step, report });

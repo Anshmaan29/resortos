@@ -1,3 +1,4 @@
+import { VillaModule } from './villa/villa.module';
 import { Module } from '@nestjs/common';
 import { AuthModule } from './auth/auth.module';
 import { CashierModule } from './cashier/cashier.module';
@@ -30,7 +31,7 @@ import { Global } from '@nestjs/common';
 class ConfigModule {}
 
 @Module({
-  imports: [SheetsModule, ConfigModule, DbModule, StorageModule, JobsModule, AuthModule, PropertyModule, RatesModule, GuestsModule, ReservationsModule, StaysModule, FoliosModule, CashierModule, ReceivablesModule, PrintingModule, ReviewModule, MessagingModule, HousekeepingModule, ExpensesModule, ComplianceModule, ExportsModule, MaintenanceModule, NightAuditModule],
+  imports: [VillaModule, SheetsModule, ConfigModule, DbModule, StorageModule, JobsModule, AuthModule, PropertyModule, RatesModule, GuestsModule, ReservationsModule, StaysModule, FoliosModule, CashierModule, ReceivablesModule, PrintingModule, ReviewModule, MessagingModule, HousekeepingModule, ExpensesModule, ComplianceModule, ExportsModule, MaintenanceModule, NightAuditModule],
   controllers: [HealthController],
 })
 export class AppModule {}

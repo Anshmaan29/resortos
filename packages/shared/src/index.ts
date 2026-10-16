@@ -6,3 +6,5 @@ export * from './gst';
 export * from './numbering';
 export * from './domain';
 export * from './schemas';
+
+export * from "./villa";

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader, EmptyState, ErrorBanner, Skeleton } from '@/components/ui/surface';
 import { Pill, ReservationBadge } from '@/components/ui/status';
 import { useToast } from '@/components/ui/toast';
-import { api } from '@/lib/api';
+import { api, apiUrl } from '@/lib/api';
 import type { GuestProfile } from '@/lib/types';
 
 const DOC_LABELS: Record<string, string> = {
@@ -173,7 +173,7 @@ export default function GuestProfilePage() {
                       </span>
                       <span className="block text-xs text-text-3">Room {d.roomNumber} · {formatDateTime(d.at)}</span>
                     </span>
-                    <a href={`/api/v1/documents/${d.id}/download`} className="rounded-md px-3 py-2 text-sm hover:bg-surface-2">Download</a>
+                    <a href={apiUrl(`/documents/${d.id}/download`)} className="rounded-md px-3 py-2 text-sm hover:bg-surface-2">Download</a>
                     <Button variant="ghost" size="sm" loading={view.isPending} onClick={() => view.mutate(d.id)}><Eye className="h-4 w-4" />View</Button>
                   </li>
                 ))}
