@@ -122,7 +122,10 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
   });
 
   useEffect(() => {
-    if (roomTypes.data?.[0] && lines.length === 1 && !lines[0]!.roomTypeId) setLines([{ ...lines[0]!, roomTypeId: roomTypes.data[0].id }]);
+    const defaultPricing = roomTypes.data?.[0];
+    if (defaultPricing && lines.some((line) => !line.roomTypeId)) {
+      setLines((current) => current.map((line) => line.roomTypeId ? line : { ...line, roomTypeId: defaultPricing.id }));
+    }
   }, [roomTypes.data, lines]);
 
   const startNewGuest = () => {
@@ -134,6 +137,14 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
   const updateLine = (key: string, patch: Partial<RoomLine>) => setLines((ls) => ls.map((l) => {
     if (l.key !== key) return l;
     const next = { ...l, ...patch };
+    // Without an assigned room, the hotel-wide guest limit applies. Pick a compatible
+    // internal tariff for pricing rather than retaining an invisible category restriction.
+    const guests = next.adults + next.childAges.length;
+    const profile = roomTypes.data?.find((t) => t.id === next.roomTypeId);
+    if (!next.roomId && profile && guests > profile.maxOccupancy) {
+      const compatible = roomTypes.data?.find((t) => t.maxOccupancy >= guests);
+      if (compatible) next.roomTypeId = compatible.id;
+    }
     return hasExtraGuests(next, roomTypes.data ?? []) ? next : { ...next, manualExtras: '0' };
   }));
 
@@ -309,7 +320,7 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
           {/* ---------- Rooms ---------- */}
           <Card>
             <CardHeader title="Rooms" description={lines.length > 1 ? 'Group booking — all rooms share one master bill.' : undefined}
-              action={<Button variant="outline" size="sm" onClick={() => setLines((ls) => [...ls, newLine(ls[ls.length - 1]?.roomTypeId)])}><Plus className="h-4 w-4" />Add room</Button>} />
+              action={<Button variant="outline" size="sm" disabled={!roomTypes.data?.length} onClick={() => setLines((ls) => [...ls, newLine(ls[ls.length - 1]?.roomTypeId)])}><Plus className="h-4 w-4" />Add room</Button>} />
             <div className="flex flex-col gap-4 p-5">
               {lines.length > 1 && (
                 <Field label="Group name" required error={errors.groupName}>{(id) => <Input id={id} placeholder="e.g. Sharma Wedding" value={groupName} onChange={(e) => setGroupName(e.target.value)} />}</Field>
@@ -424,6 +435,7 @@ function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short
 }) {
   const type = roomTypes.find((t) => t.id === line.roomTypeId);
   const guests = line.adults + line.childAges.length;
+  const maxOccupancy = line.roomId ? type?.maxOccupancy : Math.max(1, ...roomTypes.map((t) => t.maxOccupancy));
   const [childAge, setChildAge] = useState('');
   const free = (availability?.rooms ?? []).filter((r) => !takenRoomIds.includes(r.id)).sort((a,b) => a.number.localeCompare(b.number,undefined,{numeric:true}));
 
@@ -450,9 +462,9 @@ function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short
           <div className="flex items-center gap-2">
             <Button variant="outline" size="icon" onClick={() => onChange({ adults: Math.max(1, line.adults - 1) })} aria-label="Fewer adults"><Minus className="h-4 w-4" /></Button>
             <span className="w-10 text-center text-lg font-semibold num" aria-live="polite">{line.adults}</span>
-            <Button variant="outline" size="icon" disabled={!!type && guests >= type.maxOccupancy} onClick={() => onChange({ adults: line.adults + 1 })} aria-label="More adults"><Plus className="h-4 w-4" /></Button>
+            <Button variant="outline" size="icon" disabled={!!maxOccupancy && guests >= maxOccupancy} onClick={() => onChange({ adults: line.adults + 1 })} aria-label="More adults"><Plus className="h-4 w-4" /></Button>
           </div>
-          {type && <span className="text-xs text-text-2">Max {type.maxOccupancy} guests{!line.useCustomPrice && ` · standard tariff includes ${type.baseOccupancy}`}</span>}
+          {type && <span className="text-xs text-text-2">Max {maxOccupancy} guests{!line.useCustomPrice && ` · standard tariff includes ${type.baseOccupancy}`}</span>}
         </div>
         <div className="flex flex-col gap-1.5">
           <span className="text-sm font-medium text-text-2">Children (ages)</span>
@@ -463,7 +475,7 @@ function RoomLineEditor({ index, line, canRemove, roomTypes, availability, short
                 <button onClick={() => onChange({ childAges: line.childAges.filter((_, j) => j !== i) })} className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-surface-3" aria-label={`Remove child aged ${age}`}><X className="h-3.5 w-3.5" /></button>
               </span>
             ))}
-            {(!type || guests < type.maxOccupancy) && (
+            {(!maxOccupancy || guests < maxOccupancy) && (
               <form onSubmit={(e) => { e.preventDefault(); const a = Number(childAge); if (childAge !== '' && a >= 0 && a <= 17) { onChange({ childAges: [...line.childAges, a] }); setChildAge(''); } }} className="flex items-center gap-1">
                 <Input value={childAge} onChange={(e) => setChildAge(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" placeholder="Age" className="h-9 w-16" aria-label="Child age" />
                 <Button type="submit" variant="secondary" size="sm" disabled={childAge === ''}>Add</Button>

@@ -20,6 +20,10 @@ test('Save booking records WhatsApp agreement without an extra checkbox or send 
   await page.getByLabel('Email', { exact: true }).fill('automatic@example.com');
   await expect(page.getByRole('combobox', { name: 'Room type', exact: true })).toHaveCount(0);
   await page.getByLabel('Meal plan', { exact: true }).selectOption('MAP');
+  // Assign later must support the hotel's guest limit, not the first hidden tariff's limit.
+  await page.getByRole('button', {name:'More adults',exact:true}).click();
+  await expect(page.getByText('Max 3 guests', {exact:true})).toBeVisible();
+  await page.getByRole('button', {name:'Fewer adults',exact:true}).click();
   await page.getByLabel('Room price per night').fill('6000');
   await page.getByLabel('GST %', { exact: true }).fill('7.5');
   await page.getByLabel('Extra guest price per night').fill('300');
