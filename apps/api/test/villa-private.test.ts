@@ -1,4 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { todayIn, addDays } from '@resortos/shared';
@@ -116,6 +118,16 @@ describe('property boundaries', () => {
     );
     const rooms = await sql(`SELECT number FROM rooms WHERE property_id=$1`, [villaId]);
     expect(rooms.map((r) => r.number).sort()).toEqual(['1', '2']);
+  });
+  it('cannot deactivate or put the secondary bedroom out of order while both rooms are reserved', async () => {
+    const b=await create({...slot(addDays(today,40),'both_bedrooms'),guestCount:1,endsAt:`${addDays(today,41)}T11:00:00+05:30`}).expect(201);
+    const room=(await get('/rooms/setup').expect(200)).body.find((r:any)=>r.number==='2');
+    const update=await owner.patch(`/api/v1/rooms/${room.id}`).set('x-resortos','1').set('x-resortos-property',villaId)
+      .send({number:room.number,roomTypeId:room.roomTypeId,unitType:'room',isActive:false,version:room.version});
+    await sql(`UPDATE rooms SET is_active=true WHERE id=$1`,[room.id]);
+    expect(update.status).toBe(409);
+    await vpost(`/rooms/${room.id}/out-of-order`,{startDate:addDays(today,40),endDate:addDays(today,41),reason:'Scheduled work'}).expect(409);
+    await action(b.body.id,'cancel',b.body.version).expect(200);
   });
   it('rejects conflicting property headers and download query context', async () => {
     await get('/property?propertyContext=' + hotelId).expect(403);
@@ -532,6 +544,14 @@ describe('editing, overnight documents, communications and preservation', () => 
     expect(r.map((x) => x.status).sort()).toEqual([201, 409]);
     await create({ ...input, roomId: rooms[1].id, guest: slot().guest }).expect(201);
   });
+  it('serializes a Villa booking against maintenance on its secondary bedroom', async()=>{
+    const room=(await get('/rooms').expect(200)).body.find((r:any)=>r.number==='2');
+    const results=await Promise.all([
+      create(slot(addDays(today,42))),
+      vpost(`/rooms/${room.id}/out-of-order`,{startDate:addDays(today,42),endDate:addDays(today,43),reason:'Scheduled work'}),
+    ]);
+    expect(results.map(r=>r.status).sort()).toEqual([201,409]);
+  });
   it('edits a room choice atomically and releases the previous room', async () => {
     const rooms = (await get('/rooms').expect(200)).body;
     const input = {
@@ -676,6 +696,12 @@ describe('editing, overnight documents, communications and preservation', () => 
     };
     const both = await create(body).expect(201);
     const bothStay = await checkIn(both.body.id);
+    await vpost(`/stays/${bothStay}/grc`, {}).expect(200);
+    const [secondary] = await sql(`SELECT id FROM rooms WHERE property_id=$1 AND number='2'`, [villaId]);
+    await vpost(`/rooms/${secondary.id}/status`, { service: 'maintenance', housekeeping: 'dirty', reason: 'QA readiness check' }).expect(201);
+    const mismatches = (await get('/night-audit').expect(200)).body.summary;
+    await vpost(`/rooms/${secondary.id}/status`, { service: 'in_service', housekeeping: 'clean', reason: 'QA check complete' }).expect(201);
+    expect(mismatches).toMatchObject({ roomsOccupiedOutOfService: 1, vacantRoomsStillDirty: 0 });
     expect(
       (await get('/rooms').expect(200)).body.map((r: any) => r.currentReservation?.id),
     ).toEqual([both.body.id, both.body.id]);
@@ -686,7 +712,12 @@ describe('editing, overnight documents, communications and preservation', () => 
       roomsActive: 2,
       roomsOccupied: 2,
     });
-    expect((await settle(bothStay)).total).toBe('700.00');
+    const combinedBill = await settle(bothStay);
+    expect(combinedBill.total).toBe('700.00');
+    const [combinedLine] = await sql(`SELECT name FROM folio_lines WHERE folio_id=$1 AND line_type='room_night'`, [combinedBill.id]);
+    const [combinedInvoice] = await sql(`SELECT room_numbers FROM invoices WHERE folio_id=$1 AND series IN ('INV','BOS')`, [combinedBill.id]);
+    expect(combinedLine.name).toBe('Room 1 + 2');
+    expect(combinedInvoice.room_numbers).toBe('1 + 2');
     expect((await get('/rooms').expect(200)).body.map((r: any) => r.housekeeping)).toEqual([
       'dirty',
       'dirty',
@@ -719,6 +750,70 @@ describe('editing, overnight documents, communications and preservation', () => 
     expect((await get('/rooms').expect(200)).body[0].currentReservation.id).toBe(b.body.id);
     await settle(stayB);
   });
+  it('keeps a room unavailable on later days while its booked arrival is still pending', async () => {
+    await sql(`UPDATE rooms SET housekeeping_status='clean' WHERE property_id=$1`,[villaId]);
+    const rooms=(await get('/rooms').expect(200)).body;
+    const a=await create({...slot(addDays(today,30),'one_bedroom'),roomId:rooms[0].id,guestCount:1,endsAt:`${addDays(today,32)}T11:00:00+05:30`}).expect(201);
+    const board=(await get('/rooms').query({date:addDays(today,31)}).expect(200)).body;
+    expect(board[0].currentReservation.id).toBe(a.body.id);
+    expect(board[0].displayState).toBe('arriving');
+    expect(board[0].sellable).toBe(false);
+  });
+  it('restore integrity accepts independent room bookings while still checking shared resources', async () => {
+    const findings=await sql<{check_name:string}>(readFileSync(resolve(process.cwd(),'../../ops/backup/integrity.sql'),'utf8'));
+    expect(findings.filter(f=>f.check_name==='overlapping_private_villa')).toEqual([]);
+  });
+  it('refuses availability and arrival when a required physical bedroom is inactive', async()=>{
+    await sql(`UPDATE rooms SET housekeeping_status='clean' WHERE property_id=$1`,[villaId]);
+    const input={...slot(today),startsAt:new Date(Date.now()-120000).toISOString(),endsAt:new Date(Date.now()+3600000).toISOString()};
+    const b=await create(input).expect(201);
+    let availability:any,arrival:any;
+    try {
+      await sql(`UPDATE rooms SET is_active=false WHERE property_id=$1 AND number='2'`,[villaId]);
+      availability=await get('/villa/availability').query({startsAt:`${addDays(today,50)}T10:00:00+05:30`,endsAt:`${addDays(today,50)}T11:00:00+05:30`});
+      arrival=await action(b.body.id,'arrive',b.body.version);
+    } finally {await sql(`UPDATE rooms SET is_active=true WHERE property_id=$1 AND number='2'`,[villaId]);}
+    expect(availability.body.available).toBe(false);
+    expect(arrival.status).toBe(409);
+    await action(b.body.id,'cancel',b.body.version).expect(200);
+  });
+  it('blocks cross-property guest, booking, stay, bill, payment, invoice and document access', async () => {
+    const cases: [string,string[]][] = [
+      ['reservations',['/reservations/{id}','/reservations/{id}/ota']],
+      ['guests',['/guests/{id}']],
+      ['stays',['/stays/{id}','/stays/{id}/bill','/stays/{id}/checkout-preview','/stays/{id}/grc']],
+      ['check_in_drafts',['/check-in-drafts/{id}']],
+      ['folios',['/folios/{id}','/folios/{id}/invoices']],
+      ['payments',['/payments/{id}/receipt.pdf']],
+      ['invoices',['/invoices/{id}','/invoices/{id}/pdf']],
+      ['guest_documents',['/documents/{id}/view-url','/documents/{id}/download']],
+    ];
+    for(const [table,paths] of cases) {
+      // Table names are a fixed allowlist above; values remain parameterised.
+      const [row]=await sql<{id:string}>(`SELECT id FROM ${table} WHERE property_id=$1 LIMIT 1`,[villaId]);
+      expect(row,table).toBeTruthy();
+      for(const path of paths) {
+        const response=await owner.get('/api/v1'+path.replace('{id}',row!.id));
+        if(path.endsWith('/ota')) {
+          expect(response.status).toBe(200);
+          expect(['','null']).toContain(response.text);
+        } else if(path.endsWith('/grc')) {
+          expect(response.status).toBe(200);
+          expect(response.body).toEqual({stayId:row!.id,current:null,versions:[]});
+        } else if(path.endsWith('/invoices')) {
+          expect(response.status).toBe(200);
+          expect(response.body).toEqual([]);
+        } else expect([403,404],path).toContain(response.status);
+      }
+    }
+  });
+  it.each(['/rooms','/guests','/reservations','/stays','/housekeeping/board','/maintenance/tickets',
+    '/night-audit','/payment-accounts','/expenses','/messages','/invoices','/owner-review','/users',
+    '/exports/all.xlsx','/email-settings','/whatsapp-settings','/villa/bookings'])
+    ('rejects a hotel receptionist changing resort context for %s', async(path)=>{
+      await desk.get('/api/v1'+path).set('x-resortos-property',villaId).expect(403);
+      await desk.get('/api/v1'+path+'?propertyContext='+villaId).expect(403);
+    });
   it('leaves every existing hotel room, price, booking, guest, document and money row unchanged', async () => {
     expect(await sourceSnapshot()).toBe(hotelSnapshot);
   });

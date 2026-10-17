@@ -163,7 +163,7 @@ export class GrcService {
       consents: { stayAndCompliance?: boolean; marketing?: boolean } | null;
     }>(
       `SELECT r.number AS reservation_number, rr.arrival, rr.departure, rr.meal_plan, rr.nightly_rate,
-              rm.number AS room_number, rt.name AS room_type_name,
+              CASE WHEN EXISTS(SELECT 1 FROM villa_bookings v WHERE v.id=s.reservation_id AND v.resource_mask=3 AND v.use_kind='both_bedrooms') THEN '1 + 2' ELSE rm.number END AS room_number, rt.name AS room_type_name,
               g.first_name AS guest_first, g.last_name AS guest_last, g.mobile AS guest_mobile,
               g.address_line AS guest_address, g.city AS guest_city, g.state AS guest_state, g.pin_code AS guest_pin, g.country AS guest_country,
               d.data -> 'consents' AS consents

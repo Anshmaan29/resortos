@@ -228,7 +228,7 @@ export class PropertyService {
     return rows.map((r) => {
       let occupancy: OccupancyStatus = 'vacant';
       if (r.alloc_status === 'checked_in') occupancy = r.end_date! <= day ? 'due_out' : 'occupied';
-      else if (r.alloc_status === 'reserved' && r.start_date === day) occupancy = 'arriving';
+      else if (r.alloc_status === 'reserved') occupancy = 'arriving';
       const service: ServiceStatus = r.out_of_order_today && r.service_status === 'in_service' ? 'out_of_order' : r.service_status;
       const hk = r.housekeeping_status as HousekeepingStatus;
       return {
@@ -275,11 +275,14 @@ export class PropertyService {
 
   async updateRoom(actor: Actor, id: string, input: RoomInput & { isActive?: boolean }, expectedVersion: number) {
     return this.db.tx({ userId: actor.user.id }, async (q) => {
+      // Villa booking saves use this same lock before checking both physical rooms.
+      await q.query<IdRow>(`SELECT id FROM properties WHERE id=$1 AND booking_model='private_villa' FOR NO KEY UPDATE`, [actor.user.propertyId]);
       const { rows: before } = await q.query<RoomRow>(`SELECT * FROM rooms WHERE id = $1 AND property_id = $2 FOR UPDATE`, [id, actor.user.propertyId]);
       if (!before[0]) throw notFound('Room');
       if (input.isActive === false) {
         const { rows: future } = await q.query<{ one: number }>(
-          `SELECT 1 AS one FROM room_allocations WHERE room_id = $1 AND status IN ('reserved','checked_in') LIMIT 1`, [id],
+          `SELECT 1 AS one FROM room_allocations WHERE room_id = $1 AND status IN ('reserved','checked_in')
+           UNION ALL SELECT 1 FROM villa_room_usage WHERE room_id=$1 AND allocation_status IN ('reserved','occupied') LIMIT 1`, [id],
         );
         if (future[0]) {
           throw new AppError(ERROR_CODES.CONFLICT, 'This room has current or future bookings. Move them before deactivating the room.');
@@ -334,9 +337,12 @@ export class PropertyService {
 
   async markOutOfOrder(actor: Actor, roomId: string, input: { startDate: string; endDate: string; reason: string }) {
     return this.db.tx({ userId: actor.user.id, reason: input.reason }, async (q) => {
+      await q.query<IdRow>(`SELECT id FROM properties WHERE id=$1 AND booking_model='private_villa' FOR NO KEY UPDATE`, [actor.user.propertyId]);
       const { rows: clash } = await q.query<{ one: number }>(
         `SELECT 1 AS one FROM room_allocations WHERE room_id = $1 AND status IN ('reserved','checked_in')
-            AND daterange(start_date, end_date, '[)') && daterange($2::date, $3::date, '[)') LIMIT 1`,
+            AND daterange(start_date, end_date, '[)') && daterange($2::date, $3::date, '[)')
+         UNION ALL SELECT 1 FROM villa_room_usage WHERE room_id=$1 AND allocation_status IN ('reserved','occupied')
+           AND tstzrange(starts_at,ends_at,'[)') && tstzrange($2::date::timestamp AT TIME ZONE 'Asia/Kolkata',$3::date::timestamp AT TIME ZONE 'Asia/Kolkata','[)') LIMIT 1`,
         [roomId, input.startDate, input.endDate],
       );
       if (clash[0]) {
