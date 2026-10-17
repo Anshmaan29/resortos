@@ -236,7 +236,7 @@ export class VillaService {
     );
     const room =
       input.useKind === 'one_bedroom' ? rows.find((r) => r.id === input.roomId) : rows[0];
-    if (rows.length !== 2 || !room)
+    if (!room || (input.useKind !== 'one_bedroom' && rows.length !== 2))
       throw new AppError(ERROR_CODES.VALIDATION, 'Choose an available Room 1 or Room 2.');
     return { mask: input.useKind === 'one_bedroom' ? Number(room.number) : 3, room };
   }

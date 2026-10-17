@@ -767,14 +767,17 @@ describe('editing, overnight documents, communications and preservation', () => 
     await sql(`UPDATE rooms SET housekeeping_status='clean' WHERE property_id=$1`,[villaId]);
     const input={...slot(today),startsAt:new Date(Date.now()-120000).toISOString(),endsAt:new Date(Date.now()+3600000).toISOString()};
     const b=await create(input).expect(201);
-    let availability:any,arrival:any;
+    let availability:any,arrival:any,independent:any;
     try {
       await sql(`UPDATE rooms SET is_active=false WHERE property_id=$1 AND number='2'`,[villaId]);
       availability=await get('/villa/availability').query({startsAt:`${addDays(today,50)}T10:00:00+05:30`,endsAt:`${addDays(today,50)}T11:00:00+05:30`});
       arrival=await action(b.body.id,'arrive',b.body.version);
+      const room=(await get('/rooms').expect(200)).body.find((r:any)=>r.number==='1');
+      independent=await create({...slot(addDays(today,52),'one_bedroom'),roomId:room.id,guestCount:1,endsAt:`${addDays(today,53)}T11:00:00+05:30`});
     } finally {await sql(`UPDATE rooms SET is_active=true WHERE property_id=$1 AND number='2'`,[villaId]);}
     expect(availability.body.available).toBe(false);
     expect(arrival.status).toBe(409);
+    expect(independent.status).toBe(201);
     await action(b.body.id,'cancel',b.body.version).expect(200);
   });
   it('blocks cross-property guest, booking, stay, bill, payment, invoice and document access', async () => {
