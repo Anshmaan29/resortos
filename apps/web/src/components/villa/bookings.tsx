@@ -28,6 +28,8 @@ export interface VillaBooking {
   guestId: string;
   guestName: string;
   mobile: string;
+  whatsappOptedIn?: boolean;
+  whatsappConsentAt?: string | null;
   email: string | null;
   notes: string | null;
   dayUse: boolean;

@@ -1,4 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { AppConfig } from '../config';
 import { ProviderError, type MessageProvider, type OutgoingMessage } from './providers';
 import { TEMPLATE_KEYS, type TemplateKey, type TemplateVariable } from './templates';
@@ -43,13 +45,36 @@ const HINDI_BODY: Record<TemplateKey, string> = {
   receipt: 'नमस्ते {{1}}, {{2}} को बुकिंग {{5}} के लिए {{4}} से {{3}} प्राप्त हुए।\nआपकी रसीद {{6}} संलग्न है।',
 };
 export function whatsappWording(key: TemplateKey, language: 'en' | 'hi' = 'en', templateName?: string) {
+  if (language === 'en' && templateName === 'resortos_villa_' + key + '_en_v1') return VILLA_WORDING[key];
+  if (language === 'en' && ['booking_confirmation', 'check_in_welcome'].includes(key)
+    && templateName === 'resortos_' + key + '_en_brand_v1') return { ...WHATSAPP_WORDING[key], imageHeader: true };
   const body = language === 'hi' ? HINDI_BODY[key]
     : templateName === 'resortos_' + key + '_en' ? LEGACY_EN_BODY[key]
       : key === 'check_in_welcome' && templateName === 'resortos_check_in_welcome_en_v2'
         ? WHATSAPP_WORDING[key].body.replace('\n\n*Guest Wi-Fi:* {{7}}', '') : WHATSAPP_WORDING[key].body;
   const oldWelcome = key === 'check_in_welcome' && (language === 'hi' || templateName === 'resortos_check_in_welcome_en' || templateName === 'resortos_check_in_welcome_en_v2');
-  return { ...WHATSAPP_WORDING[key], body, variables: oldWelcome ? WHATSAPP_WORDING[key].variables.filter(v => v !== 'wifi') : WHATSAPP_WORDING[key].variables };
+  return { ...WHATSAPP_WORDING[key], imageHeader: false, body, variables: oldWelcome ? WHATSAPP_WORDING[key].variables.filter(v => v !== 'wifi') : WHATSAPP_WORDING[key].variables };
 }
+/** Villa wording covers both overnight rooms and timed pool/garden visits without inventing room numbers. */
+const VILLA_WORDING: Record<TemplateKey, { body: string; variables: TemplateVariable[]; documentHeader: boolean; imageHeader: boolean }> = {
+  booking_confirmation: {
+    body: '*Booking confirmed*\n\nHello {{1}},\nYour booking at {{2}} is confirmed.\n\n*Booking reference:* {{3}}\n*Booked for:* {{4}}\n*Arrival:* {{5}}\n*Departure:* {{6}}\n*Guests:* {{7}}\n\nFor questions or changes, please contact reception.\n*Reception phone:* {{8}}\n\nVoitto Ventures',
+    variables: ['guest_name', 'resort_name', 'booking_number', 'booking_use', 'booking_start', 'booking_end', 'guest_count', 'reception_phone'], documentHeader: false, imageHeader: true,
+  },
+  check_in_welcome: {
+    body: '*Welcome — arrival complete*\n\nHello {{1}},\nWelcome to {{2}}. Your arrival is recorded.\n\n*Booking reference:* {{3}}\n*Booked for:* {{4}}\n*Departure:* {{5}}\n\n*Guest Wi-Fi:* {{6}}\n*Reception phone:* {{7}}\n\nVoitto Ventures',
+    variables: ['guest_name', 'resort_name', 'booking_number', 'booking_use', 'booking_end', 'wifi', 'reception_phone'], documentHeader: false, imageHeader: true,
+  },
+  checkout_reminder: {
+    body: '*Checkout reminder*\n\nHello {{1}},\nThis is a reminder about your booking at {{2}}.\n\n*Booking reference:* {{3}}\n*Booked for:* {{4}}\n*Departure:* {{5}}\n\nFor help with checkout or your bill, contact reception.\n*Reception phone:* {{6}}\n\nVoitto Ventures',
+    variables: ['guest_name', 'resort_name', 'booking_number', 'booking_use', 'booking_end', 'reception_phone'], documentHeader: false, imageHeader: false,
+  },
+  invoice: {
+    body: '*Your invoice*\n\nHello {{1}},\nYour invoice from {{2}} is attached as a PDF.\n\n*Invoice reference:* {{3}}\n*Invoice total:* {{4}}\n*Remaining balance:* {{5}}\n\nFor billing questions, contact reception.\n*Reception phone:* {{6}}\n\nVoitto Ventures',
+    variables: ['guest_name', 'resort_name', 'invoice_number', 'invoice_total', 'balance', 'reception_phone'], documentHeader: true, imageHeader: false,
+  },
+  receipt: { ...WHATSAPP_WORDING.receipt, imageHeader: false },
+};
 export function whatsappParameters(key: TemplateKey, vars: Partial<Record<TemplateVariable, string>>, templateName?: string, language: 'en' | 'hi' = 'en') {
   return whatsappWording(key, language, templateName).variables.map(v => (vars[v] || '—').replace(/\s+/g, ' ').trim().slice(0, 500));
 }
@@ -65,7 +90,13 @@ export function whatsappNumber(value: string): string | null {
 }
 export function whatsappConfigured(c: AppConfig) {
   return Boolean(c.WHATSAPP_ACCESS_TOKEN && c.WHATSAPP_PHONE_NUMBER_ID && c.WHATSAPP_BUSINESS_ACCOUNT_ID
-    && c.WHATSAPP_PROPERTY_ID && c.WHATSAPP_APP_SECRET && c.WHATSAPP_VERIFY_TOKEN);
+    && whatsappPropertyIds(c).length && c.WHATSAPP_APP_SECRET && c.WHATSAPP_VERIFY_TOKEN);
+}
+export function whatsappPropertyIds(c: AppConfig): string[] {
+  return [...new Set(c.WHATSAPP_PROPERTY_IDS ?? (c.WHATSAPP_PROPERTY_ID ? [c.WHATSAPP_PROPERTY_ID] : []))];
+}
+export function whatsappAvailable(c: AppConfig, propertyId: string): boolean {
+  return whatsappConfigured(c) && whatsappPropertyIds(c).includes(propertyId);
 }
 export function verifyMetaSignature(secret: string, signature: string | undefined, body: Buffer): boolean {
   if (!signature || !/^sha256=[a-f0-9]{64}$/i.test(signature)) return false;
@@ -120,6 +151,17 @@ export class WhatsAppProvider implements MessageProvider {
   async send(m: OutgoingMessage) {
     if (!m.whatsapp || !whatsappNumber(m.to)) throw new ProviderError('WhatsApp template or recipient is invalid.', false);
     const components: object[] = [];
+    if (m.whatsapp.imageHeader) {
+      if (m.whatsapp.documentHeader || m.attachments.length) throw new ProviderError('A logo message cannot include guest attachments.', false);
+      // Only the bundled company logo can be uploaded. No URL or caller-supplied guest image is accepted.
+      const form = new FormData();
+      form.append('messaging_product', 'whatsapp');
+      form.append('type', 'image/png');
+      form.append('file', new Blob([new Uint8Array(readFileSync(join(__dirname, '../printing/assets/voitto-logo.png')))], { type: 'image/png' }), 'voitto-ventures.png');
+      const media = await this.request('/' + this.config.WHATSAPP_PHONE_NUMBER_ID + '/media', { method: 'POST', body: form });
+      if (typeof media.id !== 'string') throw new ProviderError('Meta did not return a logo media ID.', true);
+      components.push({ type: 'header', parameters: [{ type: 'image', image: { id: media.id } }] });
+    }
     if (m.whatsapp.documentHeader) {
       const a = m.attachments[0];
       if (m.attachments.length !== 1 || !a || a.contentType !== 'application/pdf' || a.content.length > 10 * 1024 * 1024) {
@@ -167,7 +209,7 @@ export class WhatsAppProvider implements MessageProvider {
       const body = components.find(x => x.type === 'BODY');
       const header = components.find(x => x.type === 'HEADER');
       const matching = body?.text === wording.body
-        && (wording.documentHeader ? header?.format === 'DOCUMENT' : !header)
+        && (wording.documentHeader ? header?.format === 'DOCUMENT' : wording.imageHeader ? header?.format === 'IMAGE' : !header)
         && !components.some(x => !['BODY', 'HEADER'].includes(x.type));
       return { ...b, approval: found?.status ?? 'NOT_FOUND', matching, ready: found?.status === 'APPROVED' && matching };
     });

@@ -106,18 +106,20 @@ export function renderInvoicePdf(input: InvoicePrint): Promise<Buffer> {
   // Seller, left; the title block takes the right 200 pt, so the seller never runs under it.
   const titleY = doc.y;
   const sellerW = width - 210;
-  bold(doc, input.seller.legalName, 15, { width: sellerW });
+  bold(doc, input.seller.name, 14, { width: sellerW });
+  if (input.seller.legalName !== input.seller.name) doc.fontSize(8.5).fillColor(INK).text(`Operated by ${input.seller.legalName}`, { width: sellerW });
   doc.fontSize(8.5).fillColor(MUTED).text(input.seller.address, { width: sellerW });
   doc.text([input.seller.phone, input.seller.email].filter(Boolean).join(' · '), { width: sellerW });
   if (input.seller.gstin) { doc.fillColor(INK).fontSize(9).text(`GSTIN ${input.seller.gstin} · State ${state(input.seller.stateCode)}`, { width: sellerW }); }
 
+  const sellerBottom = doc.y;
   // Title block, right
   bold(doc, TITLES[input.documentType], 13, { width: 200, align: 'right' }, { x: x0 + width - 200, y: titleY });
   doc.fontSize(9).fillColor(INK).text(`No. ${input.number}`, x0 + width - 200, titleY + 20, { width: 200, align: 'right' });
   doc.text(`Date ${formatDate(input.invoiceDate)}`, x0 + width - 200, titleY + 33, { width: 200, align: 'right' });
   if (input.original) doc.fillColor(MUTED).text(`Against ${input.original.number}`, x0 + width - 200, titleY + 46, { width: 200, align: 'right' });
   doc.x = x0;
-  doc.y = Math.max(doc.y, titleY + 70);
+  doc.y = Math.max(doc.y, sellerBottom, titleY + 70);
   hr(doc, x0, width, 10);
 
   // Buyer and stay
