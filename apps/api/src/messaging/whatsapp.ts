@@ -45,6 +45,8 @@ const HINDI_BODY: Record<TemplateKey, string> = {
   receipt: 'नमस्ते {{1}}, {{2}} को बुकिंग {{5}} के लिए {{4}} से {{3}} प्राप्त हुए।\nआपकी रसीद {{6}} संलग्न है।',
 };
 export function whatsappWording(key: TemplateKey, language: 'en' | 'hi' = 'en', templateName?: string) {
+  if (language === 'en' && ['booking_confirmation', 'check_in_welcome'].includes(key)
+    && templateName === 'resortos_villa_' + key + '_en_v2') return { ...VILLA_WORDING[key], imageHeader: false };
   if (language === 'en' && templateName === 'resortos_villa_' + key + '_en_v1') return VILLA_WORDING[key];
   if (language === 'en' && ['booking_confirmation', 'check_in_welcome'].includes(key)
     && templateName === 'resortos_' + key + '_en_brand_v1') return { ...WHATSAPP_WORDING[key], imageHeader: true };
