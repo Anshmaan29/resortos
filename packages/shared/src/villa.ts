@@ -1,11 +1,18 @@
 import { z } from 'zod';
 import { money, round2, roundRupee, toMoneyString } from './money';
 import { guestSchema, zId, zNonNegativeMoney } from './schemas';
-export const VILLA_USES = ['one_bedroom', 'both_bedrooms', 'whole_villa', 'pool', 'garden'] as const;
+export const VILLA_USES = [
+  'one_bedroom',
+  'both_bedrooms',
+  'whole_villa',
+  'pool',
+  'garden',
+] as const;
+export const VILLA_BOOKABLE_USES = ['one_bedroom', 'both_bedrooms', 'pool', 'garden'] as const;
 export const VILLA_USE_LABELS: Record<(typeof VILLA_USES)[number], string> = {
-  one_bedroom: 'One bedroom',
-  both_bedrooms: 'Both bedrooms + pool & garden',
-  whole_villa: 'Whole villa + pool & garden',
+  one_bedroom: 'One room',
+  both_bedrooms: '2 rooms',
+  whole_villa: 'Whole villa (previous booking)',
   pool: 'Swimming pool',
   garden: 'Garden',
 };
@@ -13,6 +20,7 @@ export const villaDayUse = (kind: string) => kind === 'pool' || kind === 'garden
 export const villaBookingSchema = z
   .object({
     useKind: z.enum(VILLA_USES),
+    roomId: zId.optional(),
     startsAt: z.iso.datetime({ offset: true }),
     endsAt: z.iso.datetime({ offset: true }),
     guestCount: z.number().int().min(1).max(1000),
@@ -25,6 +33,10 @@ export const villaBookingSchema = z
     version: z.number().int().min(1).optional(),
   })
   .refine((v) => v.guest || v.guestId, { message: 'Choose or add a guest', path: ['guest'] })
+  .refine((v) => v.useKind !== 'one_bedroom' || !!v.roomId, {
+    message: 'Choose Room 1 or Room 2',
+    path: ['roomId'],
+  })
   .refine((v) => Date.parse(v.endsAt) > Date.parse(v.startsAt), {
     message: 'End must be after start',
     path: ['endsAt'],

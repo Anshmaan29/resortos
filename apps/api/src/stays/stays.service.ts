@@ -37,7 +37,7 @@ export class StaysService {
       room_number: string; room_type_id: string; room_type_name: string; reservation_number: string; guest_first: string; guest_last: string;
       guest_mobile: string; is_vip: boolean; adults: number; child_ages: (number | string)[]; meal_plan: string; nightly_rate: string;
     }>(
-      `SELECT s.*, rm.number AS room_number, rm.room_type_id, rt.name AS room_type_name, r.number AS reservation_number,
+      `SELECT s.*, CASE WHEN EXISTS(SELECT 1 FROM villa_bookings v WHERE v.id=s.reservation_id AND v.resource_mask=3 AND v.use_kind='both_bedrooms') THEN '1 + 2' ELSE rm.number END AS room_number, rm.room_type_id, rt.name AS room_type_name, r.number AS reservation_number,
               g.first_name AS guest_first, g.last_name AS guest_last, g.mobile AS guest_mobile, g.is_vip,
               rr.adults, rr.child_ages, rr.meal_plan, rr.nightly_rate
          FROM stays s JOIN rooms rm ON rm.id = s.room_id JOIN room_types rt ON rt.id = rm.room_type_id
@@ -157,6 +157,16 @@ export class StaysService {
     const stay = await this.lockStay(q, actor, stayId);
     if (stay.status !== 'in_house') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'Only guests who are in house can change rooms.');
     if (stay.room_id === input.toRoomId) throw new AppError(ERROR_CODES.VALIDATION, 'Choose a different room.');
+    const { rows: villa } = await q.query<{ resource_mask: number }>('SELECT resource_mask FROM villa_bookings WHERE id=$1 AND property_id=$2 FOR UPDATE', [stay.reservation_id,actor.user.propertyId]);
+    if (villa[0]?.resource_mask === 3) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This booking includes both villa rooms; there is no other room to move to.');
+    if (villa[0]) {
+      const { rows: target } = await q.query<{ number: string }>(`SELECT number FROM rooms WHERE id=$1 AND property_id=$2 AND number IN ('1','2') AND is_active`, [input.toRoomId,actor.user.propertyId]);
+      if (!target[0]) throw notFound('Villa room');
+      const { rows: occupied } = await q.query(`SELECT 1 FROM villa_bookings v WHERE v.property_id=$1 AND v.id<>$2 AND v.allocation_status='occupied' AND (v.resource_mask & $3)>0 LIMIT 1`, [actor.user.propertyId,stay.reservation_id,Number(target[0].number)]);
+      if (occupied.length) throw new AppError(ERROR_CODES.ROOM_UNAVAILABLE, 'The other villa room or property is still occupied.');
+      if (input.rateDecision !== 'keep_rate') throw new AppError(ERROR_CODES.VALIDATION, 'Keep the agreed villa price when changing rooms.');
+      await q.query('UPDATE villa_bookings SET resource_mask=$2 WHERE id=$1', [stay.reservation_id,Number(target[0].number)]);
+    }
     const bd = await this.property.today(q, actor.user.propertyId);
     if (bd >= stay.expected_departure) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'The guest is due to check out; room shift is not possible.');
 
@@ -366,6 +376,10 @@ export class StaysService {
     // Opens the checkout cleaning task (trigger rooms_housekeeping_task, 0021).
     await q.query(`SELECT set_config('resortos.housekeeping_kind', 'checkout', true)`);
     await q.query(`UPDATE rooms SET housekeeping_status = 'dirty', updated_by = $2 WHERE id = $1`, [stay.room_id, actor.user.id]);
+    // A two-room/legacy whole-villa booking has one combined bill, but both rooms need cleaning.
+    await q.query(`UPDATE rooms SET housekeeping_status='dirty',updated_by=$3 WHERE property_id=$1 AND number IN ('1','2')
+      AND id<>$4 AND EXISTS(SELECT 1 FROM villa_bookings v WHERE v.id=$2 AND v.property_id=$1 AND v.resource_mask=3)`,
+      [actor.user.propertyId,stay.reservation_id,actor.user.id,stay.room_id]);
     await q.query(`SELECT set_config('resortos.housekeeping_kind', '', true)`);
 
     // The booking is checked out when no room is still waiting or in house.

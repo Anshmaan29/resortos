@@ -17,7 +17,7 @@ export default function AuthedLayout({ children }: { children: ReactNode }) {
 
   useEffect(()=>{
     if(property.data?.bookingModel!=='private_villa')return;
-    const route:Record<string,string>={'/':'/villa','/reservations':'/villa/bookings','/reservations/new':'/villa/new','/in-house':'/villa/active','/calendar':'/villa/calendar','/rooms':'/villa/calendar','/check-in/express':'/villa/new'};
+    const route:Record<string,string>={'/':'/villa','/reservations':'/villa/bookings','/reservations/new':'/villa/new','/in-house':'/villa/active','/calendar':'/villa/calendar','/shifts':'/villa','/check-in/express':'/villa/new'};
     const next=route[pathname]??(/^\/reservations\/[0-9a-f-]{36}$/.test(pathname)?pathname.replace('/reservations/','/villa/bookings/'):null);
     if(next)router.replace(next);
   },[property.data?.bookingModel,pathname,router]);

@@ -1,3 +1,4 @@
+import { paymentShift } from '../cashier/shift-policy';
 import { Injectable } from '@nestjs/common';
 import {
   ERROR_CODES, formatReference, money, toMoneyString,
@@ -125,14 +126,6 @@ export class ExpensesService {
     });
   }
 
-  private async openShift(q: Queryable, actor: Actor) {
-    const { rows } = await q.query<{ id: string }>(
-      `SELECT id FROM cashier_shifts WHERE property_id = $1 AND opened_by = $2 AND closed_at IS NULL`,
-      [actor.user.propertyId, actor.user.id],
-    );
-    return rows[0]?.id ?? null;
-  }
-
   private async insert(q: Queryable, actor: Actor, input: ExpenseInput, businessDate: string, links: { reverses?: string; reason?: string; corrects?: string } = {}) {
     const propertyId = actor.user.propertyId;
     const { rows: account } = await q.query<{ kind: string; is_active: boolean }>(
@@ -149,10 +142,7 @@ export class ExpensesService {
     }
     if (input.expenseDate > businessDate) throw new AppError(ERROR_CODES.VALIDATION, 'An expense cannot be dated in the future.');
 
-    const shiftId = await this.openShift(q, actor);
-    if (input.method === 'cash' && !shiftId) {
-      throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'Open your shift before paying cash out.', { action: 'open_shift' });
-    }
+    const shiftId = await paymentShift(q, propertyId, actor.user.id, input.method);
     const { rows: n } = await q.query<{ next_reference: string }>(`SELECT next_reference($1, 'expense')`, [propertyId]);
     const number = formatReference('EXP', Number(n[0]!.next_reference));
     const { rows } = await q.query<{ id: string }>(

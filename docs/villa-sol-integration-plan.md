@@ -21,8 +21,9 @@ the browsing tool.
 
 ## Confirmed decisions
 
-Every booking makes the entire property private. Both-bedroom and whole-villa bookings
-include pool and garden. Reception enters times, guest count, agreed price and GST.
+Room 1 and Room 2 may be booked separately by different guests. Either bedroom booking blocks
+pool and garden; pool/garden visits block both rooms and each other. Two-room bookings
+include pool and garden and use one combined nightly price. Existing bookings keep their original allocation. Reception enters times, guest count, agreed price and GST.
 Pool/garden visits do not collect ID, photos or signatures. Only owners switch properties.
 Villa reception staff have separate logins created by the owner. The owner also configures
 non-cash payment destinations. Villa starts with a separate cash counter at zero balance.
@@ -61,8 +62,8 @@ and migrations `0001`, `0003`, `0005`.
 2. Bind requests and downloads to an explicit validated property context. Switching in one
    tab must not silently make a form in another tab write into the other property. Reset
    property-specific caches and abandon or explicitly preserve unsaved forms at the boundary.
-3. Model one private property allocation, shared by all booking kinds. Enforce timed
-   exclusivity in PostgreSQL as well as availability checks; no independently bookable resources.
+3. Enforce overlapping resource allocations in PostgreSQL: rooms are independent, while
+   pool/garden/two-room bookings require both resources.
 4. Support confirmed timed day-use rules. Do not fabricate an
    overnight room booking for a same-day pool visit. Keep the current Laxmi night-based
    model and its historical snapshots intact.
@@ -92,7 +93,7 @@ and migrations `0001`, `0003`, `0005`.
 - Custom prices, extras, GST, advance, balance, refunds and PDFs match the selected property.
 - Notifications use that property's name, reception, Wi-Fi, dates/times and sender; retries
   and callbacks remain isolated and idempotent.
-- Cash shifts, payment accounts, reports, numbering, night audit and exports stay separate.
+- Villa cash uses its account ledger without shifts. Hotel shifts remain required. Payment accounts, reports, numbering, night audit and exports stay separate.
 - Laxmi regression suite passes and read-only pre/post checks show no historical records
   rewritten or removed by the release.
 

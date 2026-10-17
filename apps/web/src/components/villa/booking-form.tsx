@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import {
   VILLA_USES,
+  VILLA_BOOKABLE_USES,
   VILLA_USE_LABELS,
   villaBookingSchema,
   villaDayUse,
@@ -24,8 +25,9 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
   const datetime = (s?: string) =>
     s ? new Date(new Date(s).getTime() + 330 * 60000).toISOString().slice(0, 16) : '';
   const [kind, setKind] = useState<(typeof VILLA_USES)[number]>(
-    (initial?.useKind as (typeof VILLA_USES)[number]) ?? 'whole_villa',
+    (initial?.useKind as (typeof VILLA_USES)[number]) ?? 'both_bedrooms',
   );
+  const [roomId, setRoomId] = useState(initial?.roomId ?? '');
   const [start, setStart] = useState(datetime(initial?.startsAt));
   const [end, setEnd] = useState(datetime(initial?.endsAt));
   const [count, setCount] = useState(initial ? String(initial.guestCount) : '');
@@ -42,26 +44,36 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
   const iso = (value: string) => (value ? value + ':00+05:30' : '');
   const validDates = !!start && !!end && Date.parse(iso(end)) > Date.parse(iso(start));
   const availability = useQuery({
-    queryKey: ['villa-availability', start, end, initial?.id],
+    queryKey: ['villa-availability', start, end, initial?.id, kind, roomId],
     queryFn: () =>
-      api<{ available: boolean; message: string | null }>('/villa/availability', {
-        query: { startsAt: iso(start), endsAt: iso(end), excludeId: initial?.id },
+      api<{
+        available: boolean;
+        message: string | null;
+        rooms: { id: string; number: string; available: boolean }[];
+      }>('/villa/availability', {
+        query: {
+          startsAt: iso(start),
+          endsAt: iso(end),
+          excludeId: initial?.id,
+          useKind: kind,
+          roomId: roomId || undefined,
+        },
       }),
     enabled: validDates,
   });
   const guests = useQuery({
     queryKey: ['villa-guest-search', mobile],
     queryFn: () =>
-      api<{ id: string; firstName: string; lastName: string; mobile: string; email: string | null }[]>(
-        '/guests',
-        { query: { q: mobile } },
-      ),
+      api<
+        { id: string; firstName: string; lastName: string; mobile: string; email: string | null }[]
+      >('/guests', { query: { q: mobile } }),
     enabled: mobile.replace(/\D/g, '').length >= 4 && !guestId,
   });
   const save = useMutation({
     mutationFn: async () => {
       const input = villaBookingSchema.safeParse({
         useKind: kind,
+        roomId: kind === 'one_bedroom' ? roomId || undefined : undefined,
         startsAt: iso(start),
         endsAt: iso(end),
         guestCount: Number(count),
@@ -89,7 +101,8 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
   const nights = validDates
     ? Math.round((Date.parse(end.slice(0, 10)) - Date.parse(start.slice(0, 10))) / 86400000)
     : 0;
-  const validMoney = /^\d+(\.\d{1,2})?$/.test(price) && /^\d+(\.\d{1,2})?$/.test(gst) && Number(gst) <= 100;
+  const validMoney =
+    /^\d+(\.\d{1,2})?$/.test(price) && /^\d+(\.\d{1,2})?$/.test(gst) && Number(gst) <= 100;
   const total = validMoney ? villaBookingTotal(price, gst, day ? 1 : Math.max(1, nights)) : null;
   if (property.data && property.data.bookingModel !== 'private_villa')
     return <ErrorBanner message="Choose Villa Sol before creating a villa booking." />;
@@ -97,7 +110,7 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
     <div className="mx-auto max-w-4xl space-y-5">
       <PageHeader
         title={initial ? 'Edit villa booking' : 'New villa booking'}
-        description="Select what the guest is booking. The entire property stays private during the booked time."
+        description="Select what the guest is booking. Rooms can be booked separately. Pool and garden bookings reserve the entire property."
       />
       <form
         className="space-y-5"
@@ -111,17 +124,43 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
         <Card>
           <CardHeader title="Booking & price" />
           <div className="grid gap-4 p-5 sm:grid-cols-2">
-            <Field label="Book" required>
+            <Field label="Book" required hint={kind === 'both_bedrooms' ? 'Room 1 and Room 2, including pool and garden. One combined price.' : undefined}>
               {(id) => (
-                <Select id={id} value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
-                  {VILLA_USES.filter((k) => !initial || villaDayUse(k) === initial.dayUse).map((k) => (
-                    <option key={k} value={k}>
-                      {VILLA_USE_LABELS[k]}
-                    </option>
-                  ))}
+                <Select
+                  id={id}
+                  value={kind}
+                  onChange={(e) => setKind(e.target.value as typeof kind)}
+                >
+                  {(initial?.useKind === 'whole_villa' ? VILLA_USES : VILLA_BOOKABLE_USES)
+                    .filter((k) => !initial || villaDayUse(k) === initial.dayUse)
+                    .map((k) => (
+                      <option key={k} value={k}>
+                        {VILLA_USE_LABELS[k]}
+                      </option>
+                    ))}
                 </Select>
               )}
             </Field>
+            {kind === 'one_bedroom' && (
+              <Field label="Room" required>
+                {(id) => (
+                  <Select
+                    id={id}
+                    value={roomId}
+                    onChange={(e) => setRoomId(e.target.value)}
+                    required
+                  >
+                    <option value="">Choose a room</option>
+                    {(availability.data?.rooms ?? []).map((r) => (
+                      <option key={r.id} value={r.id} disabled={!r.available}>
+                        Room {r.number}
+                        {r.available ? '' : ' · unavailable'}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+            )}
             <Field label="Number of guests" required>
               {(id) => (
                 <Input
@@ -158,7 +197,16 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
                 />
               )}
             </Field>
-            <Field label={day ? 'Total slot price before GST' : 'Agreed price per night before GST'} required>
+            <Field
+              label={
+                day
+                  ? 'Total slot price before GST'
+                  : kind === 'both_bedrooms'
+                    ? 'Combined price for both rooms per night before GST'
+                    : 'Agreed price per night before GST'
+              }
+              required
+            >
               {(id) => (
                 <Input
                   id={id}
@@ -197,10 +245,12 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
               {validDates && availability.data && (
                 <p
                   role="status"
-                  className={availability.data.available ? 'text-sm text-success' : 'text-sm text-danger'}
+                  className={
+                    availability.data.available ? 'text-sm text-success' : 'text-sm text-danger'
+                  }
                 >
                   {availability.data.available
-                    ? 'Available · the whole property will be reserved privately.'
+                    ? 'Available for the selected dates and times.'
                     : availability.data.message}
                 </p>
               )}
@@ -283,7 +333,9 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
               )}
             </Field>
             <Field label="Notes">
-              {(id) => <Textarea id={id} value={notes} onChange={(e) => setNotes(e.target.value)} />}
+              {(id) => (
+                <Textarea id={id} value={notes} onChange={(e) => setNotes(e.target.value)} />
+              )}
             </Field>
           </div>
         </Card>

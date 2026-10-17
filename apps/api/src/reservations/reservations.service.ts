@@ -49,6 +49,17 @@ export class ReservationsService {
       `SELECT r.id,r.number,r.room_type_id,r.view,r.building,r.floor,r.housekeeping_status,r.service_status,t.max_occupancy
          FROM rooms r JOIN room_types t ON t.id=r.room_type_id
         WHERE r.property_id=$1 AND r.is_active AND r.service_status='in_service'
+          AND (NOT EXISTS(SELECT 1 FROM properties p WHERE p.id=$1 AND p.booking_model='private_villa')
+            OR (r.number IN ('1','2') AND NOT EXISTS(SELECT 1 FROM villa_bookings v WHERE v.property_id=$1
+              AND v.id IS DISTINCT FROM $4::uuid AND v.allocation_status IN ('reserved','occupied')
+              AND (v.resource_mask & CASE WHEN r.number='2' THEN 2 ELSE 1 END)>0
+              AND (tstzrange(v.starts_at,v.ends_at,'[)') && tstzrange($2::date::timestamp AT TIME ZONE 'Asia/Kolkata',$3::date::timestamp AT TIME ZONE 'Asia/Kolkata','[)')
+                OR ($2::date<=$5::date AND v.allocation_status='occupied'))))
+            OR EXISTS(SELECT 1 FROM reservation_rooms rr JOIN villa_bookings v ON v.id=rr.reservation_id
+              WHERE v.id=$4::uuid AND rr.room_id=r.id AND rr.status='reserved' AND r.number NOT IN ('1','2')))
+          AND NOT EXISTS(SELECT 1 FROM villa_bookings v JOIN reservation_rooms rr ON rr.reservation_id=v.id
+            WHERE v.id=$4::uuid AND rr.status='reserved' AND rr.room_id<>r.id)
+
           AND r.housekeeping_status IN ('clean','inspected')
           AND NOT EXISTS (SELECT 1 FROM room_allocations a JOIN reservation_rooms rr ON rr.id=a.reservation_room_id
              WHERE a.room_id=r.id AND a.status IN ('reserved','checked_in')

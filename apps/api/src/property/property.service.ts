@@ -203,12 +203,25 @@ export class PropertyService {
              JOIN reservations res ON res.id = rr.reservation_id
              JOIN guests g ON g.id = res.primary_guest_id
             WHERE a.room_id = r.id
+              AND NOT EXISTS(SELECT 1 FROM villa_bookings v WHERE v.id=res.id)
               AND ( (a.status = 'checked_in' AND a.start_date <= $2::date)
                  OR (a.status = 'reserved' AND a.start_date <= $2::date AND a.end_date > $2::date) )
-            ORDER BY (a.status = 'checked_in') DESC, a.start_date
+            UNION ALL
+           SELECT CASE WHEN v.allocation_status='occupied' THEN 'checked_in' ELSE 'reserved' END,
+             (v.starts_at AT TIME ZONE 'Asia/Kolkata')::date,(v.ends_at AT TIME ZONE 'Asia/Kolkata')::date,
+             res.id,res.number,trim(g.first_name||' '||g.last_name),g.is_vip
+           FROM villa_bookings v JOIN reservations res ON res.id=v.id JOIN guests g ON g.id=res.primary_guest_id
+           WHERE v.property_id=r.property_id AND (v.resource_mask & CASE WHEN r.number='2' THEN 2 ELSE 1 END)>0
+             AND v.allocation_status IN ('reserved','occupied')
+             AND (v.allocation_status='occupied' OR (
+               (v.starts_at AT TIME ZONE 'Asia/Kolkata')::date<=$2::date
+               AND (v.ends_at AT TIME ZONE 'Asia/Kolkata')::date>=$2::date
+               AND (v.ends_at>now() OR $2::date<>(now() AT TIME ZONE 'Asia/Kolkata')::date)))
+            ORDER BY status, start_date
             LIMIT 1
          ) occ ON true
         WHERE r.property_id = $1 AND r.is_active
+          AND (r.number IN ('1','2') OR NOT EXISTS(SELECT 1 FROM properties p WHERE p.id=$1 AND p.booking_model='private_villa'))
         ORDER BY r.number, r.id`,
       [propertyId, day],
     );
