@@ -82,7 +82,7 @@ function RoomDrawer({ room, onClose }: { room: Room | null; onClose: () => void 
           </dl>
           {room.currentReservation && (
             <Link href={`/reservations/${room.currentReservation.id}`} className="block rounded-lg border border-border p-4 hover:bg-surface-2">
-              <p className="text-xs text-text-3">{room.occupancy === 'arriving' ? 'Arriving today' : 'Current guest'} · {room.currentReservation.number}</p>
+              <p className="text-xs text-text-3">{room.occupancy === 'arriving' ? 'Arrival pending' : 'Current guest'} · {room.currentReservation.number}</p>
               <p className="mt-1 font-medium">{room.currentReservation.guestName}</p>
               <p className="text-sm text-text-2 num">{formatDate(room.currentReservation.arrival, { year: false })} → {formatDate(room.currentReservation.departure, { year: false })}</p>
             </Link>

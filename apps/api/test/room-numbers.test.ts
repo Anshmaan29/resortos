@@ -58,6 +58,14 @@ describe('one room-number inventory', () => {
     expect((await available('2037-02-01','2037-02-04')).rooms.map((r:{number:string}) => r.number)).toEqual(expect.arrayContaining(['102','103','107','108']));
   });
 
+  it('never labels a still-reserved room ready on the second day of its pending arrival', async () => {
+    const a=(await post(desk,'/reservations',booking({roomTypeId:f.type('DLX'),roomId:f.room('106'),arrival:'2037-04-01',departure:'2037-04-04'})).expect(201)).body;
+    const board=(await desk.get('/api/v1/rooms').query({date:'2037-04-02'}).expect(200)).body;
+    const room=board.find((r:{number:string})=>r.number==='106');
+    expect(room.currentReservation.id).toBe(a.id);
+    expect(room.sellable).toBe(false);
+    expect(room.displayState).toBe('arriving');
+  });
   it('does not offer or assign an overdue room until its guest has actually checked out', async () => {
     // The seed has a departure due today in 105. Materialise its in-house stay as in production.
     const [draft] = await sql<{id:string}>(`INSERT INTO check_in_drafts(property_id,reservation_id,reservation_room_ids,status,confirmed_at,created_by)

@@ -32,9 +32,9 @@ Every business table needs all five, or it is not finished (CLAUDE.md, spec §48
 2. a `forbid_change` `BEFORE DELETE` trigger
 3. a grants line in `db/grants.sql` if it is append-only
 4. a row type in `apps/api/src/db/rows.ts` (untyped query results are a compile error)
-5. inclusion in restore verification — **not yet possible**: `ops/backup` does not exist, so new
-   tables are listed here until it does. Tables awaiting restore verification: **all of them**
-   (Gate 0, `docs/production-readiness.md`).
+5. inclusion in restore verification: `ops/backup/integrity.sql` and the backup/restore integration
+   suite. A local restore test does not satisfy the real off-site restore gate in
+   `docs/production-readiness.md`.
 
 ## Tables by area
 

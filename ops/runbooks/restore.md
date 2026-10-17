@@ -18,6 +18,11 @@ Layers 1 and 2 are settings on the managed database, ticked off in
 `docs/production-readiness.md`. Layer 3 is code in this repository, and is the one that has to be
 practised, because it is the one used on the worst day.
 
+Use PostgreSQL client tools compatible with the actual server, not merely the local test version.
+The production audit on 17 October 2026 found PostgreSQL 18.6; its backup host needs `pg_dump` 18
+or a supported newer client, and the drill must restore into a compatible PostgreSQL version.
+The PostgreSQL 16 CI drill only proves the local mechanism. Record the production drill separately.
+
 ---
 
 ## Keys — read this before anything else

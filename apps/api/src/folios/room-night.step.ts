@@ -58,7 +58,7 @@ export class RoomNightPostingStep implements NightAuditStep {
   async prepareCheckout(q: Queryable, actor: Actor, stayId: string, businessDate: string) {
     const folio = await this.folios.ensureForStay(q, actor, stayId);
     const { rows } = await q.query<PostableRow & { night_date: string }>(
-      `SELECT s.id AS stay_id, rm.id AS room_id, rm.number AS room_number, '' AS guest_name,
+      `SELECT s.id AS stay_id, rm.id AS room_id, CASE WHEN EXISTS(SELECT 1 FROM villa_bookings v WHERE v.id=s.reservation_id AND v.resource_mask=3 AND v.use_kind='both_bedrooms') THEN '1 + 2' ELSE rm.number END AS room_number, '' AS guest_name,
               n.night_date, n.room_rate, n.extra_person_amount, n.meal_amount, rt.name AS room_type_name, rr.meal_plan, rr.includes_meal_plan, rr.gst_rate_override
          FROM stays s JOIN reservation_rooms rr ON rr.id = s.reservation_room_id
          JOIN reservation_room_nights n ON n.reservation_room_id = rr.id
@@ -102,7 +102,7 @@ export class RoomNightPostingStep implements NightAuditStep {
 
   private async postable(ctx: NightAuditContext): Promise<PostableRow[]> {
     const { rows } = await ctx.q.query<PostableRow>(
-      `SELECT s.id AS stay_id, s.room_id, rm.number AS room_number,
+      `SELECT s.id AS stay_id, s.room_id, CASE WHEN EXISTS(SELECT 1 FROM villa_bookings v WHERE v.id=s.reservation_id AND v.resource_mask=3 AND v.use_kind='both_bedrooms') THEN '1 + 2' ELSE rm.number END AS room_number,
               trim(g.first_name || ' ' || g.last_name) AS guest_name,
               n.room_rate, n.extra_person_amount, n.meal_amount,
               rt.name AS room_type_name, rr.meal_plan, rr.includes_meal_plan, rr.gst_rate_override

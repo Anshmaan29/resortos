@@ -184,18 +184,21 @@ export class VillaService {
       OR ($2::timestamptz<=now() AND allocation_status='occupied' AND ends_at<now())) LIMIT 1`,
       [propertyId, startsAt, endsAt, excludeId ?? null, mask],
     );
-    const { rows: blocked } = await q.query<{ id: string }>(
-      `SELECT rm.id FROM rooms rm WHERE rm.property_id=$1 AND rm.is_active
+    const { rows: resources } = await q.query<{ ready: string }>(
+      `SELECT count(*) FILTER(WHERE rm.is_active AND rm.service_status='in_service' AND NOT EXISTS(
+        SELECT 1 FROM room_out_of_order o WHERE o.room_id=rm.id AND o.status='active'
+        AND tstzrange(o.start_date::timestamp AT TIME ZONE 'Asia/Kolkata',o.end_date::timestamp AT TIME ZONE 'Asia/Kolkata','[)')
+        && tstzrange($2::timestamptz,$3::timestamptz,'[)'))) AS ready
+      FROM rooms rm WHERE rm.property_id=$1
       AND (rm.number=CASE WHEN $4=2 THEN '2' ELSE '1' END OR ($4=3 AND rm.number='2'))
-      AND (rm.service_status<>'in_service' OR EXISTS(SELECT 1 FROM room_out_of_order o WHERE o.room_id=rm.id AND o.status='active'
-      AND tstzrange(o.start_date::timestamp AT TIME ZONE 'Asia/Kolkata',o.end_date::timestamp AT TIME ZONE 'Asia/Kolkata','[)')
-      && tstzrange($2::timestamptz,$3::timestamptz,'[)'))) LIMIT 1`,
+      `,
       [propertyId, startsAt, endsAt, mask],
     );
+    const resourcesReady = Number(resources[0]?.ready ?? 0) === (mask === 3 ? 2 : 1);
     return {
-      available: rows.length === 0 && blocked.length === 0,
+      available: rows.length === 0 && resourcesReady,
       message:
-        rows.length || blocked.length
+        rows.length || !resourcesReady
           ? 'The selected room or property is booked, in maintenance, or awaiting checkout. Choose another room or time.'
           : null,
     };
@@ -233,7 +236,7 @@ export class VillaService {
     );
     const room =
       input.useKind === 'one_bedroom' ? rows.find((r) => r.id === input.roomId) : rows[0];
-    if (rows.length !== 2 || !room)
+    if (!room || (input.useKind !== 'one_bedroom' && rows.length !== 2))
       throw new AppError(ERROR_CODES.VALIDATION, 'Choose an available Room 1 or Room 2.');
     return { mask: input.useKind === 'one_bedroom' ? Number(room.number) : 3, room };
   }
@@ -616,8 +619,8 @@ export async function assertVillaArrival(q: Queryable, propertyId: string, reser
     `SELECT
     v.starts_at<=now() AS started,v.ends_at<=now() AS ended,
     EXISTS(SELECT 1 FROM villa_bookings o WHERE o.property_id=v.property_id AND o.id<>v.id AND (o.resource_mask & v.resource_mask)>0 AND o.allocation_status='occupied') AS other,
-    NOT EXISTS(SELECT 1 FROM rooms rm WHERE rm.property_id=v.property_id AND rm.is_active AND (rm.number=CASE WHEN v.resource_mask=2 THEN '2' ELSE '1' END OR (v.resource_mask=3 AND rm.number='2')) AND
-      (rm.housekeeping_status NOT IN ('clean','inspected') OR rm.service_status<>'in_service'))
+    (SELECT count(*) FROM rooms rm WHERE rm.property_id=v.property_id AND rm.is_active AND (rm.number=CASE WHEN v.resource_mask=2 THEN '2' ELSE '1' END OR (v.resource_mask=3 AND rm.number='2'))
+      AND rm.housekeeping_status IN ('clean','inspected') AND rm.service_status='in_service')=CASE WHEN v.resource_mask=3 THEN 2 ELSE 1 END
     AND NOT EXISTS(SELECT 1 FROM room_out_of_order oo WHERE oo.property_id=v.property_id AND oo.status='active' AND oo.room_id IN (SELECT rm.id FROM rooms rm WHERE rm.property_id=v.property_id AND (rm.number=CASE WHEN v.resource_mask=2 THEN '2' ELSE '1' END OR (v.resource_mask=3 AND rm.number='2')))
       AND tstzrange(oo.start_date::timestamp AT TIME ZONE 'Asia/Kolkata',oo.end_date::timestamp AT TIME ZONE 'Asia/Kolkata','[)') && tstzrange(v.starts_at,v.ends_at,'[)')) AS ready
     FROM villa_bookings v WHERE v.id=$1 AND v.property_id=$2`,

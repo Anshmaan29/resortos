@@ -20,6 +20,7 @@ SELECT * FROM (
     FROM villa_bookings a JOIN villa_bookings b ON b.property_id=a.property_id AND b.id>a.id
       AND tstzrange(a.starts_at,a.ends_at,'[)') && tstzrange(b.starts_at,b.ends_at,'[)')
     WHERE a.allocation_status IN ('reserved','occupied') AND b.allocation_status IN ('reserved','occupied')
+      AND (a.resource_mask & b.resource_mask)>0
 
   UNION ALL
   -- Should be impossible: it is an exclusion constraint. Verified anyway, because the whole purpose

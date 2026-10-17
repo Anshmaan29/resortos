@@ -82,7 +82,7 @@ export class PrintingService {
         `SELECT p.number, p.entry_type, p.method, p.amount, p.reference, p.business_date, p.received_at,
                 u.full_name AS received_by_name, a.name AS account_name,
                 trim(g.first_name || ' ' || g.last_name) AS guest_name, g.mobile, r.number AS reservation_number,
-                rm.number AS room_number, f.number AS folio_number, o.number AS reverses_number, p.reversal_reason
+                CASE WHEN EXISTS(SELECT 1 FROM villa_bookings v WHERE v.id=s.reservation_id AND v.resource_mask=3 AND v.use_kind='both_bedrooms') THEN '1 + 2' ELSE rm.number END AS room_number, f.number AS folio_number, o.number AS reverses_number, p.reversal_reason
            FROM payments p
            JOIN users u ON u.id = p.received_by
            JOIN reservations r ON r.id = p.reservation_id

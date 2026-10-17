@@ -92,8 +92,10 @@ export const roomStatusCheckStep: NightAuditStep = {
     const { rows } = await q.query<{ kind: string; room_number: string; detail: string | null }>(
       `-- An occupied room that is marked out of service: one of the two is wrong.
        SELECT 'occupied_out_of_service' AS kind, rm.number AS room_number, rm.service_status AS detail
-         FROM stays s JOIN rooms rm ON rm.id = s.room_id
-        WHERE s.property_id = $1 AND s.status = 'in_house' AND rm.service_status <> 'in_service'
+         FROM rooms rm
+        WHERE rm.property_id = $1 AND rm.service_status <> 'in_service'
+          AND (EXISTS(SELECT 1 FROM stays s WHERE s.room_id=rm.id AND s.status='in_house')
+            OR EXISTS(SELECT 1 FROM villa_room_usage v WHERE v.room_id=rm.id AND v.allocation_status='occupied'))
        UNION ALL
        -- A room nobody is in, still marked dirty at the end of the day: housekeeping missed it.
        SELECT 'vacant_still_dirty', rm.number, NULL
@@ -102,6 +104,8 @@ export const roomStatusCheckStep: NightAuditStep = {
           AND NOT EXISTS (SELECT 1 FROM room_allocations a
                            WHERE a.room_id = rm.id AND a.status = 'checked_in'
                              AND a.start_date <= $2::date AND a.end_date > $2::date)
+          AND NOT EXISTS(SELECT 1 FROM stays s WHERE s.room_id=rm.id AND s.status='in_house')
+          AND NOT EXISTS(SELECT 1 FROM villa_room_usage v WHERE v.room_id=rm.id AND v.allocation_status='occupied')
        ORDER BY 1, 2`,
       [propertyId, businessDate],
     );

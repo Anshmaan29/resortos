@@ -3,10 +3,10 @@
 Spec Part G (§47–§56). Priority order, everywhere: **Data safety → Correctness → Security →
 Usability → Reliability → Performance → Features**.
 
-> **This document is honest about what does not exist yet.** The layered backups that Part G requires
-> are **not built**. Until they are, and until a restore from the off-site copy has passed and been
-> recorded, no real guest data may enter any ResortOS environment (CLAUDE.md #23,
-> `docs/production-readiness.md` Gate 0). Only the fake demo seed is allowed.
+> The backup/restore mechanism exists and is tested locally and in CI. Production recovery is a
+> separate gate: provider settings, off-site scheduling, offline keys and a recorded restore from
+> the real off-site copy must be verified (`docs/production-readiness.md`, Gate 0). The 17 October
+> 2026 QA audit did not find evidence sufficient to sign off that gate; see `docs/qa-handover-2026-10-17.md`.
 
 ## What protects data today
 
@@ -74,33 +74,32 @@ plus a gitleaks secret scan on every push.
 
 | Layer | Spec | State |
 |---|---|---|
-| Managed PostgreSQL, Multi-AZ, PITR (Mumbai) | §53.1 | not set up |
-| Backups and file replication to a second region (Hyderabad) | §53.2 | not set up |
-| Nightly encrypted logical backup to a **different provider** with Object Lock | §53.3 | not set up |
-| Backup encryption key held in two places outside the primary cloud | §54 | not set up |
-| Automated weekly restore test | §53.5 | not set up |
-| Quarterly manual restore drill | §53.5 | not done |
-| Nightly integrity checks and incident records | §55 | not built |
+| Managed PostgreSQL, Multi-AZ, PITR | §53.1 | production PostgreSQL 18.6; native WAL archiving off; PITR evidence unverified |
+| Backups and file replication to a second region | §53.2 | not verified; connected Railway database has one region |
+| Nightly encrypted logical backup to a **different provider** with Object Lock | §53.3 | mechanism built; production schedule/bucket not verified |
+| Backup encryption key held in two places outside the primary cloud | §54 | offline custody not verified |
+| Automated weekly restore test | §53.5 | test mechanism built; production schedule not verified |
+| Quarterly manual restore drill | §53.5 | no production drill recorded |
+| Integrity checks and incident records | §55 | night-audit checks built; independent monitoring/incident workflow pending |
 | Owner-facing Data Safety panel | §53.7 | not built |
-| Disaster recovery runbook (`ops/runbooks`) | §53.6 | not written |
+| Disaster recovery runbook (`ops/runbooks/restore.md`) | §53.6 | written; real drill still required |
 
-`ops/backup` and `ops/runbooks` do not exist. Creating them is milestone 3.6, but **Gate 0 blocks the
-pilot, not just Phase 3** — nothing about the front desk being finished makes it safe to type a real
-guest's name into this system.
+`ops/backup` and `ops/runbooks` contain the tooling and procedure. Passing their local integration
+tests does not establish that an off-site copy of production exists or can be recovered.
 
 ## Known gaps in what is built
 
-- **The outbox is drained, but no handler sends anything yet.** The worker, retries, dead-lettering
-  and job status all work (`GET /health/jobs`); what is missing is the handlers themselves —
-  WhatsApp, email, Sheets, Drive — which arrive in Phase 3. Events are recorded faithfully and
-  dispatched with nothing to do, and job status names the topics nothing handles.
+- **Delivery is asynchronous.** Email, WhatsApp and Sheets handlers exist; retries, dead-lettering
+  and `GET /health/jobs` expose their state. Local provider fixtures prove failure handling, while
+  real delivery still depends on each property's configured sender, templates and provider account.
 - **No error tracking or alerting.** No Sentry, no uptime checks, no operator alerts (spec §78).
 - **Orphaned uploads are not swept.** Documents uploaded but never attached to a confirmed check-in
   should be flagged for owner review after 7 days (spec §19.5); nothing does this yet. They are never
   silently deleted, so the gap is visibility, not loss.
 - **No retention jobs.** ID images and photos are kept indefinitely today; retention (spec §59) is
   milestone 3.5.
-- **Folio balance recalculation** (spec §49) has nothing to check yet — folios arrive in Phase 2.
+- **Bill integrity checks exist** in `apps/api/src/folios/integrity.step.ts` and restore verification;
+  a separately scheduled production integrity monitor is still an operational task.
 
 ## Backups — what exists today
 

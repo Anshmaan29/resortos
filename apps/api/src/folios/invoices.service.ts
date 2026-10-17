@@ -144,7 +144,7 @@ export class InvoicesService {
                 NULLIF(concat_ws(', ', g.address_line, g.city, g.state, g.pin_code), '') AS address,
                 g.company_name, g.company_gstin,
                 s.business_date_in AS stay_from, COALESCE(s.business_date_out, s.expected_departure) AS stay_to,
-                rm.number AS room_number, r.number AS reservation_number
+                CASE WHEN EXISTS(SELECT 1 FROM villa_bookings v WHERE v.id=s.reservation_id AND v.resource_mask=3 AND v.use_kind='both_bedrooms') THEN '1 + 2' ELSE rm.number END AS room_number, r.number AS reservation_number
            FROM folios f
            JOIN reservations r ON r.id = f.reservation_id
            JOIN guests g ON g.id = r.primary_guest_id
