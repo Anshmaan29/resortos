@@ -15,6 +15,18 @@ const message = (): OutgoingMessage => ({
   whatsapp: { name: 'resortos_booking_confirmation_en', languageCode: 'en', parameters: ['Guest'], documentHeader: false },
 });
 describe('Meta provider', () => {
+  it.each(['booking_confirmation','check_in_welcome'] as const)('sends the Villa %s without a logo upload using the text-only binding',async key=>{
+    const name='resortos_villa_'+key+'_en_v2';
+    const wording=whatsappWording(key,'en',name);
+    expect(wording.imageHeader).toBe(false);expect(wording.documentHeader).toBe(false);
+    expect(wording.body).toBe(whatsappWording(key,'en','resortos_villa_'+key+'_en_v1').body);
+    const fetcher=vi.fn<typeof fetch>().mockResolvedValue(Response.json({messages:[{id:'wamid.text'}]}));
+    const m=message();m.whatsapp={name,languageCode:'en',parameters:['Sample Guest'],documentHeader:wording.documentHeader,imageHeader:wording.imageHeader};
+    await new WhatsAppProvider(config,fetcher).send(m);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(String(fetcher.mock.calls[0]![0])).toMatch(/\/messages$/);
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body)).template.components.map((c:{type:string})=>c.type)).toEqual(['body']);
+  });
   it('uploads only the bundled logo for image templates, never caller attachments', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({id:'logo_1'}))
       .mockResolvedValueOnce(Response.json({messages:[{id:'wamid.logo'}]}));

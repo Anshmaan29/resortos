@@ -117,3 +117,12 @@ Email includes the common logo plus the selected property's name. Set PUBLIC_WEB
 public HTTPS site so email images resolve externally. The logo is public branding only.
 Invoice/credit/debit PDFs display the property name above the immutable legal seller details;
 this does not change booking, charge, tax, payment or issued-invoice rows.
+
+### Current text-only preference
+
+Booking/welcome WhatsApp messages use no image header. Hotel bindings are
+`resortos_booking_confirmation_en_v2` and `resortos_check_in_welcome_en_v3`; Villa bindings are
+`resortos_villa_booking_confirmation_en_v2` and `resortos_villa_check_in_welcome_en_v2`.
+The Villa v2 bodies retain the same property/resource/time details as v1, with no IMAGE component.
+Profile photo, email branding and PDF mastheads remain. Older image bindings stay compatible
+with existing stored message history; do not resend those historical messages automatically.
