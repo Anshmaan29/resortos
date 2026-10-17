@@ -48,7 +48,7 @@ export function fromPgError(err: unknown): AppError | null {
   if (!e || typeof e.code !== 'string') return null;
   switch (e.code) {
     case '23P01': // exclusion_violation
-      if (e.constraint === 'no_overlapping_private_villa') return new AppError(ERROR_CODES.ROOM_UNAVAILABLE, 'Villa Sol is already booked for part of this time. Every booking reserves the whole property.');
+      if (e.constraint === 'no_overlapping_private_villa') return new AppError(ERROR_CODES.ROOM_UNAVAILABLE, 'The selected villa room or property is already booked for part of this time. Choose another room or time.');
       if (e.constraint === 'no_overlapping_room_allocations') {
         return new AppError(ERROR_CODES.ROOM_UNAVAILABLE, 'This room was just booked by someone else for these dates. Please choose another room.');
       }

@@ -5,9 +5,11 @@
 - Kaithun, Kota, Rajasthan 324001. Reception: +91 9352204825.
 - Same legal business and GSTIN as Laxmi Palace, with separate operational records.
 - Only the owner can switch properties. Receptionists belong to their own property.
-- Every booking reserves the entire property privately, even a single-bedroom, pool-only or
-  garden-only booking. Bookings for different guests cannot overlap.
-- Choices: one bedroom, both bedrooms with pool/garden, whole villa with pool/garden, pool or garden.
+- Room 1 and Room 2 can be booked by different guests at the same time. Either bedroom booking
+  blocks pool and garden visits; a pool or garden booking blocks the entire property.
+- Choices: One room, 2 rooms, Swimming pool, Garden. One room asks for Room 1 or Room 2.
+- A 2 rooms booking includes both rooms, pool and garden with one combined nightly price and bill.
+- Existing bookings keep their original whole-property allocation and historical inventory references.
 - Reception enters start/end date and time, guest count, agreed price and GST percentage.
 - Overnight prices are per night; pool/garden prices cover the entire selected time slot.
 - Pool/garden arrival does not require an ID, photo or signature. Overnight check-in retains
@@ -29,9 +31,9 @@
 2. Select New booking, choose the booking kind and times, enter guest count, price and GST, and
    select/add a guest. Saving queues the email confirmation automatically when email is provided.
 3. For pool/garden use, select Mark arrival. For an overnight stay, select Check in & collect ID.
-4. Use the booking's Bill to record payments and charges. Cash requires an open Villa Sol shift.
+4. Use the booking's Bill to record payments and charges. Villa cash is recorded directly in Accounts; no cashier shift needs opening or closing.
 5. Select Check out. For overnight stays, the existing settlement/invoice checkout screen opens.
-6. Mark the villa clean in Housekeeping before the next arrival.
+6. Use Rooms to see Room 1 and Room 2, then mark the used room(s) clean in Housekeeping before the next arrival. A single-room checkout leaves the other guest in house.
 
 Property switching closes the current screen and clears its in-memory queries. Unsaved forms
 warn before switching. Other browser tabs retain their own property context. Downloads carry
@@ -65,3 +67,5 @@ activity through its audit trail rather than assuming the live resort stays idle
 Setup deliberately leaves Villa Sol staff credentials and non-cash payment destinations to the
 owner, along with the activity tax rule/SAC, and leaves Villa WhatsApp and Wi-Fi unconfigured. These are visible setup choices rather
 than copied Laxmi details.
+
+Migration 0030 adds resource overlap protection for the two physical rooms and Villa-only cash without shifts. Hotels keep their database-enforced cash shift requirement. Run `ensureVillaRooms` in an authorized transaction to add Room 1 and Room 2 to an existing Villa Sol property; it never renames/deletes legacy inventory or edits bookings.

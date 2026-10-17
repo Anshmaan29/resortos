@@ -35,7 +35,7 @@ export async function addVilla(q: Queryable, sourcePropertyId: string, ownerId: 
     [id, ownerId],
   );
   await q.query(
-    `INSERT INTO rooms(property_id,room_type_id,number,unit_type,created_by) VALUES($1,$2,'Villa','villa',$3)`,
+    `INSERT INTO rooms(property_id,room_type_id,number,unit_type,created_by) VALUES($1,$2,'1','room',$3),($1,$2,'2','room',$3)`,
     [id, types[0]!.id, ownerId],
   );
   await q.query(

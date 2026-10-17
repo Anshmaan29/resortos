@@ -23,9 +23,10 @@ export class StayoverCleaningStep implements NightAuditStep {
 
   private async candidates(ctx: NightAuditContext) {
     const { rows } = await ctx.q.query<{ room_id: string; number: string; enabled: boolean }>(
-      `SELECT rm.id AS room_id, rm.number, p.housekeeping_stayovers AS enabled
+      `SELECT DISTINCT rm.id AS room_id, rm.number, rm.sort_order, p.housekeeping_stayovers AS enabled
          FROM stays s
-         JOIN rooms rm ON rm.id = s.room_id
+         JOIN properties pr ON pr.id=s.property_id
+         JOIN rooms rm ON (pr.booking_model<>'private_villa' AND rm.id=s.room_id) OR (pr.booking_model='private_villa' AND EXISTS(SELECT 1 FROM villa_room_usage v WHERE v.reservation_id=s.reservation_id AND v.room_id=rm.id AND v.use_kind NOT IN ('pool','garden')))
          JOIN properties p ON p.id = s.property_id
         WHERE s.property_id = $1 AND s.status = 'in_house' AND s.expected_departure > $2::date
           AND rm.housekeeping_status IN ('clean', 'inspected')

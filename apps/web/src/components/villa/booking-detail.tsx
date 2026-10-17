@@ -107,7 +107,7 @@ export function VillaBookingDetail({ id }: { id: string }) {
                 ? 'Completed'
                 : b.status === 'cancelled'
                   ? 'Cancelled'
-                  : 'Private booking'
+                  : 'Booking'
           }
         />
         <div className="grid gap-4 p-5 sm:grid-cols-2">

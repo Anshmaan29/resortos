@@ -10,6 +10,7 @@ import { emptyReport, type NightAuditContext, type NightAuditStep, type StepRepo
 @Injectable()
 export class OpenShiftsStep implements NightAuditStep {
   readonly name = 'open_shifts';
+  readonly bookingModel = 'hotel' as const;
   readonly title = 'Open cashier shifts';
   readonly order = 30;
   readonly blocking = true;

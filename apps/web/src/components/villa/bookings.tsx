@@ -15,6 +15,8 @@ export interface VillaBooking {
   number: string;
   useKind: string;
   useLabel: string;
+  resourceMask: number;
+  roomId: string | null;
   startsAt: string;
   endsAt: string;
   guestCount: number;
@@ -92,7 +94,7 @@ export function VillaBookings({ view = 'home' }: { view?: 'home' | 'all' | 'acti
                 ? 'Villa bookings'
                 : (property.data?.name ?? 'Villa Sol')
         }
-        description="Every booking reserves the whole property exclusively for its dates and times."
+        description="Rooms can be booked separately. Pool and garden bookings reserve the entire property."
         actions={
           <Link href="/villa/new">
             <Button>

@@ -1,3 +1,4 @@
+import { paymentShift } from '../cashier/shift-policy';
 import { Injectable } from '@nestjs/common';
 import {
   addDays, ERROR_CODES, formatReference, money, nightsBetween, toMoneyString,
@@ -163,12 +164,7 @@ export class CompaniesService {
       `SELECT kind, is_active FROM payment_accounts WHERE id = $1 AND property_id = $2`, [input.paymentAccountId, propertyId],
     );
     if (!account[0] || !account[0].is_active) throw notFound('Payment account');
-    const { rows: shift } = await q.query<{ id: string }>(
-      `SELECT id FROM cashier_shifts WHERE property_id = $1 AND opened_by = $2 AND closed_at IS NULL`, [propertyId, actor.user.id],
-    );
-    if (input.method === 'cash' && !shift[0]) {
-      throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'Open your shift before taking cash.', { action: 'open_shift' });
-    }
+    const shiftId = await paymentShift(q, propertyId, actor.user.id, input.method);
     const businessDate = await this.property.businessDate(q, propertyId);
     const { rows: n } = await q.query<{ next_reference: string }>(`SELECT next_reference($1, 'company_receipt')`, [propertyId]);
     const number = formatReference('CR', Number(n[0]!.next_reference));
@@ -177,7 +173,7 @@ export class CompaniesService {
                                      business_date, received_by, cashier_shift_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::date,$11,$12) RETURNING id`,
       [propertyId, number, companyId, input.method, input.paymentAccountId, account[0].kind, input.amount, input.reference ?? null,
-        input.note ?? null, businessDate, actor.user.id, shift[0]?.id ?? null],
+        input.note ?? null, businessDate, actor.user.id, shiftId],
     );
     await this.audit.record(q, actor, {
       action: 'company.receipt_recorded', entityType: 'company', entityId: companyId,
@@ -198,10 +194,7 @@ export class CompaniesService {
     const original = rows[0];
     if (!original) throw notFound('Receipt');
     if (original.reversed || original.reverses_receipt_id) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'This receipt cannot be reversed again.');
-    const { rows: shift } = await q.query<{ id: string }>(
-      `SELECT id FROM cashier_shifts WHERE property_id = $1 AND opened_by = $2 AND closed_at IS NULL`, [propertyId, actor.user.id],
-    );
-    if (original.method === 'cash' && !shift[0]) throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'Open your shift before giving back cash.', { action: 'open_shift' });
+    const shiftId = await paymentShift(q, propertyId, actor.user.id, original.method);
     const businessDate = await this.property.businessDate(q, propertyId);
     const { rows: n } = await q.query<{ next_reference: string }>(`SELECT next_reference($1, 'company_receipt')`, [propertyId]);
     const number = formatReference('CR', Number(n[0]!.next_reference));
@@ -210,7 +203,7 @@ export class CompaniesService {
                                      business_date, received_by, cashier_shift_id, reverses_receipt_id, reversal_reason)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10,$11,$12,$13)`,
       [propertyId, number, original.company_id, original.method, original.payment_account_id, original.account_kind, original.amount,
-        `Reverses ${original.number}`, businessDate, actor.user.id, shift[0]?.id ?? null, receiptId, reason],
+        `Reverses ${original.number}`, businessDate, actor.user.id, shiftId, receiptId, reason],
     );
     await this.audit.record(q, actor, {
       action: 'company.receipt_reversed', entityType: 'company', entityId: original.company_id, reason,

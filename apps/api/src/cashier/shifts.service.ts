@@ -158,6 +158,8 @@ export class ShiftsService {
   }
 
   async open(q: Queryable, actor: Actor, input: OpenShiftInput) {
+    const { rows: model } = await q.query<{ booking_model: string }>('SELECT booking_model FROM properties WHERE id=$1', [actor.user.propertyId]);
+    if (model[0]?.booking_model === 'private_villa') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'Villa Sol records cash directly in Accounts; cashier shifts are not used.');
     const businessDate = await this.property.businessDate(q, actor.user.propertyId);
     const { rows: existing } = await q.query<{ id: string }>(
       `SELECT id FROM cashier_shifts WHERE property_id = $1 AND opened_by = $2 AND closed_at IS NULL`,

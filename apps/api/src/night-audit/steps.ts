@@ -132,9 +132,14 @@ export const summaryStep: NightAuditStep = {
       departures_completed: number; in_house_at_close: number; no_shows: number; cancellations: number;
     }>(
       `SELECT
-         (SELECT count(*)::int FROM rooms WHERE property_id = $1 AND is_active) AS rooms_active,
-         (SELECT count(DISTINCT a.room_id)::int FROM room_allocations a
-           WHERE a.property_id = $1 AND a.status = 'checked_in' AND a.start_date <= $2::date AND a.end_date > $2::date) AS rooms_occupied,
+         (SELECT count(*)::int FROM rooms rm JOIN properties p ON p.id=rm.property_id WHERE rm.property_id=$1 AND rm.is_active AND (p.booking_model<>'private_villa' OR rm.number IN ('1','2'))) AS rooms_active,
+         (SELECT count(DISTINCT room_id)::int FROM (
+           SELECT a.room_id FROM room_allocations a JOIN reservation_rooms rr ON rr.id=a.reservation_room_id
+             WHERE a.property_id=$1 AND a.status='checked_in' AND a.start_date<=$2::date AND a.end_date>$2::date
+             AND NOT EXISTS(SELECT 1 FROM villa_bookings v WHERE v.id=rr.reservation_id)
+           UNION SELECT v.room_id FROM villa_room_usage v WHERE v.property_id=$1 AND v.allocation_status='occupied'
+             AND v.use_kind NOT IN ('pool','garden') AND (v.starts_at AT TIME ZONE 'Asia/Kolkata')::date<=$2::date
+             AND (v.ends_at AT TIME ZONE 'Asia/Kolkata')::date>$2::date) occupied) AS rooms_occupied,
          (SELECT count(*)::int FROM stays WHERE property_id = $1 AND business_date_in = $2::date) AS arrivals_checked_in,
          (SELECT count(*)::int FROM stays WHERE property_id = $1 AND business_date_out = $2::date) AS departures_completed,
          (SELECT count(*)::int FROM stays WHERE property_id = $1 AND status = 'in_house') AS in_house_at_close,

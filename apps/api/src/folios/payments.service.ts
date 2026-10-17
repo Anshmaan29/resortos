@@ -1,3 +1,4 @@
+import { paymentShift } from '../cashier/shift-policy';
 import { Injectable } from '@nestjs/common';
 import {
   ACCOUNT_KINDS_FOR_METHOD, ERROR_CODES, formatDate, formatINR, formatReference, money, PAYMENT_METHOD_LABELS,
@@ -141,22 +142,12 @@ export class PaymentsService {
   }
 
   /**
-   * The shift this person has open, if any. Every payment is tied to it when there is one, and cash
+   * The shift this person has open, if any. Hotel payments are tied to it when there is one, and hotel cash
    * cannot be taken without one — cash is what gets counted at close (spec §34.2), and the database
-   * refuses cash outside a shift even if this check were skipped.
+   * refuses hotel cash outside a shift even if this check were skipped. Villa money stays in its account ledger without shifts.
    */
   private async shiftFor(q: Queryable, actor: Actor, method: PaymentMethod): Promise<string | null> {
-    const { rows } = await q.query<{ id: string }>(
-      `SELECT id FROM cashier_shifts WHERE property_id = $1 AND opened_by = $2 AND closed_at IS NULL`,
-      [actor.user.propertyId, actor.user.id],
-    );
-    const id = rows[0]?.id ?? null;
-    if (!id && method === 'cash') {
-      throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'Open your shift before taking or giving back cash — cash is counted when the shift closes.', {
-        action: 'open_shift',
-      });
-    }
-    return id;
+    return paymentShift(q, actor.user.propertyId, actor.user.id, method);
   }
 
   /**

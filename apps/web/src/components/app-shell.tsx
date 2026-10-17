@@ -109,7 +109,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   const isActive = (href: string) => (href === '/' || href === '/villa' ? pathname === href : pathname.startsWith(href));
-  const villaNav = NAV.filter(item => !['/rooms','/form-c','/ota'].includes(item.href)).map(item => ({...item,href:({'/':'/villa','/reservations':'/villa/bookings','/in-house':'/villa/active','/calendar':'/villa/calendar'} as Record<string,string>)[item.href] ?? item.href}));
+  const villaNav = NAV.filter(item => !['/shifts','/form-c','/ota'].includes(item.href)).map(item => ({...item,href:({'/':'/villa','/reservations':'/villa/bookings','/in-house':'/villa/active','/calendar':'/villa/calendar'} as Record<string,string>)[item.href] ?? item.href}));
   const phoneNav = villa ? villaNav.filter(n=>n.phone) : PHONE_NAV;
   const visibleNav = (villa ? villaNav : NAV).filter((item) => me.data?.role === 'cleaner' ? item.href === '/housekeeping' : !('owner' in item) || me.data?.role === 'owner');
 

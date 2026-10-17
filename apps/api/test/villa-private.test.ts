@@ -8,6 +8,7 @@ import { DbService } from '../src/db/db.service';
 import { OutboxDispatcher } from '../src/jobs/outbox.dispatcher';
 import { MessagingService } from '../src/messaging/messaging.service';
 import { MESSAGE_PROVIDERS, type MessageProvider } from '../src/messaging/providers';
+import { ensureVillaRooms } from '../scripts/ensure-villa-rooms-lib';
 import { addVilla } from '../scripts/add-villa-lib';
 let app: INestApplication,
   sql: <T = any>(s: string, v?: unknown[]) => Promise<T[]>,
@@ -82,8 +83,9 @@ beforeAll(async () => {
   ownerId = rows[0]!.id;
   hotelId = rows[0]!.property_id;
   hotelSnapshot = await sourceSnapshot();
-  villaId = (await app.get(DbService).tx({ userId: ownerId }, (q) => addVilla(q, hotelId, ownerId, '324001')))
-    .propertyId;
+  villaId = (
+    await app.get(DbService).tx({ userId: ownerId }, (q) => addVilla(q, hotelId, ownerId, '324001'))
+  ).propertyId;
 });
 afterAll(async () => {
   await app.close();
@@ -104,12 +106,16 @@ describe('property boundaries', () => {
   });
   it('setup is repeatable and never copies hotel guest or financial records', async () => {
     expect(
-      await app.get(DbService).tx({ userId: ownerId }, (q) => addVilla(q, hotelId, ownerId, '324001')),
+      await app
+        .get(DbService)
+        .tx({ userId: ownerId }, (q) => addVilla(q, hotelId, ownerId, '324001')),
     ).toEqual({ propertyId: villaId, created: false });
     expect(await sql(`SELECT id FROM guests WHERE property_id=$1`, [villaId])).toHaveLength(0);
-    expect(await sql(`SELECT id FROM cashier_shifts WHERE property_id=$1`, [villaId])).toHaveLength(0);
+    expect(await sql(`SELECT id FROM cashier_shifts WHERE property_id=$1`, [villaId])).toHaveLength(
+      0,
+    );
     const rooms = await sql(`SELECT number FROM rooms WHERE property_id=$1`, [villaId]);
-    expect(rooms).toEqual([{ number: 'Villa' }]);
+    expect(rooms.map((r) => r.number).sort()).toEqual(['1', '2']);
   });
   it('rejects conflicting property headers and download query context', async () => {
     await get('/property?propertyContext=' + hotelId).expect(403);
@@ -145,7 +151,12 @@ describe('whole-property exclusivity', () => {
   it('books a pool time slot and blocks garden and overnight overlap', async () => {
     const input = slot();
     const a = await create(input).expect(201);
-    expect(a.body).toMatchObject({ dayUse: true, guestCount: 8, estimatedTotal: '1475.00', useKind: 'pool' });
+    expect(a.body).toMatchObject({
+      dayUse: true,
+      guestCount: 8,
+      estimatedTotal: '1475.00',
+      useKind: 'pool',
+    });
     await create({ ...slot(), useKind: 'garden' }).expect(409);
     await create({
       ...slot(),
@@ -190,12 +201,20 @@ describe('whole-property exclusivity', () => {
       gstPercent: '5.00',
     };
     const res = await create(input).expect(201);
-    expect(res.body).toMatchObject({ dayUse: false, subtotal: '4500.00', estimatedTotal: '4725.00' });
+    expect(res.body).toMatchObject({
+      dayUse: false,
+      subtotal: '4500.00',
+      estimatedTotal: '4725.00',
+    });
     const rows = await sql(
       `SELECT adults,nightly_rate,gst_rate_override FROM reservation_rooms WHERE reservation_id=$1`,
       [res.body.id],
     );
-    expect(rows[0]).toMatchObject({ adults: 8, nightly_rate: '4500.00', gst_rate_override: '5.00' });
+    expect(rows[0]).toMatchObject({
+      adults: 8,
+      nightly_rate: '4500.00',
+      gst_rate_override: '5.00',
+    });
   });
   it('cancels an unpaid slot and frees it without deleting history', async () => {
     const input = slot(addDays(today, 8));
@@ -211,7 +230,9 @@ describe('whole-property exclusivity', () => {
       .set('x-resortos', '1')
       .set('x-resortos-property', villaId)
       .set('idempotency-key', randomUUID())
-      .send(booking({ roomTypeId: type, arrival: addDays(today, 9), departure: addDays(today, 10) }))
+      .send(
+        booking({ roomTypeId: type, arrival: addDays(today, 9), departure: addDays(today, 10) }),
+      )
       .expect(400);
   });
 });
@@ -228,10 +249,12 @@ describe('pool arrival, money, invoice and email', () => {
     expect(arrived.body.bill.total).toBe('1475.00');
     expect((await get('/folios/' + a.body.folioId).expect(200)).body.total).toBe('1475.00');
     await owner.get('/api/v1/folios/' + a.body.folioId).expect(404);
-    expect(await sql(`SELECT id FROM check_in_drafts WHERE reservation_id=$1`, [a.body.id])).toHaveLength(0);
-    expect(await sql(`SELECT id FROM reservation_rooms WHERE reservation_id=$1`, [a.body.id])).toHaveLength(
-      0,
-    );
+    expect(
+      await sql(`SELECT id FROM check_in_drafts WHERE reservation_id=$1`, [a.body.id]),
+    ).toHaveLength(0);
+    expect(
+      await sql(`SELECT id FROM reservation_rooms WHERE reservation_id=$1`, [a.body.id]),
+    ).toHaveLength(0);
     await action(a.body.id, 'depart', arrived.body.version).expect(409);
     const [account] = await sql(
       `INSERT INTO payment_accounts(property_id,name,kind,created_by) VALUES($1,'Test bank','bank',$2) RETURNING id`,
@@ -273,9 +296,10 @@ describe('pool arrival, money, invoice and email', () => {
 describe('advance handling', () => {
   it('credits a pool advance to its own bill and records its refund before cancellation', async () => {
     const b = await create(slot(addDays(today, 20))).expect(201);
-    const [account] = await sql(`SELECT id FROM payment_accounts WHERE property_id=$1 AND kind='bank'`, [
-      villaId,
-    ]);
+    const [account] = await sql(
+      `SELECT id FROM payment_accounts WHERE property_id=$1 AND kind='bank'`,
+      [villaId],
+    );
     await vpost(`/reservations/${b.body.id}/advance`, {
       method: 'bank_transfer',
       paymentAccountId: account.id,
@@ -365,7 +389,9 @@ describe('editing, overnight documents, communications and preservation', () => 
     const d = await vpost('/check-in-drafts', { reservationId: b.body.id }).expect(200);
     await vpost(`/check-in-drafts/${d.body.id}/confirm`, {}).expect(400);
     const data = structuredClone(d.body.data);
-    const [room] = await sql<{ id: string }>(`SELECT id FROM rooms WHERE property_id=$1`, [villaId]);
+    const [room] = await sql<{ id: string }>(`SELECT id FROM rooms WHERE property_id=$1`, [
+      villaId,
+    ]);
     data.rooms[0].roomId = room!.id;
     data.rooms[0].occupants[0].idType = 'passport';
     data.rooms[0].occupants[0].idLast4 = '4321';
@@ -393,7 +419,10 @@ describe('editing, overnight documents, communications and preservation', () => 
         body: bytes,
       });
       expect(uploaded.status).toBe(200);
-      await vpost(`/check-in-drafts/${d.body.id}/documents/${doc.body.documentId}/confirm`, {}).expect(200);
+      await vpost(
+        `/check-in-drafts/${d.body.id}/documents/${doc.body.documentId}/confirm`,
+        {},
+      ).expect(200);
       await owner.get(`/api/v1/documents/${doc.body.documentId}/view-url`).expect(404);
     }
     const checked = await vpost(`/check-in-drafts/${d.body.id}/confirm`, {}).expect(200);
@@ -412,9 +441,10 @@ describe('editing, overnight documents, communications and preservation', () => 
     await get(`/stays/${stayId}/checkout-preview`).expect(200);
     const bill = (await get(`/stays/${stayId}/bill`).expect(200)).body;
     expect(bill.total).toBe('4200.00');
-    const [account] = await sql(`SELECT id FROM payment_accounts WHERE property_id=$1 AND kind='bank'`, [
-      villaId,
-    ]);
+    const [account] = await sql(
+      `SELECT id FROM payment_accounts WHERE property_id=$1 AND kind='bank'`,
+      [villaId],
+    );
     await vpost(`/folios/${bill.id}/payments`, {
       entryType: 'payment',
       method: 'bank_transfer',
@@ -440,6 +470,254 @@ describe('editing, overnight documents, communications and preservation', () => 
     expect(msgs[0].body).toContain('From:');
     expect(msgs[0].body).not.toMatch(/Laxmi|Airtel/);
     await app.get(MessagingService).sendDue(100);
+  });
+  it('offers two physical rooms, allows different guests, and blocks shared facilities', async () => {
+    await sql(`UPDATE rooms SET housekeeping_status='clean' WHERE property_id=$1`, [villaId]);
+    const rooms = (await get('/rooms').expect(200)).body;
+    expect(rooms.map((r: any) => r.number)).toEqual(['1', '2']);
+    const input = {
+      ...slot(addDays(today, 20), 'one_bedroom'),
+      roomId: rooms[0].id,
+      guestCount: 1,
+      endsAt: `${addDays(today, 21)}T11:00:00+05:30`,
+    };
+    const a = await create(input).expect(201);
+    const [line] = await sql(`SELECT id FROM reservation_rooms WHERE reservation_id=$1`, [
+      a.body.id,
+    ]);
+    await vpost(`/reservation-rooms/${line.id}/assign`, { roomId: rooms[1].id }).expect(400);
+    const b = await create({ ...input, roomId: rooms[1].id, guest: slot().guest }).expect(201);
+    expect(a.body.useLabel).toBe('Room 1');
+    expect(b.body.useLabel).toBe('Room 2');
+    await create({ ...input, guest: slot().guest }).expect(409);
+    await create({ ...input, useKind: 'both_bedrooms', guest: slot().guest }).expect(409);
+    await create({ ...input, useKind: 'pool', guest: slot().guest }).expect(409);
+    await create({ ...input, useKind: 'garden', guest: slot().guest }).expect(409);
+    const opts = await get('/villa/availability')
+      .query({
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        excludeId: a.body.id,
+        useKind: 'one_bedroom',
+        roomId: rooms[0].id,
+      })
+      .expect(200);
+    expect(opts.body.available).toBe(true);
+    expect(opts.body.rooms.map((r: any) => r.available)).toEqual([true, false]);
+    const picker = await get('/availability')
+      .query({
+        arrival: addDays(today, 20),
+        departure: addDays(today, 21),
+        reservationId: a.body.id,
+      })
+      .expect(200);
+    expect(picker.body.rooms.map((r: any) => r.id)).toEqual([rooms[0].id]);
+    const rr = (
+      await sql(`SELECT id FROM reservation_rooms WHERE reservation_id=$1`, [a.body.id])
+    )[0];
+    await vpost(`/reservation-rooms/${rr.id}/assign`, { roomId: rooms[1].id }).expect(409);
+    await action(a.body.id, 'cancel', a.body.version).expect(200);
+    await create({ ...input, guest: slot().guest }).expect(201);
+  });
+  it('serializes competing room saves and permits the other bedroom', async () => {
+    await sql(`UPDATE rooms SET housekeeping_status='clean' WHERE property_id=$1`, [villaId]);
+    const rooms = (await get('/rooms').expect(200)).body;
+    const input = {
+      ...slot(addDays(today, 22), 'one_bedroom'),
+      roomId: rooms[0].id,
+      guestCount: 1,
+      endsAt: `${addDays(today, 23)}T11:00:00+05:30`,
+    };
+    const r = await Promise.all([create(input), create({ ...input, guest: slot().guest })]);
+    expect(r.map((x) => x.status).sort()).toEqual([201, 409]);
+    await create({ ...input, roomId: rooms[1].id, guest: slot().guest }).expect(201);
+  });
+  it('edits a room choice atomically and releases the previous room', async () => {
+    const rooms = (await get('/rooms').expect(200)).body;
+    const input = {
+      ...slot(addDays(today, 26), 'one_bedroom'),
+      roomId: rooms[0].id,
+      guestCount: 1,
+      endsAt: `${addDays(today, 27)}T11:00:00+05:30`,
+    };
+    const a = await create(input).expect(201);
+    const changed = await owner
+      .patch(`/api/v1/villa/bookings/${a.body.id}`)
+      .set('x-resortos', '1')
+      .set('x-resortos-property', villaId)
+      .set('idempotency-key', randomUUID())
+      .send({ ...input, version: a.body.version, roomId: rooms[1].id })
+      .expect(200);
+    expect(changed.body.useLabel).toBe('Room 2');
+    await create({ ...input, guest: slot().guest }).expect(201);
+  });
+  it('adds room setup idempotently without rewriting existing bookings', async () => {
+    const before = await sql(
+      `SELECT to_jsonb(v) AS data FROM villa_bookings v WHERE property_id=$1 ORDER BY id`,
+      [villaId],
+    );
+    expect(
+      await app
+        .get(DbService)
+        .tx({ userId: ownerId }, (q) => ensureVillaRooms(q, villaId, ownerId)),
+    ).toEqual({ created: [] });
+    expect(
+      await sql(
+        `SELECT to_jsonb(v) AS data FROM villa_bookings v WHERE property_id=$1 ORDER BY id`,
+        [villaId],
+      ),
+    ).toEqual(before);
+  });
+  it('records villa cash advances and expenses without shifts, while hotel cash still requires a shift', async () => {
+    const b = await create(slot(addDays(today, 24))).expect(201);
+    const [cash] = await sql(
+      `SELECT id FROM payment_accounts WHERE property_id=$1 AND kind='cash'`,
+      [villaId],
+    );
+    const paid = await vpost(`/reservations/${b.body.id}/advance`, {
+      entryType: 'advance',
+      method: 'cash',
+      paymentAccountId: cash.id,
+      amount: '100',
+    }).expect(200);
+    expect(paid.body).toBeTruthy();
+    expect(
+      (await sql(`SELECT cashier_shift_id FROM payments WHERE reservation_id=$1`, [b.body.id]))[0]
+        .cashier_shift_id,
+    ).toBeNull();
+    const category = await vpost('/expense-categories', { name: 'Villa cleaning' }).expect(201);
+    await vpost('/expenses', {
+      categoryId: category.body.id,
+      expenseDate: today,
+      method: 'cash',
+      paymentAccountId: cash.id,
+      amount: '25',
+      paidTo: 'Test cleaner',
+    }).expect(201);
+    expect(await sql(`SELECT id FROM cashier_shifts WHERE property_id=$1`, [villaId])).toHaveLength(
+      0,
+    );
+    await vpost('/shifts/open', { openingCash: '0' }).expect(409);
+    const preview = (await get('/night-audit').expect(200)).body;
+    expect(preview.steps.map((s: any) => s.name)).not.toContain('open_shifts');
+    await expect(
+      sql(
+        `INSERT INTO payments(property_id,reservation_id,entry_type,method,amount,business_date,received_by)
+      VALUES($1,$4,'advance','cash',1,$3,$2)`,
+        [hotelId, ownerId, today, randomUUID()],
+      ),
+    ).rejects.toThrow(/shift/);
+  });
+  it('checks in separate room guests independently and bills two rooms once', async () => {
+    async function checkIn(id: string) {
+      const d = await vpost('/check-in-drafts', { reservationId: id }).expect(200);
+      const data = structuredClone(d.body.data);
+      data.rooms[0].occupants[0].idType = 'passport';
+      data.rooms[0].occupants[0].idLast4 = '4321';
+      data.consents = { stayAndCompliance: true, marketing: false };
+      await owner
+        .patch('/api/v1/check-in-drafts/' + d.body.id)
+        .set('x-resortos', '1')
+        .set('x-resortos-property', villaId)
+        .send({ version: d.body.version, step: 5, data })
+        .expect(200);
+      for (const type of ['id_front', 'guest_photo']) {
+        const bytes = Buffer.concat([Buffer.from([255, 216, 255, 224]), randomBytes(2048)]);
+        const doc = await vpost(`/check-in-drafts/${d.body.id}/documents`, {
+          source: 'desk_camera',
+          docType: type,
+          contentType: 'image/jpeg',
+          sizeBytes: bytes.length,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+          occupantKey: 'r0a0',
+          ...(type === 'id_front' ? { idType: 'passport' } : {}),
+        }).expect(201);
+        expect(
+          (
+            await fetch(doc.body.upload.url, {
+              method: 'PUT',
+              headers: doc.body.upload.headers,
+              body: bytes,
+            })
+          ).status,
+        ).toBe(200);
+        await vpost(
+          `/check-in-drafts/${d.body.id}/documents/${doc.body.documentId}/confirm`,
+          {},
+        ).expect(200);
+      }
+      return (await vpost(`/check-in-drafts/${d.body.id}/confirm`, {}).expect(200)).body.stays[0]
+        .id;
+    }
+    async function settle(stayId: string) {
+      await get(`/stays/${stayId}/checkout-preview`).expect(200);
+      const bill = (await get(`/stays/${stayId}/bill`).expect(200)).body;
+      const [cash] = await sql(
+        `SELECT id FROM payment_accounts WHERE property_id=$1 AND kind='cash'`,
+        [villaId],
+      );
+      await vpost(`/folios/${bill.id}/payments`, {
+        entryType: 'payment',
+        method: 'cash',
+        paymentAccountId: cash.id,
+        amount: bill.balance,
+      }).expect(200);
+      await vpost(`/stays/${stayId}/checkout`, {}).expect(200);
+      return bill;
+    }
+    await sql(`UPDATE rooms SET housekeeping_status='clean' WHERE property_id=$1`, [villaId]);
+    const body = {
+      ...slot(today, 'both_bedrooms'),
+      guestCount: 1,
+      startsAt: new Date(Date.now() - 120000).toISOString(),
+      endsAt: `${addDays(today, 1)}T09:00:00+05:30`,
+      price: '700',
+      gstPercent: '0',
+    };
+    const both = await create(body).expect(201);
+    const bothStay = await checkIn(both.body.id);
+    expect(
+      (await get('/rooms').expect(200)).body.map((r: any) => r.currentReservation?.id),
+    ).toEqual([both.body.id, both.body.id]);
+    expect(
+      (await get('/housekeeping/board').expect(200)).body.rooms.map((r: any) => r.occupied),
+    ).toEqual([true, true]);
+    expect((await get('/night-audit').expect(200)).body.summary).toMatchObject({
+      roomsActive: 2,
+      roomsOccupied: 2,
+    });
+    expect((await settle(bothStay)).total).toBe('700.00');
+    expect((await get('/rooms').expect(200)).body.map((r: any) => r.housekeeping)).toEqual([
+      'dirty',
+      'dirty',
+    ]);
+    await sql(`UPDATE rooms SET housekeeping_status='clean' WHERE property_id=$1`, [villaId]);
+    const rooms = (await get('/rooms').expect(200)).body;
+    const a = await create({
+      ...body,
+      useKind: 'one_bedroom',
+      roomId: rooms[0].id,
+      guest: slot().guest,
+    }).expect(201);
+    const b = await create({
+      ...body,
+      useKind: 'one_bedroom',
+      roomId: rooms[1].id,
+      guest: slot().guest,
+    }).expect(201);
+    const stayA = await checkIn(a.body.id),
+      stayB = await checkIn(b.body.id);
+    const board = (await get('/rooms').expect(200)).body;
+    expect(board.map((r: any) => r.currentReservation.id)).toEqual([a.body.id, b.body.id]);
+    await settle(stayA);
+    const after = (await get('/rooms').expect(200)).body;
+    expect(after[0].housekeeping).toBe('dirty');
+    expect(after[1].currentReservation.id).toBe(b.body.id);
+    expect(after[1].housekeeping).toBe('clean');
+    await sql(`UPDATE rooms SET housekeeping_status='clean' WHERE id=$1`,[rooms[0].id]);
+    await vpost(`/stays/${stayB}/shift-room`,{toRoomId:rooms[0].id,rateDecision:'keep_rate',reason:'Guest requested another room'}).expect(200);
+    expect((await get('/rooms').expect(200)).body[0].currentReservation.id).toBe(b.body.id);
+    await settle(stayB);
   });
   it('leaves every existing hotel room, price, booking, guest, document and money row unchanged', async () => {
     expect(await sourceSnapshot()).toBe(hotelSnapshot);

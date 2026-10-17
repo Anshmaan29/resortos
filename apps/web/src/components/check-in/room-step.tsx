@@ -4,12 +4,16 @@ import { AlertTriangle, BedDouble, CheckCircle2 } from 'lucide-react';
 import { formatDate } from '@resortos/shared';
 import { Field, Select } from '@/components/ui/field';
 import { Card, CardHeader, ErrorBanner, Skeleton } from '@/components/ui/surface';
+import { useProperty } from '@/lib/session';
+import type { VillaBooking } from '@/components/villa/bookings';
 import { api } from '@/lib/api';
 import type { Availability, Room } from '@/lib/types';
 import type { CheckInDraft } from './types';
 
 /** Room assignment inside check-in (spec §18). The server assigns under the exclusion constraint at confirmation. */
 export function RoomStep({ draft, data, businessDate, onChange }: { draft: CheckInDraft; data: CheckInDraft['data']; businessDate: string; onChange: (d: CheckInDraft['data']) => void }) {
+  const property = useProperty();
+  const villa = useQuery({ queryKey: ['villa-booking', draft.reservationId], queryFn: () => api<VillaBooking>(`/villa/bookings/${draft.reservationId}`), enabled: property.data?.bookingModel === 'private_villa' });
   const { departure } = draft.reservation;
   const availability = useQuery({
     queryKey: ['availability', businessDate, departure, draft.reservationId],
@@ -19,6 +23,7 @@ export function RoomStep({ draft, data, businessDate, onChange }: { draft: Check
 
   return (
     <div className="flex flex-col gap-6">
+      {villa.data && <p className="rounded-md bg-brand-soft p-3 text-brand">{villa.data.useLabel}{villa.data.useKind === 'both_bedrooms' ? ' · Room 1 and Room 2 are included in one booking and bill.' : ''} · To change rooms before arrival, edit the villa booking.</p>}
       {availability.isError && <ErrorBanner message={(availability.error as Error).message} onRetry={() => availability.refetch()} />}
       {data.rooms.map((room, i) => {
         const info = draft.reservation.rooms.find((r) => r.reservationRoomId === room.reservationRoomId)!;
