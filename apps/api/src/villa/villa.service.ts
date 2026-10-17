@@ -43,6 +43,8 @@ export interface VillaRow {
   primary_guest_id: string;
   guest_name: string;
   mobile: string;
+  whatsapp_opted_in: boolean;
+  whatsapp_consent_at: Date | null;
   email: string | null;
   internal_notes: string | null;
 }
@@ -74,6 +76,8 @@ const mapped = (r: VillaRow) => ({
   guestId: r.primary_guest_id,
   guestName: r.guest_name,
   mobile: r.mobile,
+  whatsappOptedIn: r.whatsapp_opted_in,
+  whatsappConsentAt: r.whatsapp_consent_at?.toISOString() ?? null,
   email: r.email,
   notes: r.internal_notes,
   dayUse: villaDayUse(r.use_kind),
@@ -113,7 +117,7 @@ export class VillaService {
       ]);
     const { rows } = await q.query<VillaRow>(
       `SELECT v.*,(SELECT rr.room_id FROM reservation_rooms rr WHERE rr.reservation_id=v.id AND rr.status IN ('reserved','checked_in') ORDER BY rr.created_at LIMIT 1) AS room_id,r.number,r.status,r.version,r.primary_guest_id,r.internal_notes,
-      trim(g.first_name||' '||g.last_name) AS guest_name,g.mobile,g.email FROM villa_bookings v
+      trim(g.first_name||' '||g.last_name) AS guest_name,g.mobile,g.email,g.whatsapp_opted_in,g.whatsapp_consent_at FROM villa_bookings v
       JOIN reservations r ON r.id=v.id JOIN guests g ON g.id=r.primary_guest_id WHERE v.id=$1 AND v.property_id=$2`,
       [id, propertyId],
     );
@@ -124,7 +128,7 @@ export class VillaService {
     await this.assertVilla(this.db, propertyId);
     const { rows } = await this.db.query<VillaRow>(
       `SELECT v.*,(SELECT rr.room_id FROM reservation_rooms rr WHERE rr.reservation_id=v.id AND rr.status IN ('reserved','checked_in') ORDER BY rr.created_at LIMIT 1) AS room_id,r.number,r.status,r.version,r.primary_guest_id,r.internal_notes,
-      trim(g.first_name||' '||g.last_name) AS guest_name,g.mobile,g.email FROM villa_bookings v
+      trim(g.first_name||' '||g.last_name) AS guest_name,g.mobile,g.email,g.whatsapp_opted_in,g.whatsapp_consent_at FROM villa_bookings v
       JOIN reservations r ON r.id=v.id JOIN guests g ON g.id=r.primary_guest_id
       WHERE v.property_id=$1 AND ($2::date IS NULL OR (v.ends_at AT TIME ZONE 'Asia/Kolkata')::date >=$2)
       AND ($3::date IS NULL OR (v.starts_at AT TIME ZONE 'Asia/Kolkata')::date <=$3) ORDER BY v.starts_at DESC LIMIT 500`,
@@ -275,6 +279,16 @@ export class VillaService {
     }
     return { arrival, departure, mask, room };
   }
+  private async recordConsent(q: Queryable, actor: Actor, id: string, optedIn: boolean | undefined) {
+    if (optedIn === undefined) return; // Older callers and edits preserve the recorded preference.
+    const { rows } = await q.query<{ id: string }>(
+      `UPDATE guests g SET whatsapp_opted_in=$3,whatsapp_consent_at=now(),whatsapp_consent_by=$4
+       FROM reservations r WHERE r.id=$2 AND r.property_id=$1 AND g.id=r.primary_guest_id AND g.property_id=$1 RETURNING g.id`,
+      [actor.user.propertyId,id,optedIn,actor.user.id]);
+    if (!rows[0]) throw notFound('Guest');
+    await this.audit.record(q,actor,{action:'guest.whatsapp_consent_recorded',entityType:'guest',entityId:rows[0].id,
+      after:{optedIn,source:'booking',reservationId:id}});
+  }
   async create(q: Queryable, actor: Actor, input: VillaBookingInput) {
     const { arrival, departure, mask, room } = await this.validate(q, actor, input);
     let id: string;
@@ -364,6 +378,7 @@ export class VillaService {
         mask,
       ],
     );
+    await this.recordConsent(q,actor,id,input.whatsappOptedIn);
     await this.audit.record(q, actor, {
       action: 'villa.booking_created',
       entityType: 'reservation',
@@ -466,6 +481,7 @@ export class VillaService {
         mask,
       ],
     );
+    await this.recordConsent(q,actor,id,input.whatsappOptedIn);
     await this.audit.record(q, actor, {
       action: 'villa.booking_updated',
       entityType: 'reservation',

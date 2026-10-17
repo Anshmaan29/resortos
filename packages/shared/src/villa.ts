@@ -28,6 +28,7 @@ export const villaBookingSchema = z
     gstPercent: zNonNegativeMoney.refine((v) => Number(v) <= 100, 'GST must be between 0 and 100%'),
     guest: guestSchema.optional(),
     guestId: zId.optional(),
+    whatsappOptedIn: z.boolean().optional(),
     notes: z.string().trim().max(1000).optional(),
     mealPlan: z.enum(['EP', 'CP', 'MAP', 'AP']).default('EP'),
     version: z.number().int().min(1).optional(),

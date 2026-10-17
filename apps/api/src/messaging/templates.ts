@@ -106,12 +106,16 @@ const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', 
  * A plain, readable HTML version of a rendered body: paragraphs, and https links made clickable.
  * The body is escaped first, so nothing a guest typed into their own name can become markup.
  */
-export function emailHtml(body: string, resortName: string): string {
+export function emailHtml(body: string, resortName: string, logoUrl?: string): string {
   const paragraphs = escapeHtml(body)
     .split(/\n{2,}/)
     .map((p) => `<p style="margin:0 0 14px">${p.replace(/\n/g, '<br>').replace(/(https:\/\/[^\s<]+)/g, '<a href="$1">$1</a>')}</p>`)
     .join('');
   return `<!doctype html><html><body style="margin:0;padding:24px;background:#f6f7f9;font-family:-apple-system,Segoe UI,Roboto,'Noto Sans',sans-serif;color:#111827">`
-    + `<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:28px;font-size:15px;line-height:1.55">${paragraphs}</div>`
+    + `<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:28px;font-size:15px;line-height:1.55">`
+    + `<div style="border-bottom:1px solid #d9c794;padding-bottom:20px;margin-bottom:24px">`
+    + (logoUrl && /^https?:\/\//.test(logoUrl) ? `<img src="${escapeHtml(logoUrl)}" alt="Voitto Ventures logo" width="80" style="display:block;height:auto;margin-bottom:12px">` : '')
+    + `<div style="font-size:13px;letter-spacing:2px;color:#81651e">VOITTO VENTURES</div>`
+    + `<div style="font-size:21px;font-weight:600;margin-top:6px">${escapeHtml(resortName)}</div></div>${paragraphs}</div>`
     + `<p style="max-width:560px;margin:12px auto 0;font-size:12px;color:#6b7280;text-align:center">${escapeHtml(resortName)}</p></body></html>`;
 }

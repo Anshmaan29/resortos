@@ -34,6 +34,9 @@ const envSchema = z.object({
   WHATSAPP_PHONE_NUMBER_ID: z.string().regex(/^\d+$/).optional(),
   WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().regex(/^\d+$/).optional(),
   WHATSAPP_PROPERTY_ID: z.string().uuid().optional(),
+  /** Explicit allowlist for properties sharing this sender; the original single-property setting remains supported. */
+  WHATSAPP_PROPERTY_IDS: z.string().transform(v => v.split(',').map(id => id.trim()))
+    .pipe(z.array(z.string().uuid()).min(1)).optional(),
   WHATSAPP_APP_SECRET: z.string().min(16).optional(),
   WHATSAPP_VERIFY_TOKEN: z.string().min(32).optional(),
   WHATSAPP_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/).default('v25.0'),

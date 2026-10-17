@@ -11,7 +11,7 @@ import { DbService, type Queryable } from '../db/db.service';
 import { MessagingService, type QueueRequest } from './messaging.service';
 import type { OutgoingMessage } from './providers';
 import { NON_URGENT, TEMPLATE_LABELS, type TemplateKey } from './templates';
-import { defaultBindings, WHATSAPP_WORDING, whatsappBody, whatsappConfigured, whatsappNumber, whatsappParameters, whatsappWording, WhatsAppProvider, type TemplateBinding } from './whatsapp';
+import { defaultBindings, whatsappBody, whatsappAvailable, whatsappPropertyIds, whatsappNumber, whatsappParameters, whatsappWording, WhatsAppProvider, type TemplateBinding } from './whatsapp';
 
 interface Binding extends TemplateBinding { ready?: boolean; approval?: string; matching?: boolean }
 interface Settings { enabled: boolean; templates: Binding[]; checkedAt?: string }
@@ -25,7 +25,7 @@ export class WhatsAppService {
     private readonly outbox: OutboxService, @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
   private available(propertyId: string) {
-    return whatsappConfigured(this.config) && this.config.WHATSAPP_PROPERTY_ID === propertyId;
+    return whatsappAvailable(this.config, propertyId);
   }
   private async settings(q: Queryable, propertyId: string): Promise<Settings> {
     const { rows } = await q.query<{ value: Settings }>("SELECT value FROM settings WHERE property_id=$1 AND key='whatsapp'", [propertyId]);
@@ -37,10 +37,10 @@ export class WhatsAppService {
     return {
       ...settings, propertyId, version: rows[0]!.version, configured: this.available(propertyId), jobsEnabled: this.config.JOBS_ENABLED,
       webhookConfigured: Boolean(this.config.WHATSAPP_APP_SECRET && this.config.WHATSAPP_VERIFY_TOKEN),
-      phoneNumberId: this.config.WHATSAPP_PROPERTY_ID === propertyId ? this.config.WHATSAPP_PHONE_NUMBER_ID ?? null : null,
+      phoneNumberId: this.available(propertyId) ? this.config.WHATSAPP_PHONE_NUMBER_ID ?? null : null,
+      sharedSender: whatsappPropertyIds(this.config).length > 1,
       templates: settings.templates.map(t => ({ ...t, label: TEMPLATE_LABELS[t.key],
-        body: whatsappWording(t.key,t.language,t.name).body, variables: WHATSAPP_WORDING[t.key].variables,
-        documentHeader: WHATSAPP_WORDING[t.key].documentHeader })),
+        ...whatsappWording(t.key,t.language,t.name) })),
     };
   }
   async availability(propertyId: string) {
@@ -117,6 +117,7 @@ export class WhatsAppService {
     const binding = settings.templates.find(t => t.key === req.templateKey && t.language === ctx.language)
       ?? settings.templates.find(t => t.key === req.templateKey && t.language === 'en');
     const parameters = whatsappParameters(req.templateKey, { ...this.messaging.propertyVars(property), ...ctx.vars }, binding?.name, binding?.language ?? 'en');
+    const wording = whatsappWording(req.templateKey, binding?.language ?? 'en', binding?.name);
     const recipient = whatsappNumber(ctx.mobile ?? '') ?? '';
     const skip = req.skipReason ?? (!ctx.whatsappOptedIn ? 'The guest has not agreed to WhatsApp messages.'
       : !recipient ? 'The guest has no valid WhatsApp phone number on file.'
@@ -128,7 +129,7 @@ export class WhatsAppService {
     const payload: OutgoingMessage = {
       id, channel: 'whatsapp', to: recipient, from: null, replyTo: null, subject: null,
       text: whatsappBody(req.templateKey, parameters, binding?.language ?? 'en', binding?.name), html: null, attachments: [], tags: [],
-      ...(binding ? { whatsapp: { name: binding.name, languageCode: binding.languageCode, parameters, documentHeader: WHATSAPP_WORDING[req.templateKey].documentHeader } } : {}),
+      ...(binding ? { whatsapp: { name: binding.name, languageCode: binding.languageCode, parameters, documentHeader: wording.documentHeader, imageHeader: wording.imageHeader } } : {}),
     };
     const { rows } = await q.query<{ id: string }>(
       "INSERT INTO messages(id,property_id,template_key,channel,language,recipient,guest_id,reservation_id,stay_id,invoice_id,payment_id,trigger,source_key,body,status,skip_reason,send_after,created_by,resend_of,outgoing_payload) VALUES($1,$2,$3,'whatsapp',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,CASE WHEN $16 THEN quiet_hours_release($2) ELSE now() END,$17,$18,$19::jsonb) ON CONFLICT ON CONSTRAINT messages_once_per_cause DO NOTHING RETURNING id",
@@ -163,7 +164,7 @@ export class WhatsAppService {
   }
   async queueCheckoutReminders() {
     const { rows } = await this.db.query<{ property_id: string; stay_id: string; skip: boolean }>(
-      "SELECT p.id AS property_id,s.id AS stay_id,(p.reminder_skip_same_day AND s.expected_departure-(s.checked_in_at AT TIME ZONE p.timezone)::date=1 AND (s.checked_in_at AT TIME ZONE p.timezone)::time >= '12:00') AS skip FROM properties p JOIN stays s ON s.property_id=p.id AND s.status='in_house' WHERE p.id=$1 AND (now() AT TIME ZONE p.timezone)::time>=p.checkout_reminder_time AND s.expected_departure=(now() AT TIME ZONE p.timezone)::date+1 AND NOT EXISTS(SELECT 1 FROM messages m WHERE m.property_id=p.id AND m.channel='whatsapp' AND m.source_key='stay:' || s.id || ':checkout_reminder')", [this.config.WHATSAPP_PROPERTY_ID ?? null]);
+      "SELECT p.id AS property_id,s.id AS stay_id,(p.reminder_skip_same_day AND s.expected_departure-(s.checked_in_at AT TIME ZONE p.timezone)::date=1 AND (s.checked_in_at AT TIME ZONE p.timezone)::time >= '12:00') AS skip FROM properties p JOIN stays s ON s.property_id=p.id AND s.status='in_house' WHERE p.id=ANY($1::uuid[]) AND (now() AT TIME ZONE p.timezone)::time>=p.checkout_reminder_time AND s.expected_departure=(now() AT TIME ZONE p.timezone)::date+1 AND NOT EXISTS(SELECT 1 FROM messages m WHERE m.property_id=p.id AND m.channel='whatsapp' AND m.source_key='stay:' || s.id || ':checkout_reminder')", [whatsappPropertyIds(this.config)]);
     for (const r of rows) await this.db.tx({}, q => this.queue(q, { propertyId: r.property_id, templateKey: 'checkout_reminder', trigger: 'schedule', sourceKey: 'stay:' + r.stay_id + ':checkout_reminder', stayId: r.stay_id, ...(r.skip ? { skipReason: 'One-night stay checked in this afternoon.' } : {}) }));
   }
 }

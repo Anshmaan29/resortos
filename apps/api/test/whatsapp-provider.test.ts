@@ -2,7 +2,9 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import type { AppConfig } from '../src/config';
 import { ProviderError, type OutgoingMessage } from '../src/messaging/providers';
-import { defaultBindings, verifyMetaSignature, verifyMetaToken, WHATSAPP_WORDING, whatsappNumber, whatsappParameters, whatsappBody, whatsappWording, WhatsAppProvider } from '../src/messaging/whatsapp';
+import { defaultBindings, verifyMetaSignature, verifyMetaToken, WHATSAPP_WORDING, whatsappNumber, whatsappParameters, whatsappBody, whatsappWording, WhatsAppProvider, whatsappAvailable, whatsappPropertyIds } from '../src/messaging/whatsapp';
+import { emailHtml } from '../src/messaging/templates';
+import { loadConfig } from '../src/config';
 const config = {
   WHATSAPP_ACCESS_TOKEN: randomBytes(24).toString('hex'), WHATSAPP_PHONE_NUMBER_ID: '123',
   WHATSAPP_BUSINESS_ACCOUNT_ID: '456', WHATSAPP_GRAPH_VERSION: 'v25.0',
@@ -13,6 +15,28 @@ const message = (): OutgoingMessage => ({
   whatsapp: { name: 'resortos_booking_confirmation_en', languageCode: 'en', parameters: ['Guest'], documentHeader: false },
 });
 describe('Meta provider', () => {
+  it('uploads only the bundled logo for image templates, never caller attachments', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({id:'logo_1'}))
+      .mockResolvedValueOnce(Response.json({messages:[{id:'wamid.logo'}]}));
+    const m=message();m.whatsapp!.imageHeader=true;
+    await new WhatsAppProvider(config,fetcher).send(m);
+    const upload=fetcher.mock.calls[0]![1]?.body as FormData;
+    expect(upload.get('type')).toBe('image/png');
+    expect((upload.get('file') as File).name).toBe('voitto-ventures.png');
+    expect(JSON.parse(String(fetcher.mock.calls[1]![1]?.body)).template.components[0])
+      .toEqual({type:'header',parameters:[{type:'image',image:{id:'logo_1'}}]});
+    m.attachments=[{filename:'guest.png',content:Buffer.from('private'),contentType:'image/png'}];
+    fetcher.mockClear();
+    await expect(new WhatsAppProvider(config,fetcher).send(m)).rejects.toMatchObject({retryable:false});
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('requires an image header for branded templates and preserves legacy text-only approval', async()=>{
+    const b={...defaultBindings()[0]!,name:'resortos_booking_confirmation_en_brand_v1'};
+    const fetcher=vi.fn<typeof fetch>().mockResolvedValue(Response.json({data:[{name:b.name,language:'en',status:'APPROVED',components:[{type:'BODY',text:whatsappWording(b.key,'en',b.name).body}]}]}));
+    expect((await new WhatsAppProvider(config,fetcher).approval([b]))[0]?.ready).toBe(false);
+    fetcher.mockResolvedValue(Response.json({data:[{name:b.name,language:'en',status:'APPROVED',components:[{type:'HEADER',format:'IMAGE'},{type:'BODY',text:whatsappWording(b.key,'en',b.name).body}]}]}));
+    expect((await new WhatsAppProvider(config,fetcher).approval([b]))[0]?.ready).toBe(true);
+  });
   it('sends the approved template, ordered parameters and opaque identifier, without an invented deduplication header', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ messages: [{ id: 'wamid.test' }] }));
     expect(await new WhatsAppProvider(config, fetcher).send(message())).toEqual({ providerMessageId: 'wamid.test' });
@@ -81,6 +105,28 @@ describe('Meta provider', () => {
   });
 });
 describe('WhatsApp privacy and verification', () => {
+  it('restricts the shared sender to the explicit allowlist while supporting the original setting',()=>{
+    const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222';
+    const base={DATABASE_URL:'postgres://localhost/test',S3_BUCKET:'test',WHATSAPP_ACCESS_TOKEN:'x'.repeat(30),WHATSAPP_APP_SECRET:'y'.repeat(20),WHATSAPP_VERIFY_TOKEN:'z'.repeat(32),WHATSAPP_PHONE_NUMBER_ID:'123',WHATSAPP_BUSINESS_ACCOUNT_ID:'456',WHATSAPP_PROPERTY_ID:a};
+    const c=loadConfig({...base,WHATSAPP_PROPERTY_IDS:a+', '+b});
+    expect(whatsappAvailable(c,a)).toBe(true);expect(whatsappAvailable(c,b)).toBe(true);
+    expect(whatsappAvailable(c,'33333333-3333-4333-8333-333333333333')).toBe(false);
+    expect(whatsappPropertyIds(loadConfig(base))).toEqual([a]);
+    expect(()=>loadConfig({...base,WHATSAPP_PROPERTY_IDS:a+',invalid'})).toThrow('WHATSAPP_PROPERTY_IDS');
+  });
+  it('renders Villa activity times and branding without claiming a hotel room or overnight stay',()=>{
+    const name='resortos_villa_booking_confirmation_en_v1';
+    const params=whatsappParameters('booking_confirmation',{guest_name:'Sample',resort_name:'Villa Sol by Voitto',booking_use:'Swimming pool',booking_start:'20 Oct 2026, 10:00 am',booking_end:'20 Oct 2026, 12:00 pm',reception_phone:'+919352204825'},name);
+    const body=whatsappBody('booking_confirmation',params,'en',name);
+    expect(body).toContain('*Booked for:* Swimming pool');expect(body).toContain('*Departure:* 20 Oct 2026, 12:00 pm');
+    expect(body).toContain('Voitto Ventures');expect(body).not.toContain('room number');expect(body).not.toContain('Laxmi');
+  });
+  it('brands email with both identities while escaping guest input and unsafe logo URLs',()=>{
+    const html=emailHtml('Hello <script>','Villa Sol & Voitto','https://example.com/logo.png');
+    expect(html).toContain('VOITTO VENTURES');expect(html).toContain('Villa Sol &amp; Voitto');
+    expect(html).toContain('src="https://example.com/logo.png"');expect(html).not.toContain('<script>');
+    expect(emailHtml('Hello','Hotel','javascript:bad')).not.toContain('<img');
+  });
   it.each([
     ['9829204128', '919829204128'], ['+91 98292 04128', '919829204128'],
     ['0091 98292 04128', '919829204128'], ['+44 7700 900123', '447700900123'],

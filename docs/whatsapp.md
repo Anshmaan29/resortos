@@ -86,3 +86,34 @@ English templates use bold headings and one labelled line per booking, room, dat
 The formatted templates have names ending in `_en_v2`. Existing `_en` templates remain
 compatible during review. Switch each binding only after its replacement is approved and
 matching; already-queued messages retain the template and wording captured when queued.
+
+## Shared Voitto Ventures sender
+
+`WHATSAPP_PROPERTY_IDS` is a comma-separated UUID allowlist for properties sharing the configured
+Meta phone/WABA. When present, it replaces `WHATSAPP_PROPERTY_ID`; older single-property installs
+continue to work. Keep only the intended hotel and Villa in it. Per-property settings, template
+bindings, guest agreement, staff permissions, history and reception contacts remain independent.
+The worker checks the allowlist again at send time. Verified delivery callbacks identify the
+stored message inside that allowlist, including callbacks received before the send HTTP response.
+Incoming chat content is still discarded: ResortOS does not provide a chat inbox or route replies.
+
+New approved bindings can use `resortos_booking_confirmation_en_brand_v1` and
+`resortos_check_in_welcome_en_brand_v1` for logo headers. Villa Sol uses
+`resortos_villa_{booking_confirmation,check_in_welcome,checkout_reminder,invoice}_en_v1`;
+receipts reuse `resortos_receipt_en_v2`. Villa templates contain the booking use, exact visit/stay
+times and Villa reception contact rather than assuming every booking is an overnight hotel room.
+Only booking/welcome templates have IMAGE headers; invoices and receipts retain DOCUMENT headers.
+The provider uploads only the bundled company logo, never guest photos or documents for branding.
+Check exact Meta approval and header/body layout before activating a binding. Existing queued
+messages retain their original bindings and payload; do not rewrite or resend old history.
+
+Villa booking Save records reception's agreement attestation atomically, with an optional declined
+preference. Existing recorded declines and older API callers remain supported. No new send button
+is needed. The common WhatsApp profile has one display name/logo/chat for both properties; each
+message identifies its property. A display-name change can be blocked while Meta reviews the
+current name. Profile updates and template approval are separate from display-name approval.
+
+Email includes the common logo plus the selected property's name. Set PUBLIC_WEB_URL to the
+public HTTPS site so email images resolve externally. The logo is public branding only.
+Invoice/credit/debit PDFs display the property name above the immutable legal seller details;
+this does not change booking, charge, tax, payment or issued-invoice rows.

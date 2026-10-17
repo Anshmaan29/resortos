@@ -40,6 +40,9 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
   const [guestId, setGuestId] = useState(initial?.guestId ?? '');
   const [notes, setNotes] = useState(initial?.notes ?? '');
   const [error, setError] = useState('');
+  const [whatsappOverride, setWhatsappOverride] = useState<boolean | null>(null);
+  const [guestDeclined, setGuestDeclined] = useState(Boolean(initial?.whatsappOptedIn === false && initial.whatsappConsentAt));
+  const whatsappOptedIn = whatsappOverride ?? !guestDeclined;
   const day = villaDayUse(kind);
   const iso = (value: string) => (value ? value + ':00+05:30' : '');
   const validDates = !!start && !!end && Date.parse(iso(end)) > Date.parse(iso(start));
@@ -65,7 +68,7 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
     queryKey: ['villa-guest-search', mobile],
     queryFn: () =>
       api<
-        { id: string; firstName: string; lastName: string; mobile: string; email: string | null }[]
+        { id: string; firstName: string; lastName: string; mobile: string; email: string | null; whatsappOptedIn?: boolean; whatsappConsentAt?: string | null }[]
       >('/guests', { query: { q: mobile } }),
     enabled: mobile.replace(/\D/g, '').length >= 4 && !guestId,
   });
@@ -83,6 +86,7 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
         notes,
         mealPlan: meal,
         version: initial?.version,
+        ...(!initial || whatsappOverride !== null ? {whatsappOptedIn} : {}),
       });
       if (!input.success) throw new Error(input.error.issues.map((i) => i.message).join(' · '));
       return api<{ id: string }>(initial ? `/villa/bookings/${initial.id}` : '/villa/bookings', {
@@ -314,6 +318,8 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
                       setName(`${g.firstName} ${g.lastName}`.trim());
                       setMobile(g.mobile);
                       setEmail(g.email ?? '');
+                      setGuestDeclined(Boolean(g.whatsappOptedIn === false && g.whatsappConsentAt));
+                      setWhatsappOverride(null);
                     }}
                   >
                     {g.firstName} {g.lastName} · {g.mobile}
@@ -339,6 +345,18 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
             </Field>
           </div>
         </Card>
+        <div className="rounded-lg border border-border p-4 text-sm">
+          <p className="font-medium">Guest messages send automatically</p>
+          <p className="mt-1 text-text-2">Email goes to the guest’s email address. {whatsappOptedIn ? 'WhatsApp goes to their mobile number.' : 'WhatsApp is off for this guest.'}</p>
+          {whatsappOptedIn && <p className="mt-2 text-text-2">By saving, you confirm the guest agreed to receive booking, visit and payment messages from Villa Sol on WhatsApp.</p>}
+          <details className="mt-2">
+            <summary className="cursor-pointer text-brand">Change WhatsApp preference</summary>
+            <Field label="WhatsApp messages">{id => <Select id={id} value={whatsappOptedIn ? 'agreed' : 'declined'} onChange={e => setWhatsappOverride(e.target.value === 'agreed')}>
+              <option value="agreed">Guest agreed — send automatically</option>
+              <option value="declined">Guest declined — email only</option>
+            </Select>}</Field>
+          </details>
+        </div>
         <div className="flex justify-end gap-3">
           <Button type="button" variant="ghost" onClick={() => router.push('/villa/bookings')}>
             Cancel

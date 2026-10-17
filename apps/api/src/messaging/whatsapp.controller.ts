@@ -9,7 +9,7 @@ import { parse } from '../common/zod';
 import { APP_CONFIG, type AppConfig } from '../config';
 import { MessagingService } from './messaging.service';
 import { WhatsAppService } from './whatsapp.service';
-import { verifyMetaSignature, verifyMetaToken } from './whatsapp';
+import { verifyMetaSignature, verifyMetaToken, whatsappPropertyIds } from './whatsapp';
 
 const targetSchema = z.object({ reservationId: zId.optional(), stayId: zId.optional() })
   .refine(v => Boolean(v.reservationId || v.stayId), 'Choose a booking or a stay');
@@ -83,7 +83,7 @@ export class WhatsAppController {
           if (!Number.isFinite(occurredAt.getTime())) continue;
           const report = await this.messaging.recordDelivery('meta_whatsapp', {
             providerMessageId: status.id, type: 'whatsapp.' + status.status, occurredAt,
-            messageId: status.biz_opaque_callback_data, propertyId: this.config.WHATSAPP_PROPERTY_ID,
+            messageId: status.biz_opaque_callback_data, propertyIds: whatsappPropertyIds(this.config),
             detail: status.errors?.length ? 'Meta error code ' + status.errors.map(e => e.code).join(', ') : undefined,
           });
           if (report.matched) matched += 1;

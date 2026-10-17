@@ -16,7 +16,7 @@ export interface OutgoingMessage {
   attachments: { filename: string; content: Buffer; contentType: string }[];
   /** For the provider's own dashboard; never personal data. */
   /** Meta-approved template and ordered, whitelisted values; captured before delivery. */
-  whatsapp?: { name: string; languageCode: string; parameters: string[]; documentHeader: boolean };
+  whatsapp?: { name: string; languageCode: string; parameters: string[]; documentHeader: boolean; imageHeader?: boolean };
   tags: { name: string; value: string }[];
 }
 

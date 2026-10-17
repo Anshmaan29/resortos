@@ -8,7 +8,9 @@ import { MessagingService } from '../src/messaging/messaging.service';
 import { GuestMessagesHandler } from '../src/messaging/guest-messages.handler';
 import type { OutboxEvent } from '../src/jobs/outbox-handlers';
 import { WhatsAppService } from '../src/messaging/whatsapp.service';
-import { WhatsAppProvider, defaultBindings } from '../src/messaging/whatsapp';
+import { WhatsAppProvider, defaultBindings, whatsappWording } from '../src/messaging/whatsapp';
+import { DbService } from '../src/db/db.service';
+import { addVilla } from '../scripts/add-villa-lib';
 import { bootAppOnOwnDatabase, booking, fixtures, login, post, type Agent } from './helpers';
 import { TEST_BUSINESS_DATE } from './global-setup';
 
@@ -182,5 +184,53 @@ describe('Meta callbacks',()=>{
     const body={object:'whatsapp_business_account',entry:[{id:'456',changes:[{field:'messages',value:{metadata:{phone_number_id:'123'},messages:[{text:{body:'private ID data'}}],contacts:[{profile:{name:'Private'}}]}}]}]};
     expect((await callback(body)).status).toBe(200);
     expect((await sql<{n:string}>("SELECT count(*) AS n FROM messages WHERE body LIKE '%private ID data%'"))[0]!.n).toBe('0');
+  });
+});
+
+describe('shared property sender',()=>{
+  let villaId:string,villaBooking:string;
+  it('automatically sends Villa pool confirmation with its own contact and timed visit details',async()=>{
+    const [u]=await sql<{id:string}>("SELECT id FROM users WHERE property_id=$1 AND role='owner'",[propertyId]);
+    villaId=(await app.get(DbService).tx({userId:u!.id},q=>addVilla(q,propertyId,u!.id,'324001'))).propertyId;
+    app.get<AppConfig>(APP_CONFIG).WHATSAPP_PROPERTY_IDS=[propertyId,villaId];
+    await sql("INSERT INTO settings(property_id,key,value) VALUES($1,'whatsapp',$2::jsonb)",[villaId,JSON.stringify({enabled:true,templates:defaultBindings().map(t=>({...t,name:t.key==='receipt'?t.name:'resortos_villa_'+t.key+'_en_v1',ready:true,approval:'APPROVED',matching:true}))})]);
+    const b=await post(owner,'/villa/bookings',{useKind:'pool',startsAt:'2027-03-01T10:00:00+05:30',endsAt:'2027-03-01T12:00:00+05:30',guestCount:4,price:'1250',gstPercent:'18',guest:{firstName:'Villa Guest',mobile:'9899910020',email:'villa@example.com'},whatsappOptedIn:true})
+      .set('x-resortos-property',villaId).expect(201);
+    villaBooking=b.body.id;await bookingEvent(villaBooking);await bookingEvent(villaBooking);
+    const [m]=await sql<{id:string;body:string;outgoing_payload:any}>("SELECT id,body,outgoing_payload FROM messages WHERE reservation_id=$1 AND channel='whatsapp'",[villaBooking]);
+    expect(m!.body).toContain('Villa Sol by Voitto');expect(m!.body).toContain('+919352204825');
+    expect(m!.body).toContain('Swimming pool');expect(m!.body).toContain('10:00');expect(m!.body).toContain('12:00');
+    expect(m!.body).not.toContain('Laxmi');expect(m!.outgoing_payload.whatsapp.imageHeader).toBe(true);
+    fetcher.mockResolvedValueOnce(Response.json({id:'villa_logo'})).mockImplementationOnce(async()=>{
+      expect((await callback(reports('wamid.villa.early','read',m!.id))).body.matched).toBe(1);
+      return Response.json({messages:[{id:'wamid.villa.early'}]});
+    });
+    await messaging.sendDue(100);
+    expect((await sql<{status:string}>('SELECT status FROM messages WHERE id=$1',[m!.id]))[0]!.status).toBe('opened');
+    expect((await callback(reports('wamid.villa.early','delivered',m!.id))).body.matched).toBe(1);
+    const get=await owner.get('/api/v1/whatsapp-settings').set('x-resortos-property',villaId).expect(200);
+    expect(get.body).toMatchObject({configured:true,sharedSender:true});
+    expect(get.body.templates[0]).toMatchObject({imageHeader:true,variables:whatsappWording('booking_confirmation','en','resortos_villa_booking_confirmation_en_v1').variables});
+  });
+  it('keeps receptionist access and message histories separated despite the shared number',async()=>{
+    await desk.get('/api/v1/whatsapp-settings').set('x-resortos-property',villaId).expect(403);
+    await post(desk,'/messages/send',{channel:'whatsapp',templateKey:'booking_confirmation',reservationId:villaBooking}).expect(404);
+    const rows=await owner.get('/api/v1/messages').expect(200);
+    expect(rows.body.every((m:any)=>m.reservationId!==villaBooking)).toBe(true);
+  });
+  it('does not route callbacks or early delivery to an unlisted property',async()=>{
+    app.get<AppConfig>(APP_CONFIG).WHATSAPP_PROPERTY_IDS=[propertyId];
+    expect((await callback(reports('wamid.villa.early','failed'))).body.matched).toBe(0);
+    app.get<AppConfig>(APP_CONFIG).WHATSAPP_PROPERTY_IDS=[propertyId,villaId];
+  });
+  it('checks the shared-property allowlist again before sending and leaves hotel sending enabled',async()=>{
+    const queued=await post(owner,'/messages/send',{channel:'whatsapp',templateKey:'booking_confirmation',reservationId:villaBooking}).set('x-resortos-property',villaId).expect(200);
+    app.get<AppConfig>(APP_CONFIG).WHATSAPP_PROPERTY_IDS=[propertyId];fetcher.mockClear();
+    await messaging.sendDue(100);expect(fetcher).not.toHaveBeenCalled();
+    expect((await sql<{status:string}>('SELECT status FROM messages WHERE id=$1',[queued.body.id]))[0]!.status).toBe('skipped');
+    const hotel=await book({whatsappOptedIn:true});await bookingEvent(hotel);
+    fetcher.mockResolvedValueOnce(Response.json({messages:[{id:'wamid.hotel.still.works'}]}));await messaging.sendDue(100);
+    expect((await sql<{status:string}>("SELECT status FROM messages WHERE reservation_id=$1 AND channel='whatsapp'",[hotel]))[0]!.status).toBe('sent');
+    app.get<AppConfig>(APP_CONFIG).WHATSAPP_PROPERTY_IDS=[propertyId,villaId];
   });
 });

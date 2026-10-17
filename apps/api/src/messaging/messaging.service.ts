@@ -9,7 +9,7 @@ import { APP_CONFIG, type AppConfig } from '../config';
 import { OutboxService } from '../common/outbox.service';
 import { IdempotencyService } from '../common/idempotency.service';
 import { PrintingService } from '../printing/printing.service';
-import { whatsappConfigured, whatsappNumber } from './whatsapp';
+import { whatsappAvailable, whatsappNumber } from './whatsapp';
 import { MESSAGE_PROVIDERS, ProviderError, type MessageProvider, type OutgoingMessage } from './providers';
 import {
   DEFAULT_TEMPLATES, emailHtml, NON_URGENT, renderTemplate, TEMPLATE_KEYS, TEMPLATE_LABELS, TEMPLATE_VARIABLES, unknownVariables,
@@ -382,7 +382,7 @@ export class MessagingService {
                     g.whatsapp_opted_in AS opted_in, g.mobile FROM guests g WHERE g.property_id=$1 AND g.id=$2`, [m.property_id,m.guest_id]);
           const a=allowed[0];
           const binding=a?.templates.find(t=>t.key===m.template_key && t.language===m.language && t.name===m.outgoing_payload?.whatsapp?.name && t.languageCode===m.outgoing_payload?.whatsapp?.languageCode);
-          const reason = !whatsappConfigured(this.config) || this.config.WHATSAPP_PROPERTY_ID !== m.property_id ? 'WhatsApp server credentials are incomplete.'
+          const reason = !whatsappAvailable(this.config, m.property_id) ? 'WhatsApp server credentials are incomplete.'
             : !a?.enabled ? 'WhatsApp is switched off in settings.'
             : !binding?.active || !binding.ready ? 'This WhatsApp template is switched off, changed or no longer approved.'
             : !a.opted_in ? 'The guest has not agreed to WhatsApp messages.'
@@ -397,7 +397,8 @@ export class MessagingService {
         const payload: StoredOutgoing = m.outgoing_payload ?? {
           id: m.id, channel: m.channel, to: m.recipient,
           from: s.email_from_address ? { name: s.email_from_name ?? s.name, address: s.email_from_address } : null,
-          replyTo: s.email_reply_to, subject: m.subject, text: m.body, html: emailHtml(m.body, s.name),
+          replyTo: s.email_reply_to, subject: m.subject, text: m.body,
+          html: emailHtml(m.body, s.name, new URL('/brand/voitto-logo.png', this.config.PUBLIC_WEB_URL ?? this.config.WEB_ORIGIN).toString()),
           attachments: (await this.attachments(m)).map((a) => ({ ...a, content: a.content.toString('base64') })),
           tags: [{ name: 'template', value: m.template_key }],
         };
@@ -455,7 +456,7 @@ export class MessagingService {
    * A delivery report from the provider. Every report is kept in `message_events`; the message's
    * status only ever moves forward (sent → delivered → opened), and a bounce or complaint is final.
    */
-  async recordDelivery(provider: string, report: { providerMessageId: string; type: string; occurredAt: Date; detail?: string; messageId?: string; propertyId?: string }) {
+  async recordDelivery(provider: string, report: { providerMessageId: string; type: string; occurredAt: Date; detail?: string; messageId?: string; propertyId?: string; propertyIds?: string[] }) {
     const status = ({
       'email.sent': 'sent', 'email.delivered': 'delivered', 'email.opened': 'opened', 'email.clicked': 'opened',
       'whatsapp.sent': 'sent', 'whatsapp.delivered': 'delivered', 'whatsapp.read': 'opened', 'whatsapp.failed': 'failed',
@@ -463,9 +464,10 @@ export class MessagingService {
     } as Record<string, string | null>)[report.type];
     return this.db.tx({}, async (q) => {
       const { rows } = await q.query<{ id: string; status: string }>(
-         `SELECT id,status FROM messages WHERE provider=$1 AND
-          (provider_message_id=$2 OR ($1='meta_whatsapp' AND provider_message_id IS NULL AND id=$3::uuid AND property_id=$4::uuid AND channel='whatsapp'))
-          FOR UPDATE`, [provider,report.providerMessageId,report.messageId ?? null,report.propertyId ?? null],
+         `SELECT id,status FROM messages WHERE provider=$1
+          AND ($1<>'meta_whatsapp' OR (channel='whatsapp' AND property_id=ANY($4::uuid[]))) AND
+          (provider_message_id=$2 OR ($1='meta_whatsapp' AND provider_message_id IS NULL AND id=$3::uuid))
+          FOR UPDATE`, [provider,report.providerMessageId,report.messageId ?? null,report.propertyIds ?? (report.propertyId ? [report.propertyId] : [])],
       );
       const m = rows[0];
       if (!m) return { matched: false };
