@@ -1,6 +1,6 @@
 'use client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ArrowRight, BedDouble, Car, Crown, DoorOpen, Eye, LogOut, Phone } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BedDouble, CalendarPlus, Car, Crown, DoorOpen, Eye, LogOut, Phone } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -8,6 +8,7 @@ import { formatDate, formatDateTime, formatINR, formatMobile, ID_TYPE_LABELS, ME
 import { MessagesPanel } from '@/components/messages-panel';
 import { BillPanel } from '@/components/stay/bill-panel';
 import { CheckoutDialog } from '@/components/stay/checkout-dialog';
+import { ExtendStayDialog } from '@/components/stay/extend-stay-dialog';
 import { RegistrationCard } from '@/components/stay/registration-card';
 import { RoomShiftDialog } from '@/components/stay/room-shift-dialog';
 import { Button } from '@/components/ui/button';
@@ -23,9 +24,12 @@ export default function StayPage() {
   const toast = useToast();
   const [shiftOpen, setShiftOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [extendOpen, setExtendOpen] = useState(false);
   const searchParams = useSearchParams();
   const checkoutRequested = searchParams.get('checkout') === '1';
   const openedCheckout = useRef<string | null>(null);
+  const openedExtend = useRef<string | null>(null);
+  const extendRequested = searchParams.get('extend') === '1';
 
   const stay = useQuery({ queryKey: ['stay', id], queryFn: () => api<StayDetail>(`/stays/${id}`) });
   useEffect(() => {
@@ -34,9 +38,14 @@ export default function StayPage() {
       setCheckoutOpen(true);
     }
   }, [checkoutRequested, stay.data?.status, id]);
+  useEffect(() => {
+    if (extendRequested && stay.data?.status === 'in_house' && openedExtend.current !== id) {
+      openedExtend.current = id; setExtendOpen(true);
+    }
+  }, [extendRequested, stay.data?.status, id]);
 
   const refreshAll = () => Promise.all(
-    ['stay', 'stays', 'reservation', 'reservations', 'front-desk', 'rooms', 'availability', 'calendar', 'checkout-preview']
+    ['stay', 'stays', 'reservation', 'reservations', 'front-desk', 'rooms', 'availability', 'calendar', 'checkout-preview', 'bill', 'night-audit', 'villa-bookings', 'villa-booking', 'villa-availability', 'villa-calendar', 'villa-active', 'accounts', 'shift']
       .map((k) => qc.invalidateQueries({ queryKey: [k] })),
   );
 
@@ -70,6 +79,7 @@ export default function StayPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {inHouse && <Button variant="outline" onClick={() => setExtendOpen(true)}><CalendarPlus className="h-4 w-4" />Extend stay</Button>}
             {inHouse && (
               <Button variant="outline" disabled={!s.canShiftRoom} onClick={() => setShiftOpen(true)}
                 title={s.canShiftRoom ? undefined : 'The guest is due to check out, so the room cannot be changed'}>
@@ -180,6 +190,8 @@ export default function StayPage() {
 
       {inHouse && (
         <>
+          {extendOpen && <ExtendStayDialog stay={s} onClose={() => setExtendOpen(false)}
+            onDone={async message => { setExtendOpen(false); await refreshAll(); toast('success', message); }} />}
           <RoomShiftDialog stay={s} open={shiftOpen} onClose={() => setShiftOpen(false)}
             onDone={async (message) => { setShiftOpen(false); await refreshAll(); toast('success', message); }} />
           <CheckoutDialog stay={s} open={checkoutOpen} onClose={() => setCheckoutOpen(false)}

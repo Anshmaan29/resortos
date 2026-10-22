@@ -1,6 +1,8 @@
 import { assertRoomCapacity, assertRoomReady, lockRoomInventory } from '../reservations/room-inventory';
 import { Inject, Injectable } from '@nestjs/common';
-import { ERROR_CODES, formatDate, formatINR, type ExtendStayInput, type RoomShiftInput, type StayListQuery } from '@resortos/shared';
+import { ERROR_CODES, formatDate, formatINR, money, nightsBetween, toMoneyString, type ExtendStayInput, type RoomShiftInput, type StayListQuery } from '@resortos/shared';
+import { PaymentsService } from '../folios/payments.service';
+import { FolioService } from '../folios/folio.service';
 import { OwnerAuthorisationService } from '../auth/owner-authorisation.service';
 import { AuditService } from '../common/audit.service';
 import { AppError, notFound } from '../common/errors';
@@ -23,6 +25,8 @@ export class StaysService {
     private readonly property: PropertyService,
     private readonly rates: RatesService,
     private readonly ownerAuth: OwnerAuthorisationService,
+    private readonly payments: PaymentsService,
+    private readonly folios: FolioService,
     @Inject(CHECKOUT_STEPS) private readonly checkoutSteps: CheckoutStep[],
   ) {}
 
@@ -253,7 +257,10 @@ export class StaysService {
   async extend(q: Queryable, actor: Actor, stayId: string, input: ExtendStayInput) {
     const stay = await this.lockStay(q, actor, stayId);
     if (stay.status !== 'in_house') throw new AppError(ERROR_CODES.INVALID_TRANSITION, 'Only a guest who is in house can have their stay extended.');
-    await q.query(`UPDATE villa_bookings SET ends_at=($3::date + (ends_at AT TIME ZONE 'Asia/Kolkata')::time) AT TIME ZONE 'Asia/Kolkata' WHERE id=$1 AND property_id=$2`,[stay.reservation_id,actor.user.propertyId,input.newDeparture]);
+    if (input.expectedDeparture && input.expectedDeparture !== stay.expected_departure) {
+      throw new AppError(ERROR_CODES.STALE_VERSION, 'This stay was extended on another screen. Reload before changing it again.');
+    }
+    const { rows: villa } = await q.query<{ resource_mask: number }>(`UPDATE villa_bookings SET ends_at=($3::date + (ends_at AT TIME ZONE 'Asia/Kolkata')::time) AT TIME ZONE 'Asia/Kolkata' WHERE id=$1 AND property_id=$2 RETURNING resource_mask`,[stay.reservation_id,actor.user.propertyId,input.newDeparture]);
     if (input.newDeparture <= stay.expected_departure) {
       throw new AppError(
         ERROR_CODES.VALIDATION,
@@ -262,24 +269,51 @@ export class StaysService {
       );
     }
     const bd = await this.property.today(q, actor.user.propertyId);
+    if (input.newDeparture <= bd) throw new AppError(ERROR_CODES.VALIDATION, 'Choose a new checkout date after today.');
 
     const { rows: rrRows } = await q.query<ReservationRoomRow>(`SELECT * FROM reservation_rooms WHERE id = $1 FOR UPDATE`, [stay.reservation_room_id]);
     const rr = rrRows[0]!;
 
     await lockRoomInventory(q,actor.user.propertyId);
     await assertRoomCapacity(q,actor.user.propertyId,stay.expected_departure,input.newDeparture,1,rr.id);
+    const { rows: blocked } = await q.query<{ number: string }>(
+      `SELECT r.number FROM rooms r WHERE r.property_id=$1
+         AND (r.id=$2 OR ($5::boolean AND r.number IN ('1','2')))
+         AND (NOT r.is_active OR r.service_status<>'in_service' OR EXISTS (
+           SELECT 1 FROM room_out_of_order o WHERE o.room_id=r.id AND o.status='active'
+             AND daterange(o.start_date,o.end_date,'[)') && daterange($3::date,$4::date,'[)')))`,
+      [actor.user.propertyId, stay.room_id, stay.expected_departure, input.newDeparture, villa[0]?.resource_mask === 3],
+    );
+    if (blocked.length) throw new AppError(ERROR_CODES.ROOM_UNAVAILABLE,
+      `Room ${blocked.map(r => r.number).join(', ')} is unavailable or scheduled for maintenance during the extra nights. Change rooms or choose another date.`);
 
     // Price only the nights being added; the nights already stayed keep their agreed rates.
     const agreedExtras = rr.includes_meal_plan ? (await q.query<{ extra_person_amount: string }>(
       'SELECT extra_person_amount FROM reservation_room_nights WHERE reservation_room_id=$1 ORDER BY night_date DESC LIMIT 1', [rr.id],
     )).rows[0]?.extra_person_amount : undefined;
+    const addedNights = nightsBetween(stay.expected_departure, input.newDeparture);
+    const combined = input.totalRoomAmount !== undefined;
     const quote = await this.rates.quote(q, actor.user.propertyId, {
       roomTypeId: rr.room_type_id, arrival: stay.expected_departure, departure: input.newDeparture,
       adults: rr.adults, childAges: rr.child_ages.map(Number), mealPlan: rr.meal_plan,
-      ...(input.nightlyRate !== undefined ? { manualRate: input.nightlyRate } : rr.includes_meal_plan ? { manualRate: rr.nightly_rate } : {}),
-      includesMealPlan: rr.includes_meal_plan,
-      extraPersonRate: agreedExtras,
+      ...(combined ? { manualRate: toMoneyString(money(input.totalRoomAmount!).dividedBy(addedNights)) }
+        : input.nightlyRate !== undefined ? { manualRate: input.nightlyRate } : rr.includes_meal_plan ? { manualRate: rr.nightly_rate } : {}),
+      includesMealPlan: combined || rr.includes_meal_plan,
+      extraPersonRate: combined ? '0.00' : agreedExtras,
     });
+    if (combined) {
+      // Allocate whole paise, including the remainder: 10,000 / 3 must still total 10,000.
+      const cents = money(input.totalRoomAmount!).times(100);
+      const base = cents.dividedToIntegerBy(addedNights);
+      const remainder = cents.mod(addedNights).toNumber();
+      quote.nights.forEach((n, i) => {
+        n.roomRate = toMoneyString(base.plus(i < remainder ? 1 : 0).dividedBy(100));
+        n.extraPersonAmount = '0.00'; n.mealAmount = '0.00'; n.total = n.roomRate;
+        n.rateSource = 'manual'; n.belowFloor = money(n.roomRate).lt(quote.minRate);
+      });
+      quote.total = toMoneyString(input.totalRoomAmount!);
+      quote.belowFloor = quote.nights.some(n => n.belowFloor);
+    }
     const reasons = quote.belowFloor
       ? [{
           action: 'rate_below_floor' as const,
@@ -321,6 +355,10 @@ export class StaysService {
       { from: stay.expected_departure, to: input.newDeparture });
     await this.outbox.emit(q, actor.user.propertyId, 'inventory.changed', { type: 'stay', id: stayId },
       { from: stay.expected_departure, to: input.newDeparture });
+    if (input.payment) {
+      const bill = await this.folios.ensureForStay(q, actor, stayId);
+      await this.payments.record(q, actor, { folioId: bill.id }, input.payment);
+    }
     return this.detail(q, actor.user.propertyId, stayId);
   }
 

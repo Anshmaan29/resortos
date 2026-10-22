@@ -1,4 +1,6 @@
 import { assertVillaArrival } from '../villa/villa.service';
+import { createHash, randomUUID } from 'node:crypto';
+import { StorageService } from '../storage/storage.service';
 import { assertRoomReady } from '../reservations/room-inventory';
 import { Injectable } from '@nestjs/common';
 import {
@@ -20,7 +22,7 @@ export interface CheckInPolicy {
   requireGuestPhoto: boolean;
   requireSignature: boolean;
 }
-export const DEFAULT_CHECK_IN_POLICY: CheckInPolicy = { idRequiredFor: 'all_adults', requireGuestPhoto: true, requireSignature: false };
+export const DEFAULT_CHECK_IN_POLICY: CheckInPolicy = { idRequiredFor: 'all_adults', requireGuestPhoto: false, requireSignature: false };
 
 export interface CheckInProblem { path: string; message: string }
 
@@ -32,6 +34,7 @@ export class CheckInService {
     private readonly outbox: OutboxService,
     private readonly property: PropertyService,
     private readonly reservations: ReservationsService,
+    private readonly storage: StorageService,
   ) {}
 
   async policy(q: Queryable, propertyId: string): Promise<CheckInPolicy> {
@@ -71,14 +74,14 @@ export class CheckInService {
 
   /** Starts (or resumes) the check-in for a booking. A refresh or power cut resumes the same draft. */
   async start(actor: Actor, reservationId: string, reservationRoomIds?: string[]) {
-    return this.db.tx({ userId: actor.user.id }, async (q) => {
+    const result = await this.db.tx({ userId: actor.user.id }, async (q) => {
       const { rows: resRows } = await q.query<ReservationRow>(
         `SELECT * FROM reservations WHERE id = $1 AND property_id = $2 FOR UPDATE`, [reservationId, actor.user.propertyId],
       );
       const res = resRows[0];
       if (!res) throw notFound('Booking');
       const { rows: existing } = await q.query<CheckInDraftRow>(`SELECT * FROM check_in_drafts WHERE reservation_id = $1 AND status = 'active'`, [reservationId]);
-      if (existing[0]) return this.view(q, existing[0]);
+      if (existing[0]) return { view: await this.view(q, existing[0]), created: false as const };
 
       if (!['confirmed', 'checked_in'].includes(res.status)) {
         throw new AppError(ERROR_CODES.INVALID_TRANSITION, res.status === 'tentative' ? 'Confirm the booking before check-in.' : 'This booking cannot be checked in.');
@@ -119,7 +122,76 @@ export class CheckInService {
         [actor.user.propertyId, reservationId, chosen.map((r) => r.id), JSON.stringify(data), actor.user.id],
       );
       await this.audit.record(q, actor, { action: 'check_in.started', entityType: 'reservation', entityId: reservationId, after: { draftId: rows[0]!.id, rooms: chosen.length } });
-      return this.view(q, rows[0]!);
+      return { view: await this.view(q, rows[0]!), created: true as const, res, draft: rows[0]!, data };
+    });
+    if (!result.created) return result.view;
+    await this.prefillReturningGuest(actor, result.res, result.draft, result.data);
+    return this.get(actor, result.draft.id);
+  }
+
+  /** Reuse only the booking's identified primary guest, never somebody sharing their phone/name.
+   * Each ID gets a new private object and document row: previous stays remain immutable and
+   * reception can view the new draft without gaining access to historical documents.
+   */
+  private async prefillReturningGuest(actor: Actor, res: ReservationRow, draft: CheckInDraftRow, data: CheckInDraftData) {
+    const primary = data.rooms[0]?.occupants.find(o => o.isPrimary && !o.isChild);
+    if (!primary) return;
+    const { rows: previous } = await this.db.query<{ stay_id: string; occupant_key: string; nationality: string; id_type: typeof primary.idType; id_last4: string | null }>(
+      `SELECT s.id AS stay_id, o.occupant_key, o.nationality, o.id_type, o.id_last4
+         FROM stays s JOIN stay_occupants o ON o.stay_id=s.id
+         JOIN guests g ON g.id=s.primary_guest_id AND g.property_id=s.property_id
+        WHERE s.property_id=$1 AND s.primary_guest_id=$2 AND o.is_primary AND NOT o.is_child
+          AND lower(trim(o.full_name))=lower(trim(g.first_name || ' ' || g.last_name))
+        ORDER BY s.checked_in_at DESC, s.id DESC LIMIT 1`, [actor.user.propertyId, res.primary_guest_id],
+    );
+    const old = previous[0];
+    if (!old) return;
+    primary.nationality = old.nationality;
+    primary.idType = old.id_type;
+    primary.idLast4 = old.id_last4 ?? undefined;
+    const { rows: documents } = await this.db.query<GuestDocumentRow>(
+      `SELECT * FROM guest_documents WHERE property_id=$1 AND stay_id=$2 AND occupant_key=$3
+         AND doc_type IN ('id_front','id_back','id_extra') ORDER BY created_at, id`,
+      [actor.user.propertyId, old.stay_id, old.occupant_key],
+    );
+    const copied: { id: string; storageKey: string; source: GuestDocumentRow }[] = [];
+    // Storage reads/writes happen outside a database transaction: no room/booking locks held.
+    for (const doc of latestDocuments(documents)) {
+      if (doc.status !== 'verified' || doc.id_type !== old.id_type) continue;
+      let bytes: Buffer;
+      try { bytes = await this.storage.getObject(doc.storage_key); }
+      catch { continue; } // Missing/expired storage: ask for a fresh ID, without blocking the draft.
+      if (bytes.length !== doc.size_bytes || !createHash('sha256').update(bytes).digest().equals(doc.sha256)) continue;
+      const documentId = randomUUID();
+      const storageKey = `${actor.user.propertyId}/drafts/${draft.id}/${documentId}`;
+      try { await this.storage.putObject(storageKey, bytes, doc.content_type, doc.sha256); }
+      catch { continue; }
+      copied.push({ id: documentId, storageKey, source: doc });
+    }
+    await this.db.tx({ userId: actor.user.id }, async q => {
+      const { rows: current } = await q.query<CheckInDraftRow>(
+        'SELECT * FROM check_in_drafts WHERE id=$1 AND property_id=$2 FOR UPDATE', [draft.id, actor.user.propertyId],
+      );
+      // Another receptionist may have started editing while the files were copied.
+      if (!current[0] || current[0].status !== 'active' || current[0].version !== draft.version) return;
+      const { rows: captured } = await q.query<{ id: string }>(
+        `SELECT id FROM guest_documents WHERE draft_id=$1 AND occupant_key=$2 AND doc_type IN ('id_front','id_back','id_extra') LIMIT 1`,
+        [draft.id, primary.key],
+      );
+      if (captured.length) return; // A freshly captured ID must win over reuse in a second screen.
+      for (const { id: documentId, storageKey, source: doc } of copied) {
+        await q.query(
+          `INSERT INTO guest_documents (id, property_id, draft_id, occupant_key, doc_type, id_type, storage_key,
+             content_type, size_bytes, sha256, source, uploaded_by, status, verified_at, reused_from_document_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'saved_guest_id',$11,'verified',now(),$12)`,
+          [documentId, actor.user.propertyId, draft.id, primary.key, doc.doc_type, doc.id_type, storageKey,
+            doc.content_type, doc.size_bytes, doc.sha256, actor.user.id, doc.id],
+        );
+        await this.audit.record(q, actor, { action: 'document.reused', entityType: 'guest_document', entityId: documentId,
+          after: { sourceDocumentId: doc.id, draftId: draft.id } });
+      }
+      await q.query('UPDATE check_in_drafts SET data=$2, updated_by=$3 WHERE id=$1',
+        [draft.id, JSON.stringify(data), actor.user.id]);
     });
   }
 
@@ -167,7 +239,11 @@ export class CheckInService {
     const policy = await this.policy(q, draft.property_id);
     const problems: CheckInProblem[] = [];
     const { rows: rooms } = await q.query<ReservationRoomRow>(`SELECT * FROM reservation_rooms WHERE id = ANY($1::uuid[])`, [draft.reservation_room_ids]);
-    const { rows: docs } = await q.query<GuestDocumentRow>(`SELECT * FROM guest_documents WHERE draft_id = $1 ORDER BY created_at, id`, [draft.id]);
+    const { rows: docs } = await q.query<GuestDocumentRow & { reused_name: string | null; reused_last4: string | null }>(
+      `SELECT d.*, o.full_name AS reused_name, o.id_last4 AS reused_last4 FROM guest_documents d
+         LEFT JOIN guest_documents src ON src.id=d.reused_from_document_id
+         LEFT JOIN stay_occupants o ON o.stay_id=src.stay_id AND o.occupant_key=src.occupant_key
+        WHERE d.draft_id=$1 ORDER BY d.created_at, d.id`, [draft.id]);
     const today = await this.property.today(q, draft.property_id);
     const { rows: readiness } = await q.query<{ id:string; number:string; is_active:boolean; housekeeping_status:string; service_status:string; max_occupancy:number; blocked:boolean }>(
       `SELECT r.id,r.number,r.is_active,r.housekeeping_status,r.service_status,t.max_occupancy,
@@ -217,8 +293,14 @@ export class CheckInService {
         const who = o.fullName || 'guest';
         if (o.idType === 'none') { problems.push({ path: `rooms.${i}.occupants.${o.key}.idType`, message: `${label}choose the ID type for ${who}` }); continue; }
         if (!o.idLast4) problems.push({ path: `rooms.${i}.occupants.${o.key}.idLast4`, message: `${label}enter the last 4 characters of ${who}'s ID` });
-        requireDoc(`documents.${o.key}.id_front`, `${label}${who}'s ID (front)`, docsFor(o.key, 'id_front'));
-        if (ID_TYPES_WITH_BACK.includes(o.idType)) requireDoc(`documents.${o.key}.id_back`, `${label}${who}'s ID (back)`, docsFor(o.key, 'id_back'));
+        const validId = (type: string) => docsFor(o.key, type).filter(d => {
+          const source = docs.find(row => row.id === d.id)!;
+          return d.id_type === o.idType && (d.source !== 'saved_guest_id'
+            || (source.reused_name?.trim().toLowerCase() === o.fullName.trim().toLowerCase()
+              && source.reused_last4?.toUpperCase() === o.idLast4?.toUpperCase()));
+        });
+        requireDoc(`documents.${o.key}.id_front`, `${label}${who}'s ID (front)`, validId('id_front'));
+        if (ID_TYPES_WITH_BACK.includes(o.idType)) requireDoc(`documents.${o.key}.id_back`, `${label}${who}'s ID (back)`, validId('id_back'));
       }
       const primary = roomData.occupants.find((o) => o.isPrimary);
       if (policy.requireGuestPhoto && primary) requireDoc(`documents.${primary.key}.guest_photo`, `${label}guest photo of ${primary.fullName || 'the primary guest'}`, docsFor(primary.key, 'guest_photo'));

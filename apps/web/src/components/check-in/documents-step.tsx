@@ -71,11 +71,14 @@ export function DocumentsStep({ draft, data, onChange, onRefresh, queue }: {
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
       <div className="flex flex-col gap-6">
+        {draft.documents.some(d => d.source === 'saved_guest_id') && <p className="rounded-lg bg-brand-soft p-3 text-sm text-brand">
+          Saved ID added for the returning guest. Check that it is still correct; capture a replacement if it has changed. Guest photo is optional.
+        </p>}
         {data.rooms.map((room, i) => (
           room.occupants.filter((o) => !o.isChild && (draft.policy.idRequiredFor === 'all_adults' || o.isPrimary)).map((o) => {
             const idType = o.idType === 'none' ? null : o.idType;
             const slots: { docType: DocumentType; label: string; show: boolean; required: boolean }[] = [
-              { docType: 'guest_photo', label: 'Guest photo', show: o.isPrimary && draft.policy.requireGuestPhoto, required: true },
+              { docType: 'guest_photo', label: 'Guest photo', show: o.isPrimary, required: false },
               { docType: 'id_front', label: 'ID — front', show: !!idType, required: true },
               { docType: 'id_back', label: 'ID — back', show: !!idType && ID_TYPES_WITH_BACK.includes(idType), required: true },
               { docType: 'id_extra', label: 'Extra page', show: !!idType, required: false },
