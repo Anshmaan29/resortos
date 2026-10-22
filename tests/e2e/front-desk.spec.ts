@@ -69,7 +69,9 @@ test('a returning guest who declined WhatsApp stays email only when saving anoth
   await page.goto('/reservations/new');
   await page.getByLabel('Search existing guests').fill('9876543210');
   await page.getByLabel('Room price per night').fill('6000');
-  await page.getByRole('button').filter({hasText:'Rahul Sharma'}).first().click();
+  // An exact, unique mobile now selects the returning guest automatically.
+  await expect(page.getByText('Rahul Sharma', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Change', exact: true })).toBeVisible();
   await expect(page.getByText('WhatsApp is off for this guest.', { exact: false })).toBeVisible();
   await expect(page.getByText(/By saving, you confirm the guest agreed/)).toHaveCount(0);
   await page.getByRole('textbox', { name: 'Arrival' }).fill('14/12/2026');

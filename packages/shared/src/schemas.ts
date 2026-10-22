@@ -265,13 +265,6 @@ export type NoShowInput = z.infer<typeof noShowSchema>;
  * offers. The new nights are quoted at current rates unless a rate is given, and a rate below the
  * room type's floor needs Owner PIN, exactly as it does on a booking.
  */
-export const extendStaySchema = z.object({
-  newDeparture: zIsoDate,
-  reason: z.string().trim().min(3, 'Say why the stay is being extended').max(300),
-  nightlyRate: zNonNegativeMoney.optional(),
-  ownerAuthorisationId: zId.optional(),
-});
-export type ExtendStayInput = z.infer<typeof extendStaySchema>;
 
 /**
  * Completing a night audit names the business date the screen was showing (spec §35).
@@ -353,6 +346,22 @@ export const recordPaymentSchema = z
     }
   });
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
+
+/** Additional nights only. A combined agreed price includes guests and the existing meal plan;
+ * GST remains the booking's rule. Legacy per-night callers keep their existing behavior. */
+export const extendStaySchema = z.object({
+  newDeparture: zIsoDate,
+  expectedDeparture: zIsoDate.optional(),
+  reason: z.string().trim().min(3, 'Say why the stay is being extended').max(300).default('Guest requested a longer stay'),
+  nightlyRate: zNonNegativeMoney.optional(),
+  totalRoomAmount: zNonNegativeMoney.optional(),
+  payment: recordPaymentSchema.refine(p => p.entryType === 'payment' && !!ACCOUNT_KINDS_FOR_METHOD[p.method],
+    { message: 'Record money received for the extension, not a deposit, refund or credit settlement' }).optional(),
+  ownerAuthorisationId: zId.optional(),
+}).refine(v => v.nightlyRate === undefined || v.totalRoomAmount === undefined,
+  { message: 'Enter either the total for extra nights or a nightly rate', path: ['totalRoomAmount'] });
+export type ExtendStayInput = z.infer<typeof extendStaySchema>;
+
 
 /**
  * The security deposit decision at checkout (spec §27): some of it applied to the bill, the rest

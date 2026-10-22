@@ -169,9 +169,9 @@ describe('confirm check-in (spec §18.3, §19.6)', () => {
     expect(messages).toEqual(expect.arrayContaining([
       "Meera Joshi's ID (back) is still uploading",
       "Arjun Joshi's ID (front) is missing",
-      'guest photo of Meera Joshi is missing',
       'The guest must accept the stay and legal-compliance notice',
     ]));
+    expect(messages.some((m: string) => m.includes('guest photo'))).toBe(false);
   });
 
   it('uses only the latest retake and blocks a pending replacement despite an older verified ID', async () => {

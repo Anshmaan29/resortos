@@ -24,7 +24,7 @@ export default function PrivacyPage() {
           </section>
           <section>
             <h2>Information we handle</h2>
-            <p>Depending on your reservation and stay, records may include your name, contact details, address, booking dates, room, guest count, charges, payment records and invoices. Guest registration may also include identity details, uploaded identity documents, a guest photograph and an optional signature. Staff access and changes, messaging consent and message delivery statuses are recorded to help operate the hotel and resolve problems.</p>
+            <p>Depending on your reservation and stay, records may include your name, contact details, address, booking dates, room, guest count, charges, payment records and invoices. Guest registration may also include identity details, uploaded identity documents, an optional guest photograph and an optional signature. Saved identity details and available ID documents may be reused for a returning guest’s new registration at the same property. Staff access and changes, messaging consent and message delivery statuses are recorded to help operate the hotel and resolve problems.</p>
           </section>
           <section>
             <h2>How the information is used</h2>

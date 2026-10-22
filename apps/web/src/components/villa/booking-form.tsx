@@ -1,7 +1,8 @@
 'use client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { uniqueReturningGuest } from '@/lib/returning-guest';
 import {
   VILLA_USES,
   VILLA_BOOKABLE_USES,
@@ -72,6 +73,15 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
       >('/guests', { query: { q: mobile } }),
     enabled: mobile.replace(/\D/g, '').length >= 4 && !guestId,
   });
+  useEffect(() => {
+    if (guestId || initial) return;
+    const found = uniqueReturningGuest(guests.data ?? [], mobile, name);
+    if (!found) return;
+    setGuestId(found.id); setName(`${found.firstName} ${found.lastName}`.trim());
+    setEmail(found.email ?? '');
+    setGuestDeclined(Boolean(found.whatsappOptedIn === false && found.whatsappConsentAt));
+    setWhatsappOverride(null);
+  }, [guestId, initial, guests.data, mobile, name]);
   const save = useMutation({
     mutationFn: async () => {
       const input = villaBookingSchema.safeParse({

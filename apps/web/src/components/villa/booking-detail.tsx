@@ -86,6 +86,9 @@ export function VillaBookingDetail({ id }: { id: string }) {
                 </Button>
               </>
             )}
+            {active && !b.dayUse && b.stayId && <Link href={`/stays/${b.stayId}?extend=1`}>
+              <Button variant="outline">Extend stay</Button>
+            </Link>}
             {active &&
               (b.dayUse ? (
                 <Button onClick={() => setAction('depart')}>Check out</Button>

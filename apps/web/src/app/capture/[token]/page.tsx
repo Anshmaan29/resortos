@@ -182,7 +182,7 @@ export default function PhoneCapturePage() {
               ?? [...docs].reverse().find((d) => d.occupantKey === o.key && d.idType)?.idType
               ?? [...items].reverse().find((i) => i.occupantKey === o.key && i.idType)?.idType ?? null;
             const slots: { docType: DocumentType; label: string; hint?: string; show: boolean }[] = [
-              { docType: 'guest_photo', label: 'Guest photo', hint: 'Face clearly visible, no hat or sunglasses', show: o.isPrimary },
+              { docType: 'guest_photo', label: 'Guest photo (optional)', hint: 'Skip this if only an ID is being collected', show: o.isPrimary },
               { docType: 'id_front', label: 'ID — front', hint: 'Fill the frame with the card', show: !!idType },
               { docType: 'id_back', label: 'ID — back', show: !!idType && ID_TYPES_WITH_BACK.includes(idType) },
               { docType: 'id_extra', label: 'Extra page (optional)', hint: 'e.g. passport visa page', show: !!idType },

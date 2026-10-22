@@ -1,6 +1,6 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, BedDouble, Crown, Search, LogOut } from 'lucide-react';
+import { ArrowRight, BedDouble, CalendarPlus, Crown, Search, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { formatDate, formatMobile, VISIT_PURPOSE_LABELS } from '@resortos/shared';
@@ -137,7 +137,10 @@ function StaysTable({ query }: { query: ReturnType<typeof useQuery<StayListItem[
                   <Link href={`/stays/${s.id}`} className="num font-medium text-brand hover:underline">{s.roomNumber}</Link>
                 </td>
                 <td className="px-5 py-3">
-                  {s.status === 'in_house' ? <Link href={`/stays/${s.id}?checkout=1`}><Button size="sm" aria-label={`Check out room ${s.roomNumber}`}><LogOut className="h-4 w-4" />Check out</Button></Link>
+                  {s.status === 'in_house' ? <div className="flex flex-wrap gap-2">
+                    <Link href={`/stays/${s.id}?checkout=1`}><Button size="sm" aria-label={`Check out room ${s.roomNumber}`}><LogOut className="h-4 w-4" />Check out</Button></Link>
+                    <Link href={`/stays/${s.id}?extend=1`}><Button variant="outline" size="sm" aria-label={`Extend stay room ${s.roomNumber}`}><CalendarPlus className="h-4 w-4" />Extend</Button></Link>
+                  </div>
                     : <Link href={`/stays/${s.id}`} className="text-brand hover:underline">View stay</Link>}
                 </td>
                 <td className="px-3 py-3">

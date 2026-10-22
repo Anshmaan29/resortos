@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { AlertTriangle, BedDouble, Check, Crown, Minus, Plus, Search, Trash2, UserRound, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { uniqueReturningGuest } from '@/lib/returning-guest';
 import {
   addDays, BOOKING_SOURCE_LABELS, BOOKING_SOURCES, createReservationSchema, formatDate, formatINR, formatMobile, guestSchema,
   money, nightsBetween, OTA_SOURCES, updateReservationSchema, VISIT_PURPOSE_LABELS, VISIT_PURPOSES, MEAL_PLAN_CODES,
@@ -97,11 +98,17 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
     queryKey: ['availability', arrival, departure, mode === 'edit' ? initial?.id : null], enabled: datesValid,
     queryFn: () => api<Availability>('/availability', { query: { arrival, departure, reservationId: mode === 'edit' ? initial?.id : undefined } }),
   });
-  const debouncedSearch = useDebounced(search, 250);
+  const debouncedSearch = useDebounced(search || newGuest.mobile, 250);
   const guestResults = useQuery({
     queryKey: ['guest-search', debouncedSearch], enabled: !guest && debouncedSearch.trim().length >= 3,
     queryFn: () => api<Guest[]>('/guests', { query: { q: debouncedSearch } }),
   });
+  useEffect(() => {
+    if (guest || mode === 'edit' || debouncedSearch !== (search || newGuest.mobile)) return;
+    const found = uniqueReturningGuest(guestResults.data ?? [], debouncedSearch,
+      search ? '' : `${newGuest.firstName} ${newGuest.lastName}`);
+    if (found) { setGuest(found); setSearch(''); setWhatsappOverride(null); }
+  }, [guest, mode, debouncedSearch, search, newGuest.mobile, newGuest.firstName, newGuest.lastName, guestResults.data]);
 
   // Debounce the serialised input: a new object every render would never settle.
   const pricingReady = lines.every((l) => (!l.useCustomPrice || validRate(l.manualRate) !== undefined)
@@ -243,8 +250,9 @@ export function BookingForm({ mode, initial, walkIn }: { mode: BookingFormMode; 
                   <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-1 font-medium">{guest.isVip && <Crown className="h-3.5 w-3.5 text-warning" aria-label="VIP" />}{guest.fullName}</p>
                     <p className="text-sm text-text-2 num">{formatMobile(guest.mobile)}{guest.city ? ` · ${guest.city}` : ''}{guest.stays ? ` · ${guest.stays} past stay${guest.stays > 1 ? 's' : ''}` : ''}</p>
+                    <p className="mt-1 text-xs text-text-2">Saved guest details loaded. Available saved ID is added during check-in.</p>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => { setGuest(null); setWhatsappOverride(null); }}><X className="h-4 w-4" />Change</Button>
+                  <Button variant="ghost" size="sm" onClick={() => { setGuest(null); setNewGuest(g => ({ ...g, mobile: '' })); setWhatsappOverride(null); }}><X className="h-4 w-4" />Change</Button>
                 </div>
               ) : (
                 <div className="flex flex-col gap-4">
