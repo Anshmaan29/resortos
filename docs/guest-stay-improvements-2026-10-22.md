@@ -25,7 +25,7 @@ Migration `0031_optional_photo_returning_guest.sql` sets the photo policy to opt
 
 Automated booking/check-in notifications and WhatsApp configuration are not changed. This work does not implement the separately discussed WhatsApp inbox.
 
-The development tools Vite and Vitest receive only the patch updates needed to clear advisories reported by the release dependency check. No hotel runtime package is upgraded.
+The release security gate also requires Vite 8.3.3, Vitest 4.1.12 and Next.js 16.4.1. GitHub published Next.js advisories on 22 October affecting the previous lockfile. The existing sharp override already supplies the documented image fix, and ResortOS has no Server Actions, but this release takes the patched framework version rather than accepting an advisory exception. Builds, types and all browser workflows are rerun after that update.
 
 ## Validation
 
@@ -37,4 +37,4 @@ The development tools Vite and Vitest receive only the patch updates needed to c
 - Manual local-browser inspection covered the extension entry point, payment controls and phone layout. Only isolated synthetic data was used; no live guest bookings or messages were created.
 - Dependency security gate passed after the Vite/Vitest development patches.
 
-Production deployment has not been performed: the saved Railway CLI login was rejected as expired during the release check. Reauthentication is required before release and live post-deployment verification.
+Railway authentication was renewed during release preparation. Before production activation, verify the tested commit and a rollback backup; afterwards verify migration 0031, both properties’ optional-photo policy, public health and preservation of existing operational records. No real guest bookings or messages should be generated as release tests.
