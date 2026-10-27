@@ -63,10 +63,12 @@ export class PropertyService {
   }
 
   async today(q: Queryable, propertyId: string): Promise<string> {
-    const { rows } = await q.query<Pick<PropertyRow, 'data_origin' | 'timezone' | 'current_business_date'>>(
-      `SELECT data_origin, timezone, current_business_date FROM properties WHERE id = $1`, [propertyId]);
+    // Use the same database transaction clock as recorded_at/finalized_at defaults,
+    // including a request that crosses local midnight. Never the server's UTC day.
+    const { rows } = await q.query<{ today: string }>(
+      `SELECT property_calendar_date(p)::text AS today FROM properties p WHERE id = $1`, [propertyId]);
     if (!rows[0]) throw notFound('Property');
-    return propertyToday(rows[0]);
+    return rows[0].today;
   }
 
   async getProperty(propertyId: string) {
