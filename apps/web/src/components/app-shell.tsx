@@ -157,11 +157,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="font-medium num">{formatDate(property.data.today, { weekday: true })}</span>
           </div>
         )}
-        {property.data && property.data.businessDate !== property.data.today && (
-          <Link href="/night-audit" className="hidden text-xs text-text-3 lg:block" title="Night audit closes this accounting date">
-            Day closing: {formatDate(property.data.businessDate, { year: false })}
-          </Link>
-        )}
         {property.data?.isPractice && <span className="rounded-full bg-warning-soft px-3 py-1 text-xs font-semibold text-warning">PRACTICE MODE</span>}
         <div className="ml-auto" ref={menuRef}>
           <button onClick={() => setMenu((m) => !m)} className="flex h-10 items-center gap-2 rounded-full pl-1 pr-3 hover:bg-surface-2" aria-haspopup="menu" aria-expanded={menu}>

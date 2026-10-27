@@ -70,7 +70,10 @@ export class NightAuditService {
    */
   async preview(actor: Actor) {
     const propertyId = actor.user.propertyId;
-    const businessDate = await this.property.businessDate(this.db, propertyId);
+    const businessDate = await this.property.auditDate(this.db, propertyId);
+    const today = await this.property.today(this.db, propertyId);
+    const { rows: origin } = await this.db.query<{ data_origin: string }>(`SELECT data_origin FROM properties WHERE id=$1`, [propertyId]);
+    const calendarDayOpen = origin[0]?.data_origin !== 'demo' && businessDate >= today;
     const existing = await this.runFor(this.db, propertyId, businessDate);
     const ctx: NightAuditContext = { q: this.db, actor, propertyId, businessDate };
 
@@ -93,7 +96,8 @@ export class NightAuditService {
       // A closed date can never be re-audited; the screen says so rather than offering a button
       // that would fail on the unique constraint.
       alreadyCompleted: existing ? mapRun(existing) : null,
-      canComplete: !existing && !blocked,
+      canComplete: !existing && !blocked && !calendarDayOpen,
+      calendarDayOpen,
       blocked,
       steps,
       summary: facts,
@@ -148,6 +152,12 @@ export class NightAuditService {
     );
     if (!locked[0]) throw new AppError(ERROR_CODES.NOT_FOUND, 'Property was not found.');
     const businessDate = input.businessDate;
+    // A day-end review may inspect a past day; it must never move live operations into tomorrow.
+    const today = await this.property.today(q, propertyId);
+    const { rows: origin } = await q.query<{ data_origin: string }>(`SELECT data_origin FROM properties WHERE id=$1`, [propertyId]);
+    if (origin[0]?.data_origin !== 'demo' && businessDate >= today) {
+      throw new AppError(ERROR_CODES.VALIDATION, 'Review a completed calendar day after midnight. Today stays open automatically.');
+    }
 
     // The caller names the date it was looking at. Whoever gets the lock second finds the date has
     // already moved and is told so, instead of closing tomorrow as well — which is what would

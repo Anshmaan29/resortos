@@ -97,7 +97,7 @@ test('new bookings and the header use today even while an earlier accounting day
   });
   await receptionist(page);
   await expect(page.getByText('Today', { exact: true })).toBeVisible();
-  await expect(page.getByText('Day closing: 6 Oct', { exact: true })).toBeVisible();
+  await expect(page.getByText('Day closing: 6 Oct', { exact: true })).toHaveCount(0);
   await page.goto('/reservations/new');
   await expect(page.getByRole('textbox', { name: 'Arrival' })).toHaveValue('07/10/2026');
   await expect(page.getByRole('textbox', { name: 'Departure' })).toHaveValue('08/10/2026');

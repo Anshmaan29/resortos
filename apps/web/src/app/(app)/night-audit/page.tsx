@@ -61,7 +61,7 @@ export default function NightAuditPage() {
         'success',
         result.alreadyCompleted
           ? `${formatDate(result.run.businessDate)} was already closed`
-          : `${formatDate(result.run.businessDate)} closed — business date is now ${formatDate(preview.data?.nextBusinessDate ?? result.run.businessDate)}`,
+          : `${formatDate(result.run.businessDate)} reviewed — next review date is ${formatDate(preview.data?.nextBusinessDate ?? result.run.businessDate)}`,
       );
       void queryClient.invalidateQueries();
     },
@@ -109,7 +109,9 @@ export default function NightAuditPage() {
         </Card>
       )}
 
-      {data.blocked ? (
+      {data.calendarDayOpen ? (
+        <Card className="p-4 text-sm text-text-2">Today is still in progress. This day’s review becomes available after midnight. All transactions already use the actual local date.</Card>
+      ) : data.blocked ? (
         <Card className="flex items-start gap-3 border-warning p-4" style={{ borderColor: 'var(--warning)' }}>
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden />
           <p className="text-sm text-text-2">
@@ -120,7 +122,7 @@ export default function NightAuditPage() {
       ) : (
         <Card className="flex items-start gap-3 p-4">
           <Check className="mt-0.5 h-5 w-5 shrink-0 text-success" aria-hidden />
-          <p className="text-sm text-text-2">Nothing is outstanding. Completing the audit records the day and moves the business date forward.</p>
+          <p className="text-sm text-text-2">Nothing is outstanding. Completing the audit records the selected day. Today’s dates update automatically, independently of this review.</p>
         </Card>
       )}
 
@@ -211,7 +213,7 @@ function DayAuditLog({ query }: { query: ReturnType<typeof useQuery<NightAuditRu
   const runs = query.data ?? [];
   return (
     <Card>
-      <CardHeader title="Day audit log" description="Every business date that has been closed, and who closed it." />
+      <CardHeader title="Day audit log" description="Each reviewed calendar day, and who reviewed it." />
       {runs.length === 0 ? (
         <EmptyState icon={<History className="h-5 w-5" />} title="No audit has run yet" description="The first completed night audit appears here." />
       ) : (

@@ -22,6 +22,7 @@ let propertyId: string;
 let roomTypeId: string;
 let roomId: string;
 let reservationId: string;
+let stayId: string;
 const today = todayIn();
 beforeAll(async () => {
   ({ app, sql } = await bootAppOnOwnDatabase('calendar_date', '2026-09-16'));
@@ -38,7 +39,7 @@ describe('reception after midnight while night audit is still pending', () => {
   it('shows today, defaults reception to today and rejects a new arrival in the past', async () => {
     const property = await owner.get('/api/v1/property').expect(200);
     expect(property.body.today).toBe(today);
-    expect(property.body.businessDate).toBe('2026-09-16');
+    expect(property.body.businessDate).toBe(today);
     const desk = await owner.get('/api/v1/front-desk').expect(200);
     expect(desk.body.businessDate).toBe(today);
     await post(owner, '/reservations', booking({ roomTypeId, arrival: addDays(today, -1), departure: addDays(today, 1) })).expect(400);
@@ -65,7 +66,7 @@ describe('reception after midnight while night audit is still pending', () => {
       await post(owner, `/check-in-drafts/${started.body.id}/documents/${grant.body.documentId}/confirm`, {}, null).expect(200);
     }
     const confirmed = await post(owner, `/check-in-drafts/${started.body.id}/confirm`, {}).expect(200);
-    const stayId = confirmed.body.stays[0].id;
+    stayId = confirmed.body.stays[0].id;
     const [stay] = await sql(`SELECT business_date_in FROM stays WHERE id = $1`, [stayId]);
     expect(stay.business_date_in).toBe(today);
     const checkout = await owner.get(`/api/v1/stays/${stayId}/checkout-preview`).expect(200);
@@ -90,10 +91,45 @@ describe('reception after midnight while night audit is still pending', () => {
     expect((await step.inspect({ ...context, businessDate: today })).facts.roomsToCharge).toBe(1);
   });
 
+  it('dates live charges, shifts, payments and invoices by the real calendar while review is pending', async () => {
+    const housekeeping = await owner.get('/api/v1/housekeeping/board').expect(200);
+    expect(housekeeping.body.businessDate).toBe(today);
+    await post(owner, '/shifts/open', { openingCash: '0' }).expect(200);
+    const [shift] = await sql(`SELECT business_date FROM cashier_shifts WHERE closed_at IS NULL`);
+    expect(shift.business_date).toBe(today);
+    await owner.get(`/api/v1/stays/${stayId}/checkout-preview`).expect(200);
+    const bill = (await owner.get(`/api/v1/stays/${stayId}/bill`).expect(200)).body;
+    await post(owner, `/folios/${bill.id}/charges`, { lineType: 'food', name: 'Calendar date test', quantity: 1, unitRate: '100' }).expect(200);
+    const [charge] = await sql(`SELECT business_date FROM folio_lines WHERE folio_id=$1 AND source='manual'`, [bill.id]);
+    expect(charge.business_date).toBe(today);
+    const fullBill = (await owner.get(`/api/v1/stays/${stayId}/bill`).expect(200)).body;
+    const [account] = await sql(`SELECT id FROM payment_accounts WHERE kind='cash' LIMIT 1`);
+    await post(owner, `/folios/${bill.id}/payments`, { method:'cash',paymentAccountId:account.id,amount:fullBill.balance }).expect(200);
+    const [payment] = await sql(`SELECT business_date FROM payments WHERE folio_id=$1`,[bill.id]);
+    expect(payment.business_date).toBe(today);
+    await post(owner, `/stays/${stayId}/checkout`, {}).expect(200);
+    const [invoice] = await sql(`SELECT invoice_date FROM invoices WHERE folio_id=$1`,[bill.id]);
+    expect(invoice.invoice_date).toBe(today);
+    const [task] = await sql(`SELECT business_date FROM housekeeping_tasks WHERE room_id=$1 AND status='open' ORDER BY created_at DESC LIMIT 1`,[roomId]);
+    expect(task.business_date).toBe(today);
+    const [property] = await sql(`SELECT current_business_date FROM properties WHERE id=$1`,[propertyId]);
+    expect(property.current_business_date).toBe('2026-09-16');
+  });
+
   it('still refuses check-in before the actual arrival day', async () => {
     const future = await post(owner, '/reservations', booking({ roomTypeId, arrival: addDays(today, 1), departure: addDays(today, 2) })).expect(201);
     expect(future.body.checkIn.ready).toBe(false);
     const response = await post(owner, '/check-in-drafts', { reservationId: future.body.id }, null).expect(409);
     expect(response.body.message).toMatch(/arrival day/);
+  });
+
+  it('cannot review today into tomorrow or change the live operating date', async () => {
+    await sql(`UPDATE properties SET current_business_date=$2::date WHERE id=$1`,[propertyId,today]);
+    const preview=await owner.get('/api/v1/night-audit').expect(200);
+    expect(preview.body.calendarDayOpen).toBe(true);
+    expect(preview.body.canComplete).toBe(false);
+    const refused=await post(owner,'/night-audit/complete',{businessDate:today}).expect(400);
+    expect(refused.body.message).toMatch(/after midnight/);
+    expect((await owner.get('/api/v1/property')).body.businessDate).toBe(today);
   });
 });
