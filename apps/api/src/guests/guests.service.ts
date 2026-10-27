@@ -112,7 +112,7 @@ export class GuestsService {
     ]);
 
     const businessDate = await this.db.query<{ d: string }>(
-      `SELECT current_business_date AS d FROM properties WHERE id = $1`, [propertyId],
+      `SELECT property_calendar_date(p) AS d FROM properties p WHERE id = $1`, [propertyId],
     ).then((r) => r.rows[0]!.d);
 
     const upcoming = history.rows.filter((h) => ['tentative', 'confirmed'].includes(h.status) && h.departure > businessDate);

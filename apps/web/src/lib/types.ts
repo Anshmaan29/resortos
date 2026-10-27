@@ -144,6 +144,7 @@ export interface NightAuditRun {
   summary: Record<string, number>;
 }
 export interface NightAuditPreview {
+  calendarDayOpen?: boolean;
   businessDate: string; nextBusinessDate: string; alreadyCompleted: NightAuditRun | null;
   canComplete: boolean; blocked: boolean; mayRun: boolean;
   steps: NightAuditStepView[]; summary: Record<string, number>;
@@ -260,6 +261,7 @@ export interface Invoice {
 export interface InvoiceRegisterRow {
   id: string; number: string; documentType: DocumentType; invoiceDate: string; buyerName: string; buyerGstin: string | null;
   taxable: string; cgst: string; sgst: string; igst: string; total: string; originalNumber: string | null;
+  reservationNumber?: string | null; rooms?: string | null;
 }
 export interface Company {
   id: string; name: string; gstin: string | null; billingAddress: string | null; contactPerson: string | null;

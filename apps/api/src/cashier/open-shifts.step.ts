@@ -15,7 +15,7 @@ export class OpenShiftsStep implements NightAuditStep {
   readonly order = 30;
   readonly blocking = true;
 
-  async inspect({ q, propertyId }: NightAuditContext): Promise<StepReport> {
+  async inspect({ q, propertyId, businessDate }: NightAuditContext): Promise<StepReport> {
     const { rows } = await q.query<{ id: string; opened_by_name: string; opened_at: Date; opening_cash: string }>(
       `SELECT s.id, u.full_name AS opened_by_name, s.opened_at, s.opening_cash
          FROM cashier_shifts s JOIN users u ON u.id = s.opened_by
@@ -26,9 +26,9 @@ export class OpenShiftsStep implements NightAuditStep {
     const { rows: byMethod } = await q.query<{ method: string; total: string }>(
       `SELECT p.method, sum(p.cash_effect)::numeric(14,2) AS total
          FROM payments p JOIN properties pr ON pr.id = p.property_id
-        WHERE p.property_id = $1 AND p.business_date = pr.current_business_date AND p.payment_account_id IS NOT NULL
+        WHERE p.property_id = $1 AND p.business_date = $2::date AND p.payment_account_id IS NOT NULL
         GROUP BY p.method ORDER BY p.method`,
-      [propertyId],
+      [propertyId, businessDate],
     );
     return {
       ...emptyReport(),

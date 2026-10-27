@@ -45,7 +45,7 @@ export function BillPanel({ stayId, canEdit, folioId }: { stayId: string; canEdi
     <Card>
       <CardHeader
         title="Bill"
-        description={`${b.number} · charges are added against the business date they belong to`}
+        description={`${b.number} · charges show their actual service date`}
         action={canEdit && b.status === 'closed' ? (
           // A closed bill has been invoiced: money owed can still be paid, and the owner can add a
           // late charge, which goes on a debit note (§22).
@@ -311,7 +311,7 @@ function AddChargeDialog({ bill, stayId, open, onClose }: { bill: Bill; stayId: 
       open={open}
       onClose={onClose}
       title="Add charge"
-      description={`On ${formatDate(bill.businessDate, { weekday: true })} — today's business date`}
+      description={`On ${formatDate(bill.businessDate, { weekday: true })} — today's date`}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>

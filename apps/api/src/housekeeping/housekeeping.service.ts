@@ -56,8 +56,8 @@ export class HousekeepingService {
           `SELECT rm.id AS room_id, rm.number, rt.name AS room_type_name, rm.building, rm.floor,
                   rm.housekeeping_status, rm.service_status,
                   (EXISTS (SELECT 1 FROM stays s WHERE s.room_id = rm.id AND s.status = 'in_house') OR EXISTS(SELECT 1 FROM villa_room_usage v WHERE v.room_id=rm.id AND v.allocation_status='occupied')) AS occupied,
-                  EXISTS (SELECT 1 FROM stays s WHERE s.room_id = rm.id AND s.status = 'in_house' AND s.expected_departure <= p.current_business_date) OR EXISTS(SELECT 1 FROM villa_room_usage v WHERE v.room_id=rm.id AND v.allocation_status='occupied' AND (v.ends_at AT TIME ZONE p.timezone)::date<=p.current_business_date) AS departs_today,
-                  EXISTS (SELECT 1 FROM reservation_rooms rr WHERE rr.room_id = rm.id AND rr.status = 'reserved' AND rr.arrival = p.current_business_date) OR EXISTS(SELECT 1 FROM villa_room_usage v WHERE v.room_id=rm.id AND v.allocation_status='reserved' AND (v.starts_at AT TIME ZONE p.timezone)::date=p.current_business_date) AS arrives_today,
+                  EXISTS (SELECT 1 FROM stays s WHERE s.room_id = rm.id AND s.status = 'in_house' AND s.expected_departure <= property_calendar_date(p)) OR EXISTS(SELECT 1 FROM villa_room_usage v WHERE v.room_id=rm.id AND v.allocation_status='occupied' AND (v.ends_at AT TIME ZONE p.timezone)::date<=property_calendar_date(p)) AS departs_today,
+                  EXISTS (SELECT 1 FROM reservation_rooms rr WHERE rr.room_id = rm.id AND rr.status = 'reserved' AND rr.arrival = property_calendar_date(p)) OR EXISTS(SELECT 1 FROM villa_room_usage v WHERE v.room_id=rm.id AND v.allocation_status='reserved' AND (v.starts_at AT TIME ZONE p.timezone)::date=property_calendar_date(p)) AS arrives_today,
                   t.id AS task_id, t.kind AS task_kind, t.status AS task_status, t.priority AS task_priority, t.note AS task_note,
                   t.version AS task_version, t.started_at AS task_started_at, t.created_at AS task_created_at,
                   t.assigned_to, u.full_name AS assigned_name
@@ -76,11 +76,11 @@ export class HousekeepingService {
         ),
         () => q.query<{ n: string }>(
           `SELECT count(*) AS n FROM housekeeping_tasks t JOIN properties p ON p.id = t.property_id
-            WHERE t.property_id = $1 AND t.status = 'done' AND t.completed_at >= (p.current_business_date::timestamp AT TIME ZONE p.timezone)`,
+            WHERE t.property_id = $1 AND t.status = 'done' AND t.completed_at >= (property_calendar_date(p)::timestamp AT TIME ZONE p.timezone)`,
           [propertyId],
         ),
         () => q.query<{ housekeeping_stayovers: boolean; housekeeping_inspection: boolean; current_business_date: string }>(
-          `SELECT housekeeping_stayovers, housekeeping_inspection, current_business_date FROM properties WHERE id = $1`, [propertyId],
+          `SELECT housekeeping_stayovers, housekeeping_inspection, property_calendar_date(p) AS current_business_date FROM properties p WHERE id = $1`, [propertyId],
         ),
       ]);
       return {
@@ -102,7 +102,7 @@ export class HousekeepingService {
     const { rows } = await this.db.query<{ id: string; room_id: string; number: string; room_type_name: string; kind: string; status: string; priority: string; note: string | null; version: number; started_at: Date | null; arrives_today: boolean }>(
       `SELECT t.id, t.room_id, rm.number, rt.name AS room_type_name, t.kind, t.status, t.priority, t.note, t.version, t.started_at,
               EXISTS (SELECT 1 FROM reservation_rooms rr JOIN properties p ON p.id = rr.property_id
-                       WHERE rr.room_id = rm.id AND rr.status = 'reserved' AND rr.arrival = p.current_business_date) OR EXISTS(SELECT 1 FROM villa_room_usage v WHERE v.room_id=rm.id AND v.allocation_status='reserved' AND (v.starts_at AT TIME ZONE p.timezone)::date=p.current_business_date) AS arrives_today
+                       WHERE rr.room_id = rm.id AND rr.status = 'reserved' AND rr.arrival = property_calendar_date(p)) OR EXISTS(SELECT 1 FROM villa_room_usage v WHERE v.room_id=rm.id AND v.allocation_status='reserved' AND (v.starts_at AT TIME ZONE p.timezone)::date=property_calendar_date(p)) AS arrives_today
          FROM housekeeping_tasks t
          JOIN properties p ON p.id=t.property_id
          JOIN rooms rm ON rm.id = t.room_id

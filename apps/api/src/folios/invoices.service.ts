@@ -461,9 +461,9 @@ export class InvoicesService {
 
   /** The invoice register — every document in a period, for the owner and for GSTR-1 later. */
   async register(propertyId: string, range: { from?: string; to?: string }) {
-    const { rows } = await this.db.query<{ id: string; number: string; document_type: string; invoice_date: string; buyer_name: string; buyer_gstin: string | null; taxable_total: string; cgst_total: string; sgst_total: string; igst_total: string; grand_total: string; original_number: string | null }>(
+    const { rows } = await this.db.query<{ id: string; number: string; document_type: string; invoice_date: string; buyer_name: string; buyer_gstin: string | null; taxable_total: string; cgst_total: string; sgst_total: string; igst_total: string; grand_total: string; original_number: string | null; reservation_number: string | null; room_numbers: string | null }>(
       `SELECT i.id, i.number, i.document_type, i.invoice_date, i.buyer_name, i.buyer_gstin, i.taxable_total, i.cgst_total,
-              i.sgst_total, i.igst_total, i.grand_total, o.number AS original_number
+              i.sgst_total, i.igst_total, i.grand_total, o.number AS original_number, i.reservation_number, i.room_numbers
          FROM invoices i LEFT JOIN invoices o ON o.id = i.original_invoice_id
         WHERE i.property_id = $1
           AND ($2::date IS NULL OR i.invoice_date >= $2::date)
@@ -474,7 +474,7 @@ export class InvoicesService {
     return rows.map((r) => ({
       id: r.id, number: r.number, documentType: r.document_type, invoiceDate: r.invoice_date, buyerName: r.buyer_name,
       buyerGstin: r.buyer_gstin, taxable: r.taxable_total, cgst: r.cgst_total, sgst: r.sgst_total, igst: r.igst_total,
-      total: r.grand_total, originalNumber: r.original_number,
+      total: r.grand_total, originalNumber: r.original_number, reservationNumber: r.reservation_number, rooms: r.room_numbers,
     }));
   }
 

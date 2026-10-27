@@ -2,7 +2,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
-import { addDays, formatDate, formatDateInput, parseIndianDate } from '@resortos/shared';
+import { addDays, formatDate, formatDateInput, parseIndianDate, todayIn } from '@resortos/shared';
 import { cn } from '@/lib/cn';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -44,7 +44,7 @@ export function DateField({ id, value, onChange, min, max, today, invalid, label
   const [text, setText] = useState(value ? formatDateInput(value) : '');
   const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const initial = value || today || min || new Date().toISOString().slice(0, 10);
+  const initial = value || today || min || todayIn();
   const [view, setView] = useState({ year: Number(initial.slice(0, 4)), month: Number(initial.slice(5, 7)) - 1 });
   const [focusDay, setFocusDay] = useState(initial);
   const wrapper = useRef<HTMLDivElement>(null);

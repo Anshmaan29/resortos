@@ -31,13 +31,13 @@ export class PropertyService {
       rooms_tax: boolean; food_tax: boolean; activity_tax: boolean; cash: boolean; upi: boolean; rate_floors: boolean; reception: boolean;
     }>(`SELECT
       EXISTS (SELECT 1 FROM tax_rules t WHERE t.property_id=p.id AND t.tax_category='accommodation'
-        AND p.current_business_date >= t.effective_from AND (t.effective_to IS NULL OR p.current_business_date <= t.effective_to)
+        AND property_calendar_date(p) >= t.effective_from AND (t.effective_to IS NULL OR property_calendar_date(p) <= t.effective_to)
         AND t.origin='configured') AS rooms_tax,
       EXISTS (SELECT 1 FROM tax_rules t WHERE t.property_id=p.id AND t.tax_category='food'
-        AND p.current_business_date >= t.effective_from AND (t.effective_to IS NULL OR p.current_business_date <= t.effective_to)
+        AND property_calendar_date(p) >= t.effective_from AND (t.effective_to IS NULL OR property_calendar_date(p) <= t.effective_to)
         AND t.origin='configured') AS food_tax,
       EXISTS (SELECT 1 FROM tax_rules t WHERE t.property_id=p.id AND t.tax_category='activity'
-        AND p.current_business_date >= t.effective_from AND (t.effective_to IS NULL OR p.current_business_date <= t.effective_to)
+        AND property_calendar_date(p) >= t.effective_from AND (t.effective_to IS NULL OR property_calendar_date(p) <= t.effective_to)
         AND t.origin='configured') AS activity_tax,
       EXISTS (SELECT 1 FROM payment_accounts a WHERE a.property_id=p.id AND a.kind='cash' AND a.is_active) AS cash,
       EXISTS (SELECT 1 FROM payment_accounts a WHERE a.property_id=p.id AND a.kind='upi' AND a.is_active) AS upi,
@@ -50,10 +50,16 @@ export class PropertyService {
       upiConfigured: r.upi, rateFloorsConfigured: r.rate_floors, receptionistConfigured: r.reception };
   }
 
-  async businessDate(q: Queryable, propertyId: string): Promise<string> {
+  /** Day-end review cursor only. Never use this to date a live transaction. */
+  async auditDate(q: Queryable, propertyId: string): Promise<string> {
     const { rows } = await q.query<{ current_business_date: string }>(`SELECT current_business_date FROM properties WHERE id = $1`, [propertyId]);
     if (!rows[0]) throw notFound('Property');
     return rows[0].current_business_date;
+  }
+
+  /** Compatibility name: all live operational dates follow the property's actual calendar. */
+  async businessDate(q: Queryable, propertyId: string): Promise<string> {
+    return this.today(q, propertyId);
   }
 
   async today(q: Queryable, propertyId: string): Promise<string> {
@@ -67,11 +73,12 @@ export class PropertyService {
     const { rows } = await this.db.query<PropertyRow>(`SELECT * FROM properties WHERE id = $1`, [propertyId]);
     const p = rows[0];
     if (!p) throw notFound('Property');
+    const today = propertyToday(p);
     return {
       id: p.id, bookingModel: p.booking_model, name: p.name, legalName: p.legal_name, addressLine1: p.address_line1, addressLine2: p.address_line2,
       city: p.city, stateCode: p.state_code, pinCode: p.pin_code, gstin: p.gstin, phone: p.phone, email: p.email,
       checkInTime: String(p.check_in_time).slice(0, 5), checkOutTime: String(p.check_out_time).slice(0, 5),
-      timezone: p.timezone, today: propertyToday(p), businessDate: p.current_business_date, isPractice: p.is_practice, version: p.version,
+      timezone: p.timezone, today, businessDate: today, isPractice: p.is_practice, version: p.version,
       policies: {
         receptionistCanRunNightAudit: p.receptionist_can_run_night_audit, cashDifferenceThreshold: p.cash_difference_threshold,
         reviewDiscountPercent: p.review_discount_percent, invoiceTerms: p.invoice_terms, invoiceBankDetails: p.invoice_bank_details,

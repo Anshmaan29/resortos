@@ -72,7 +72,7 @@ export class MaintenanceController {
   }
 
   private async businessDate(q: import('../db/db.service').Queryable, propertyId: string) {
-    const { rows } = await q.query<{ current_business_date: string }>(`SELECT current_business_date FROM properties WHERE id = $1`, [propertyId]);
+    const { rows } = await q.query<{ current_business_date: string }>(`SELECT property_calendar_date(p) AS current_business_date FROM properties p WHERE id = $1`, [propertyId]);
     return rows[0]!.current_business_date;
   }
 }

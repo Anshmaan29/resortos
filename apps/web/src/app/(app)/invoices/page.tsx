@@ -27,7 +27,7 @@ export default function InvoicesPage() {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Invoices"
-        description="Every tax invoice, bill of supply, credit note and debit note. Issued documents never change."
+        description="Invoices by their actual issue date, with booking and room references."
         actions={<div className="flex items-end gap-2"><DateField label="From" value={from} onChange={setFrom} /><DateField label="To" value={to} onChange={setTo} /></div>}
       />
       {list.isLoading ? <Skeleton className="h-48" /> : list.isError ? (
@@ -54,6 +54,7 @@ export default function InvoicesPage() {
                     <td className="whitespace-nowrap px-4 py-2">
                       <Link href={`/invoices/${r.id}`} className="font-medium underline-offset-2 hover:underline">{r.number}</Link>
                       <span className="ml-2 text-xs text-text-3">{LABEL[r.documentType]}{r.originalNumber ? ` · against ${r.originalNumber}` : ''}</span>
+                      {r.reservationNumber && <div className="mt-1 text-xs text-text-3">{r.reservationNumber}{r.rooms ? ` · Room ${r.rooms}` : ''}</div>}
                     </td>
                     <td className="whitespace-nowrap px-4 py-2 tabular-nums">{formatDate(r.invoiceDate)}</td>
                     <td className="px-4 py-2">{r.buyerName}{r.buyerGstin && <span className="ml-2 text-xs text-text-3">{r.buyerGstin}</span>}</td>
