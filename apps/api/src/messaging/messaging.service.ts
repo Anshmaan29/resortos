@@ -285,7 +285,7 @@ export class MessagingService {
     const {rows: villa}=await q.query<{use_kind:string;resource_mask:number;guest_count:number;starts_at:Date;ends_at:Date}>(
       `SELECT use_kind,resource_mask,guest_count,starts_at,ends_at FROM villa_bookings WHERE id=$1 AND property_id=$2`,[reservationId,propertyId]);
     if(villa[0]){
-      const v=villa[0];const labels:Record<string,string>={one_bedroom:v.resource_mask===3?'One bedroom':`Room ${v.resource_mask}`,both_bedrooms:'2 rooms + pool and garden',whole_villa:'Whole villa + pool and garden',pool:'Swimming pool',garden:'Garden'};
+      const v=villa[0];const labels:Record<string,string>={one_bedroom:v.resource_mask===3?'One bedroom':`Room ${v.resource_mask}`,both_bedrooms:'Whole villa + pool and garden',whole_villa:'Whole villa + pool and garden',pool:'Swimming pool',garden:'Garden'};
       const fmt=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'});
       Object.assign(vars,{booking_use:labels[v.use_kind],guest_count:String(v.guest_count),booking_start:fmt.format(v.starts_at),booking_end:fmt.format(v.ends_at)});
     }

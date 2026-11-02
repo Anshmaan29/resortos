@@ -11,8 +11,8 @@ export const VILLA_USES = [
 export const VILLA_BOOKABLE_USES = ['one_bedroom', 'both_bedrooms', 'pool', 'garden'] as const;
 export const VILLA_USE_LABELS: Record<(typeof VILLA_USES)[number], string> = {
   one_bedroom: 'One room',
-  both_bedrooms: '2 rooms',
-  whole_villa: 'Whole villa (previous booking)',
+  both_bedrooms: 'Whole villa',
+  whole_villa: 'Whole villa',
   pool: 'Swimming pool',
   garden: 'Garden',
 };
