@@ -146,6 +146,7 @@ export function VillaBookingForm({ initial }: { initial?: VillaBooking }) {
                   onChange={(e) => setKind(e.target.value as typeof kind)}
                 >
                   {(initial?.useKind === 'whole_villa' ? VILLA_USES : VILLA_BOOKABLE_USES)
+                    .filter((k) => initial?.useKind !== 'whole_villa' || k !== 'both_bedrooms')
                     .filter((k) => !initial || villaDayUse(k) === initial.dayUse)
                     .map((k) => (
                       <option key={k} value={k}>

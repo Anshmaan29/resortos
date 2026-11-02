@@ -121,6 +121,8 @@ describe('property boundaries', () => {
   });
   it('cannot deactivate or put the secondary bedroom out of order while both rooms are reserved', async () => {
     const b=await create({...slot(addDays(today,40),'both_bedrooms'),guestCount:1,endsAt:`${addDays(today,41)}T11:00:00+05:30`}).expect(201);
+    expect(b.body).toMatchObject({useKind:'both_bedrooms',useLabel:'Whole villa',resourceMask:3});
+    expect((await get(`/villa/bookings/${b.body.id}`).expect(200)).body.useLabel).toBe('Whole villa');
     const room=(await get('/rooms/setup').expect(200)).body.find((r:any)=>r.number==='2');
     const update=await owner.patch(`/api/v1/rooms/${room.id}`).set('x-resortos','1').set('x-resortos-property',villaId)
       .send({number:room.number,roomTypeId:room.roomTypeId,unitType:'room',isActive:false,version:room.version});
@@ -479,6 +481,8 @@ describe('editing, overnight documents, communications and preservation', () => 
     expect(msgs[0].body).toContain('Villa Sol by Voitto');
     expect(msgs[0].body).toContain('9352204825');
     expect(msgs.some((m) => m.body.includes('Swimming pool'))).toBe(true);
+    expect(msgs.some((m) => m.body.includes('Whole villa + pool and garden'))).toBe(true);
+    expect(msgs.every((m) => !m.body.includes('2 rooms + pool and garden'))).toBe(true);
     expect(msgs[0].body).toContain('From:');
     expect(msgs[0].body).not.toMatch(/Laxmi|Airtel/);
     await app.get(MessagingService).sendDue(100);

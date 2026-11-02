@@ -57,7 +57,8 @@ jobs:
 
   test:
     name: Build, typecheck, unit + API (real PostgreSQL) + contrast + E2E
-    runs-on: ubuntu-latest
+    # Noble ships postgresql-client-16; newer runner defaults do not necessarily carry it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     services:

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { villaBookingSchema, villaBookingTotal } from './villa';
+import { VILLA_BOOKABLE_USES, VILLA_USE_LABELS, villaBookingSchema, villaBookingTotal } from './villa';
 const valid = {
   useKind: 'pool',
   startsAt: '2026-10-17T10:00:00+05:30',
@@ -10,6 +10,12 @@ const valid = {
   guest: { firstName: 'Visitor', mobile: '9876543210' },
 };
 describe('villa booking rules', () => {
+  it('offers Whole villa while preserving both-room and historical whole-villa allocations', () => {
+    expect(VILLA_BOOKABLE_USES.map(k => VILLA_USE_LABELS[k])).toEqual([
+      'One room', 'Whole villa', 'Swimming pool', 'Garden',
+    ]);
+    expect(VILLA_USE_LABELS.whole_villa).toBe('Whole villa');
+  });
   it('accepts manual pool visitor counts and a same-day time slot', () => {
     expect(villaBookingSchema.safeParse(valid).success).toBe(true);
   });
